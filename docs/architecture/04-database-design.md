@@ -1,0 +1,219 @@
+# OpsSwarm 数据库设计
+
+## 1. 设计目标
+
+- 让事故事实、证据、审批、执行和验证能够独立于 Agent 运行恢复。
+- 通过数据库约束处理重复告警、并发聚合和重复操作。
+- 保留完整时间线与审计，不用覆盖更新抹掉历史。
+- 先建立全局逻辑模型，仅为当前切片确定物理字段。
+- 明确区分业务数据、持久任务和 LangGraph checkpoint。
+
+## 2. 数据库边界
+
+同一个 PostgreSQL 17 实例包含两个数据库：
+
+| 数据库 | 管理者 | 内容 |
+| --- | --- | --- |
+| `opsswarm` | Alembic | Incident、证据、审批、操作、评测、事件和任务 |
+| `opsswarm_checkpoints` | LangGraph 初始化流程 | checkpoint、节点写入和恢复元数据 |
+
+业务库中的 `investigation_runs.graph_thread_id` 保存 LangGraph `thread_id`。两个数据库不建立跨库外键；删除或清理 checkpoint 不得删除业务审计记录。
+
+## 3. 全局逻辑模型
+
+```mermaid
+erDiagram
+    SERVICES ||--o{ INCIDENTS : affects
+    INCIDENTS ||--o{ ALERTS : groups
+    INCIDENTS ||--o{ INCIDENT_EVENTS : records
+    INCIDENTS ||--o{ CHANGE_RECORDS : correlates
+    INCIDENTS ||--o{ INVESTIGATION_RUNS : investigates
+    INVESTIGATION_RUNS ||--o{ INVESTIGATION_TASKS : contains
+    INVESTIGATION_TASKS ||--o{ TOOL_CALLS : invokes
+    INVESTIGATION_RUNS ||--o{ EVIDENCE_ITEMS : collects
+    INVESTIGATION_RUNS ||--o{ HYPOTHESES : proposes
+    HYPOTHESES ||--o{ HYPOTHESIS_EVIDENCE : evaluates
+    EVIDENCE_ITEMS ||--o{ HYPOTHESIS_EVIDENCE : supports_or_refutes
+    INCIDENTS ||--o{ ACTION_PLANS : plans
+    ACTION_PLANS ||--o{ ACTION_STEPS : contains
+    ACTION_PLANS ||--o{ APPROVAL_REQUESTS : requests
+    ACTION_STEPS ||--o{ OPERATION_EXECUTIONS : executes
+    OPERATION_EXECUTIONS ||--o{ VERIFICATION_RUNS : verifies
+    INVESTIGATION_RUNS ||--o{ WORK_ITEMS : schedules
+    EVALUATION_CASES ||--o{ EVALUATION_RUNS : evaluates
+    EVALUATION_RUNS ||--o{ EVALUATION_RESULTS : produces
+```
+
+### 3.1 事故域
+
+| 实体 | 核心职责 |
+| --- | --- |
+| `services` | 被管服务目录、环境和遥测标识 |
+| `incidents` | 当前事故状态、严重级别、指纹和生命周期时间 |
+| `alerts` | 原始告警及其外部幂等标识 |
+| `incident_events` | 不可变事故时间线和 SSE 游标 |
+| `change_records` | 部署、配置和代码变更证据 |
+
+### 3.2 调查与证据域
+
+| 实体 | 核心职责 |
+| --- | --- |
+| `investigation_runs` | 一次单 Agent 或多 Agent 调查及 `graph_thread_id` |
+| `investigation_tasks` | 日志、指标、变更等调查子任务 |
+| `tool_calls` | 工具输入摘要、状态、耗时、错误和成本 |
+| `evidence_items` | 带来源、采集时间、哈希和可信度的证据 |
+| `hypotheses` | 根因假设、置信度和验证状态 |
+| `hypothesis_evidence` | 证据对假设的支持或反驳关系 |
+
+### 3.3 处置与评测域
+
+| 实体 | 核心职责 |
+| --- | --- |
+| `action_plans` | 带版本的结构化处置计划 |
+| `action_steps` | 白名单动作、参数、风险和验证规则 |
+| `approval_requests` | 绑定计划版本的审批及决定 |
+| `operation_executions` | 幂等执行请求、结果和审计 |
+| `verification_runs` | 恢复判据、采样结果和结论 |
+| `work_items` | Worker 租约、重试和至少一次处理 |
+| `evaluation_cases` | 故障真值和期望行为 |
+| `evaluation_runs` | 模式、模型、提示版本和运行汇总 |
+| `evaluation_results` | 准确率、耗时、成本和安全等指标 |
+
+## 4. 首个可运行切片的物理模型
+
+第一阶段只创建 `incidents`、`alerts` 和 `incident_events`。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+
+### 4.1 incidents
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `UUID` | 主键，由应用生成 UUID4 |
+| `display_number` | `BIGINT GENERATED ALWAYS AS IDENTITY` | 唯一、只读，用于显示 `INC-000001` |
+| `service_name` | `VARCHAR(100)` | 非空，首切片为 `order-service` |
+| `title` | `VARCHAR(200)` | 非空，事故摘要 |
+| `severity` | `VARCHAR(2)` | 非空，检查约束限定 `p1`～`p4` |
+| `status` | `VARCHAR(32)` | 非空，检查约束限定状态机值 |
+| `fingerprint` | `VARCHAR(200)` | 非空，用于告警聚合 |
+| `version` | `INTEGER` | 非空，默认 1，乐观锁版本 |
+| `started_at` | `TIMESTAMPTZ` | 事故首次发生时间 |
+| `resolved_at` | `TIMESTAMPTZ` | 可空，最近一次进入 `resolved` 的时间 |
+| `closed_at` | `TIMESTAMPTZ` | 可空，进入终态的时间 |
+| `created_at` | `TIMESTAMPTZ` | 非空，数据库写入时间 |
+| `updated_at` | `TIMESTAMPTZ` | 非空，每次业务更新时修改 |
+
+关键索引与约束：
+
+- `display_number` 唯一索引。
+- `fingerprint` 的部分唯一索引：仅当 `status <> 'closed'` 时生效，保证同一指纹最多存在一个未关闭 Incident。
+- `(status, created_at DESC)` 支持列表过滤。
+- 更新语句必须包含 `WHERE id = :id AND version = :expected_version`，成功时 `version = version + 1`。
+
+### 4.2 alerts
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `UUID` | 主键，由应用生成 UUID4 |
+| `incident_id` | `UUID` | 非空，外键到 `incidents.id`，禁止级联删除 |
+| `source` | `VARCHAR(100)` | 非空，例如 `fault-simulator` |
+| `external_event_id` | `VARCHAR(200)` | 非空，告警源事件号 |
+| `fingerprint` | `VARCHAR(200)` | 非空，保留接收时的聚合指纹 |
+| `service_name` | `VARCHAR(100)` | 非空 |
+| `severity` | `VARCHAR(2)` | 非空，检查约束限定 `p1`～`p4` |
+| `title` | `VARCHAR(200)` | 非空 |
+| `payload` | `JSONB` | 非空，保存原始扩展字段，默认空对象 |
+| `occurred_at` | `TIMESTAMPTZ` | 非空，告警源发生时间 |
+| `ingested_at` | `TIMESTAMPTZ` | 非空，控制面接收时间 |
+
+关键索引与约束：
+
+- `(source, external_event_id)` 唯一，保证完全重复告警幂等。
+- `(incident_id, occurred_at)` 支持事故详情时间排序。
+- 外键使用 `ON DELETE RESTRICT`，事故与告警均不提供物理删除接口。
+
+### 4.3 incident_events
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | 主键，同时作为全局 SSE 游标 |
+| `incident_id` | `UUID` | 非空，外键到 `incidents.id`，禁止级联删除 |
+| `event_type` | `VARCHAR(100)` | 非空，例如 `incident.created` |
+| `actor_type` | `VARCHAR(20)` | 非空，限定 `system`、`human`、`agent`、`executor` |
+| `actor_id` | `VARCHAR(100)` | 可空；系统事件可以为空 |
+| `from_status` | `VARCHAR(32)` | 可空，创建事件没有前置状态 |
+| `to_status` | `VARCHAR(32)` | 可空，非状态事件可以为空 |
+| `payload` | `JSONB` | 非空，默认空对象，只放事件附加信息 |
+| `occurred_at` | `TIMESTAMPTZ` | 非空，事件发生时间 |
+
+关键索引与约束：
+
+- `(incident_id, id)` 支持按 Incident 顺序读取和 SSE 补发。
+- 应用只允许 `INSERT` 和 `SELECT`，不提供更新、覆盖或删除方法。
+- 事件 payload 不复制大型日志内容，只保存业务摘要和证据标识。
+
+## 5. Incident 状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> open
+    open --> investigating: 开始调查
+    investigating --> awaiting_approval: 形成需审批计划
+    investigating --> verifying: 无需执行即可验证
+    awaiting_approval --> mitigating: 审批通过
+    awaiting_approval --> investigating: 拒绝或要求修改
+    mitigating --> verifying: 执行完成
+    mitigating --> investigating: 执行失败
+    verifying --> resolved: 恢复验证通过
+    verifying --> investigating: 未恢复或证据不足
+    resolved --> closed: 工程师关闭
+    resolved --> investigating: 关闭前复发
+    closed --> [*]
+```
+
+`closed` 是终态。关闭后收到相同指纹的新告警时创建新 Incident，不重新打开历史事故。
+
+状态迁移必须：
+
+1. 校验当前状态与目标动作是否合法。
+2. 使用 `expected_version` 执行乐观锁更新。
+3. 设置对应生命周期时间字段。
+4. 在同一事务追加 `incident_events`。
+5. 受影响行数为零时返回 `409 Conflict`，不能静默覆盖并发修改。
+
+## 6. 告警幂等与并发聚合
+
+```mermaid
+flowchart TD
+    receive[接收告警] --> duplicate{来源事件号已存在?}
+    duplicate -->|是| existing[返回原 Incident 和 deduplicated=true]
+    duplicate -->|否| active{存在相同指纹的未关闭 Incident?}
+    active -->|是| attach[关联新告警并追加事件]
+    active -->|否| create[创建 Incident、告警和创建事件]
+    create --> conflict{部分唯一索引冲突?}
+    conflict -->|是| retry[回滚并关联获胜的 Incident]
+    conflict -->|否| done[提交]
+    attach --> done
+    retry --> done
+```
+
+- 完全重复是相同 `(source, external_event_id)`，返回 `200`。
+- 新告警无论创建还是聚合都会新增 `alerts` 记录，首次接收返回 `201`。
+- API 层预检查用于减少异常，数据库唯一约束才是并发正确性的最终保证。
+- 原始 payload 仅用于审计和后续适配，不能直接决定状态迁移或执行参数。
+
+## 7. 后续物理设计原则
+
+- `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`。
+- `evidence_items` 保存来源 URI、时间范围、内容摘要、哈希和采集工具，不直接塞入无限制原始日志。
+- `hypothesis_evidence` 明确关系是支持还是反驳，避免只保存 Agent 最终结论。
+- `action_plans` 必须版本化；审批绑定精确版本，计划变化后旧审批失效。
+- `operation_executions.idempotency_key` 唯一，重复调用返回已有结果。
+- `tool_calls` 和评测表保存模型、提示、工具版本、延迟、Token 和错误分类，支持公平对比。
+- 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。
+
+## 8. 数据保留与安全
+
+- MVP 不提供 Incident、Alert、Event、Approval 或 Execution 的物理删除 API。
+- 未来归档使用保留策略和受控后台任务，不使用级联删除抹除审计链。
+- 数据库应用账号不使用超级用户；迁移、运行和 checkpoint 账号分离。
+- JSONB 写入前必须经过 Pydantic 校验并限制大小。
+- 日志、事件和模型输入中的密钥、令牌及敏感字段必须脱敏。
