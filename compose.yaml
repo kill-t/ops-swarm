@@ -1,4 +1,25 @@
 services:
+  control-db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: opsswarm
+      POSTGRES_USER: opsswarm
+      POSTGRES_PASSWORD: local-development-only
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - control-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U opsswarm -d opsswarm
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - control
+
   order-service:
     build:
       context: .
@@ -27,5 +48,10 @@ services:
       - lab
 
 networks:
+  control:
+    driver: bridge
   lab:
     driver: bridge
+
+volumes:
+  control-db-data:

@@ -27,3 +27,11 @@ class InvalidIncidentTransition(IncidentDomainError):
         self.status = status
         self.action = action
         super().__init__(f"Incident 状态 {status} 不允许执行动作 {action}")
+
+
+class IncidentNotFound(IncidentDomainError):
+    """目标 Incident 不存在。"""
+
+    def __init__(self, incident_id: str) -> None:
+        self.incident_id = incident_id
+        super().__init__(f"Incident 不存在：{incident_id}")

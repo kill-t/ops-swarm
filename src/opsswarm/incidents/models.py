@@ -59,6 +59,7 @@ class IncidentEventType(StrEnum):
 
     CREATED = "incident.created"
     STATUS_CHANGED = "incident.status_changed"
+    ALERT_ATTACHED = "incident.alert_attached"
 
 
 def normalize_utc(value: datetime, *, field_name: str) -> datetime:
@@ -71,7 +72,7 @@ def normalize_utc(value: datetime, *, field_name: str) -> datetime:
     return value.astimezone(UTC)
 
 
-def _normalize_required_text(value: str, *, field_name: str, max_length: int) -> str:
+def normalize_required_text(value: str, *, field_name: str, max_length: int) -> str:
     if not isinstance(value, str):
         raise IncidentValidationError(f"{field_name} 必须是字符串")
     normalized = value.strip()
@@ -136,17 +137,17 @@ class Incident:
         object.__setattr__(
             self,
             "service_name",
-            _normalize_required_text(self.service_name, field_name="service_name", max_length=100),
+            normalize_required_text(self.service_name, field_name="service_name", max_length=100),
         )
         object.__setattr__(
             self,
             "title",
-            _normalize_required_text(self.title, field_name="title", max_length=200),
+            normalize_required_text(self.title, field_name="title", max_length=200),
         )
         object.__setattr__(
             self,
             "fingerprint",
-            _normalize_required_text(self.fingerprint, field_name="fingerprint", max_length=200),
+            normalize_required_text(self.fingerprint, field_name="fingerprint", max_length=200),
         )
 
         started_at = normalize_utc(self.started_at, field_name="started_at")
@@ -232,7 +233,7 @@ class IncidentEvent:
         object.__setattr__(
             self,
             "reason",
-            _normalize_required_text(self.reason, field_name="reason", max_length=500),
+            normalize_required_text(self.reason, field_name="reason", max_length=500),
         )
         object.__setattr__(
             self,

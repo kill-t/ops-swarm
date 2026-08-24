@@ -165,3 +165,26 @@ def transition_incident(
         incident_version=updated_incident.version,
     )
     return IncidentMutation(incident=updated_incident, event=event)
+
+
+def record_alert_attached(
+    incident: Incident,
+    *,
+    occurred_at: datetime,
+    actor: IncidentActor,
+    reason: str,
+) -> IncidentEvent:
+    """为聚合到现有 Incident 的新告警产生时间线事件。"""
+
+    if not isinstance(incident, Incident):
+        raise IncidentValidationError("incident 必须是 Incident")
+    return IncidentEvent(
+        event_type=IncidentEventType.ALERT_ATTACHED,
+        incident_id=incident.id,
+        actor=actor,
+        from_status=None,
+        to_status=incident.status,
+        reason=reason,
+        occurred_at=occurred_at,
+        incident_version=incident.version,
+    )

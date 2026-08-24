@@ -15,6 +15,7 @@ from opsswarm.incidents import (
     IncidentVersionConflict,
     InvalidIncidentTransition,
     create_incident,
+    record_alert_attached,
     transition_incident,
 )
 
@@ -68,6 +69,22 @@ def test_create_incident_returns_open_snapshot_and_audit_event() -> None:
     assert mutation.event.incident_version == 1
     assert mutation.event.actor == SYSTEM_ACTOR
     assert mutation.event.reason == "接收到首条告警"
+
+
+def test_record_alert_attached_keeps_current_status_and_version() -> None:
+    incident = make_incident(IncidentStatus.INVESTIGATING)
+
+    event = record_alert_attached(
+        incident,
+        occurred_at=BASE_TIME + timedelta(seconds=1),
+        actor=SYSTEM_ACTOR,
+        reason="接收到同一指纹的新告警",
+    )
+
+    assert event.event_type is IncidentEventType.ALERT_ATTACHED
+    assert event.from_status is None
+    assert event.to_status is IncidentStatus.INVESTIGATING
+    assert event.incident_version == incident.version
 
 
 @pytest.mark.parametrize(

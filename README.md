@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付两个小切片：`order-service` 确定性版本 500 故障模拟，以及不依赖框架的 Incident 领域状态机。当前已经能在内存中创建事故、校验 11 条业务迁移、检测乐观锁冲突并产生配套审计事件；数据库、Incident API、LLM 和前端尚未接入。
+项目已交付三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机，以及 PostgreSQL 事故持久化。当前已经能幂等接收告警、按指纹并发聚合 Incident、原子保存状态和审计事件，并在数据库重连后恢复；Incident API、LLM 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -47,13 +47,27 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 评测集以及单 Agent、多 Agent 对比。
 9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入和 Incident 领域状态机，后续切片依次增加告警幂等、PostgreSQL 持久化和不可变时间线。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化和不可变时间线。下一切片将把这些能力通过 FastAPI 暴露为告警接收、Incident 查询、状态动作和事件查询接口。
 
 ## Incident 领域状态机
 
 `opsswarm.incidents` 是独立于 FastAPI、SQLAlchemy 和 Agent 框架的纯领域模块。调用方提交当前 Incident、业务动作、期望版本、发生时间和操作者，状态机返回新的不可变 Incident 快照与一条审计事件。它不直接写数据库；后续持久化层必须在同一事务内保存两者。
 
 这种边界让状态迁移规则可以快速进行纯单元测试，也保证未来无论由 REST API、Worker 还是 LangGraph 节点触发，都会经过同一套确定性规则。
+
+## PostgreSQL 持久化
+
+控制面业务库使用 PostgreSQL 17。SQLAlchemy 异步仓储负责把领域行为映射为数据库事务，Alembic 是表结构的唯一迁移入口。完全重复告警由 `(source, external_event_id)` 唯一约束保证幂等；相同指纹的未关闭 Incident 由部分唯一索引保证并发下最多一个。
+
+启动本地业务库并执行迁移：
+
+```powershell
+docker compose up -d --wait control-db
+uv run alembic upgrade head
+uv run alembic current
+```
+
+默认连接只服务本地开发，可通过 `OPSSWARM_DATABASE_URL` 覆盖。停止容器使用 `docker compose down`；命名卷会保留数据库内容，用于验证重启恢复。
 
 ## 运行故障模拟切片
 
@@ -92,9 +106,12 @@ docker compose down
 
 ```powershell
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy
 uv run pytest
 ```
+
+集成测试会通过 Testcontainers 启动隔离的 PostgreSQL 17，运行前需要启动 Docker Desktop。测试容器结束后自动清理，不复用本地开发库。
 
 ## 安全声明
 

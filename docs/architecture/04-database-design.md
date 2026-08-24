@@ -120,7 +120,7 @@ erDiagram
 | `service_name` | `VARCHAR(100)` | 非空 |
 | `severity` | `VARCHAR(2)` | 非空，检查约束限定 `p1`～`p4` |
 | `title` | `VARCHAR(200)` | 非空 |
-| `payload` | `JSONB` | 非空，保存原始扩展字段，默认空对象 |
+| `payload` | `JSONB` | 非空对象，保存原始扩展字段，序列化后不超过 64 KiB |
 | `occurred_at` | `TIMESTAMPTZ` | 非空，告警源发生时间 |
 | `ingested_at` | `TIMESTAMPTZ` | 非空，控制面接收时间 |
 
@@ -136,17 +136,20 @@ erDiagram
 | --- | --- | --- |
 | `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | 主键，同时作为全局 SSE 游标 |
 | `incident_id` | `UUID` | 非空，外键到 `incidents.id`，禁止级联删除 |
-| `event_type` | `VARCHAR(100)` | 非空，例如 `incident.created` |
+| `event_type` | `VARCHAR(100)` | 非空，当前限定创建、状态变化和告警聚合事件 |
 | `actor_type` | `VARCHAR(20)` | 非空，限定 `system`、`human`、`agent`、`executor` |
 | `actor_id` | `VARCHAR(100)` | 可空；系统事件可以为空 |
 | `from_status` | `VARCHAR(32)` | 可空，创建事件没有前置状态 |
-| `to_status` | `VARCHAR(32)` | 可空，非状态事件可以为空 |
+| `to_status` | `VARCHAR(32)` | 非空，记录事件发生时或迁移后的状态 |
+| `reason` | `VARCHAR(500)` | 非空，记录触发事件的业务原因 |
+| `incident_version` | `INTEGER` | 非空，事件对应的 Incident 乐观锁版本 |
 | `payload` | `JSONB` | 非空，默认空对象，只放事件附加信息 |
 | `occurred_at` | `TIMESTAMPTZ` | 非空，事件发生时间 |
 
 关键索引与约束：
 
 - `(incident_id, id)` 支持按 Incident 顺序读取和 SSE 补发。
+- 创建和状态变化事件的 `(incident_id, incident_version)` 部分唯一索引，保证每个变更版本只有一条配套事件；告警聚合事件可以共享当前版本。
 - 应用只允许 `INSERT` 和 `SELECT`，不提供更新、覆盖或删除方法。
 - 事件 payload 不复制大型日志内容，只保存业务摘要和证据标识。
 
@@ -216,6 +219,8 @@ flowchart TD
 - 完全重复是相同 `(source, external_event_id)`，返回 `200`。
 - 新告警无论创建还是聚合都会新增 `alerts` 记录，首次接收返回 `201`。
 - API 层预检查用于减少异常，数据库唯一约束才是并发正确性的最终保证。
+- 并发命中外部事件唯一约束或未关闭指纹部分唯一索引时，当前事务整体回滚，仓储使用新会话重试并读取获胜记录。
+- 聚合到现有事故时追加 `incident.alert_attached` 事件，但不改变 Incident 状态和版本。
 - 原始 payload 仅用于审计和后续适配，不能直接决定状态迁移或执行参数。
 
 ## 7. 后续物理设计原则
