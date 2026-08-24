@@ -16,6 +16,8 @@ from opsswarm.incidents import (
 )
 from opsswarm.incidents.persistence import StoredIncident, StoredIncidentEvent
 from opsswarm.investigation.models import (
+    EvidenceKind,
+    InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
@@ -23,7 +25,13 @@ from opsswarm.investigation.models import (
     WorkItemError,
     WorkItemStatus,
 )
-from opsswarm.investigation.persistence import StartedInvestigation, StoredInvestigationRun
+from opsswarm.investigation.persistence import (
+    StartedInvestigation,
+    StoredEvidenceBoard,
+    StoredEvidenceItem,
+    StoredInvestigationRun,
+    StoredSpecialistReport,
+)
 
 
 class StrictApiModel(BaseModel):
@@ -97,6 +105,64 @@ class InvestigationRunResponse(StrictApiModel):
     @classmethod
     def from_stored(cls, stored: StoredInvestigationRun) -> Self:
         return cls.model_validate(stored.model_dump())
+
+
+class EvidenceItemResponse(StrictApiModel):
+    """Evidence Board 中一条可校验内容哈希的规范化证据。"""
+
+    id: UUID
+    evidence_id: str
+    kind: EvidenceKind
+    source: str
+    summary: str
+    observed_at: datetime
+    attributes: dict[str, JsonValue]
+    content_hash: str
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredEvidenceItem) -> Self:
+        return cls.model_validate(stored.model_dump(exclude={"investigation_run_id"}))
+
+
+class SpecialistReportResponse(StrictApiModel):
+    """专业节点报告及其显式证据引用。"""
+
+    id: UUID
+    specialist: EvidenceKind
+    summary: str
+    findings: tuple[str, ...]
+    evidence_ids: tuple[str, ...]
+    confidence: float
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredSpecialistReport) -> Self:
+        return cls.model_validate(stored.model_dump(exclude={"investigation_run_id"}))
+
+
+class EvidenceBoardResponse(StrictApiModel):
+    """一次调查可供工程师审查的结论、证据和专业报告。"""
+
+    investigation_run_id: UUID
+    status: InvestigationRunStatus
+    conclusion: InvestigationConclusion | None
+    evidence_items: tuple[EvidenceItemResponse, ...]
+    specialist_reports: tuple[SpecialistReportResponse, ...]
+
+    @classmethod
+    def from_stored(cls, stored: StoredEvidenceBoard) -> Self:
+        return cls(
+            investigation_run_id=stored.investigation_run_id,
+            status=stored.status,
+            conclusion=stored.conclusion,
+            evidence_items=tuple(
+                EvidenceItemResponse.from_stored(item) for item in stored.evidence_items
+            ),
+            specialist_reports=tuple(
+                SpecialistReportResponse.from_stored(report) for report in stored.specialist_reports
+            ),
+        )
 
 
 class IncidentResponse(StrictApiModel):

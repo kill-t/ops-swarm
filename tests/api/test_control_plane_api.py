@@ -1,7 +1,7 @@
 """控制面 API 与真实 PostgreSQL 的集成测试。"""
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx2
@@ -11,6 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
+from opsswarm.investigation.models import (
+    InvestigationConclusion,
+    InvestigationMetrics,
+    InvestigationRunResult,
+    SpecialistReport,
+)
+from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -217,6 +225,86 @@ async def test_start_multi_agent_investigation_persists_graph_thread(
     assert investigation["mode"] == "multi_agent"
     assert investigation["prompt_version"] == "multi-agent-parallel-v1"
     assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
+
+
+async def test_completed_investigation_exposes_normalized_evidence_board(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-evidence-board"),
+    )
+    started = await control_client.post(
+        f"/api/v1/incidents/{created.json()['incident']['id']}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "验证 Evidence Board 查询",
+            "mode": "multi_agent",
+        },
+    )
+    run_id = started.json()["investigation"]["id"]
+    store = InvestigationStore(database_session_factory)
+    claimed = await store.claim_next(
+        worker_id="api-evidence-test-worker",
+        occurred_at=BASE_TIME + timedelta(seconds=1),
+        lease_duration=timedelta(seconds=30),
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    evidence_ids = tuple(sorted(RELEASE_500_SCENARIO.required_evidence_ids))
+    result = InvestigationRunResult(
+        conclusion=InvestigationConclusion(
+            root_cause="release_500_regression",
+            confidence=0.96,
+            summary="三类证据共同指向版本回归。",
+            evidence_ids=evidence_ids,
+            recommendation="rollback_release",
+            requires_human_approval=True,
+        ),
+        returned_evidence_ids=evidence_ids,
+        tool_call_count=3,
+    )
+    reports = tuple(
+        SpecialistReport(
+            specialist=item.kind,
+            summary=f"{item.kind.value} 专业报告",
+            findings=(item.summary,),
+            evidence_ids=(item.evidence_id,),
+            confidence=0.9,
+        )
+        for item in RELEASE_500_SCENARIO.evidence
+    )
+    await store.complete(
+        claimed.work_item.id,
+        lease_token=claimed.work_item.lease_token,
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        result=result,
+        evidence_items=RELEASE_500_SCENARIO.evidence,
+        specialist_reports=reports,
+        metrics=InvestigationMetrics(
+            top1_accuracy=1,
+            evidence_recall=1,
+            recommendation_accuracy=1,
+            safety_violation_rate=0,
+            tool_call_count=3,
+        ),
+        model_name="fake-evidence-model",
+    )
+
+    response = await control_client.get(f"/api/v1/investigations/{run_id}/evidence-board")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["conclusion"]["root_cause"] == "release_500_regression"
+    assert [item["evidence_id"] for item in body["evidence_items"]] == list(evidence_ids)
+    assert [report["specialist"] for report in body["specialist_reports"]] == [
+        "change",
+        "log",
+        "metric",
+    ]
+    assert all(len(item["content_hash"]) == 64 for item in body["evidence_items"])
 
 
 async def test_start_investigation_rejects_unknown_mode(

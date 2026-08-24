@@ -19,16 +19,20 @@ from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.errors import WorkItemLeaseLost
 from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
+    EvidenceKind,
     InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
     InvestigationRunStatus,
+    SpecialistReport,
     WorkItemError,
     WorkItemKind,
     WorkItemStatus,
 )
 from opsswarm.investigation.persistence import InvestigationStore, StartedInvestigation
+from opsswarm.investigation.persistence.tables import SpecialistReportEvidenceRow
+from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.worker import InvestigationWorker, ProcessorContext, ProcessorOutcome
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -61,6 +65,7 @@ def make_outcome() -> ProcessorOutcome:
     )
     return ProcessorOutcome(
         result=result,
+        evidence_items=RELEASE_500_SCENARIO.evidence,
         metrics=InvestigationMetrics(
             top1_accuracy=1,
             evidence_recall=1,
@@ -69,6 +74,28 @@ def make_outcome() -> ProcessorOutcome:
             tool_call_count=3,
         ),
         model_name="fake-tool-model",
+    )
+
+
+def make_multi_agent_outcome() -> ProcessorOutcome:
+    """在统一结果契约上增加三份可关联的专业报告。"""
+
+    baseline = make_outcome()
+    return ProcessorOutcome(
+        result=baseline.result,
+        evidence_items=baseline.evidence_items,
+        specialist_reports=tuple(
+            SpecialistReport(
+                specialist=item.kind,
+                summary=f"{item.kind.value} 专业报告",
+                findings=(item.summary,),
+                evidence_ids=(item.evidence_id,),
+                confidence=0.9,
+            )
+            for item in RELEASE_500_SCENARIO.evidence
+        ),
+        metrics=baseline.metrics,
+        model_name=baseline.model_name,
     )
 
 
@@ -238,6 +265,8 @@ async def test_expired_lease_is_reclaimed_and_stale_worker_cannot_complete(
             lease_token=first.work_item.lease_token,
             occurred_at=BASE_TIME + timedelta(seconds=14),
             result=outcome.result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
             metrics=outcome.metrics,
             model_name=outcome.model_name,
         )
@@ -247,6 +276,8 @@ async def test_expired_lease_is_reclaimed_and_stale_worker_cannot_complete(
         lease_token=second.work_item.lease_token,
         occurred_at=BASE_TIME + timedelta(seconds=14),
         result=outcome.result,
+        evidence_items=outcome.evidence_items,
+        specialist_reports=outcome.specialist_reports,
         metrics=outcome.metrics,
         model_name=outcome.model_name,
     )
@@ -381,6 +412,16 @@ async def test_worker_processes_one_item_and_persists_structured_result(
     assert run.model_name == "fake-tool-model"
     assert run.metrics is not None and run.metrics.top1_accuracy == 1
     assert work.status is WorkItemStatus.COMPLETED
+    board = await store.get_evidence_board(started.run.id)
+    assert run.result is not None
+    assert board.conclusion == run.result.conclusion
+    assert tuple(item.evidence_id for item in board.evidence_items) == (
+        "change-order-release-rc1",
+        "log-order-runtime-error",
+        "metric-order-error-spike",
+    )
+    assert all(len(item.content_hash) == 64 for item in board.evidence_items)
+    assert board.specialist_reports == ()
 
     idle_times = iter([BASE_TIME + timedelta(seconds=4)])
     idle_worker = InvestigationWorker(
@@ -419,3 +460,58 @@ async def test_worker_failure_is_safely_summarized_and_requeued(
         message="调查处理器调用超时",
     )
     assert run.status is InvestigationRunStatus.QUEUED
+
+
+async def test_database_rejects_cross_run_report_evidence_reference(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, first_started = await start_investigation(
+        database_session_factory,
+        suffix="cross-run-001",
+        mode=InvestigationMode.MULTI_AGENT,
+    )
+    _, second_started = await start_investigation(
+        database_session_factory,
+        suffix="cross-run-002",
+        mode=InvestigationMode.MULTI_AGENT,
+    )
+    outcome = make_multi_agent_outcome()
+    for sequence in range(2):
+        claimed = await store.claim_next(
+            worker_id=f"cross-run-worker-{sequence}",
+            occurred_at=BASE_TIME + timedelta(seconds=2 + sequence * 2),
+            lease_duration=timedelta(seconds=30),
+        )
+        assert claimed is not None and claimed.work_item.lease_token is not None
+        await store.complete(
+            claimed.work_item.id,
+            lease_token=claimed.work_item.lease_token,
+            occurred_at=BASE_TIME + timedelta(seconds=3 + sequence * 2),
+            result=outcome.result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
+            metrics=outcome.metrics,
+            model_name=outcome.model_name,
+        )
+
+    first_board = await store.get_evidence_board(first_started.run.id)
+    second_board = await store.get_evidence_board(second_started.run.id)
+    first_change_report = next(
+        report
+        for report in first_board.specialist_reports
+        if report.specialist is EvidenceKind.CHANGE
+    )
+    second_change_evidence = next(
+        item for item in second_board.evidence_items if item.kind is EvidenceKind.CHANGE
+    )
+
+    async with database_session_factory() as session:
+        session.add(
+            SpecialistReportEvidenceRow(
+                investigation_run_id=first_started.run.id,
+                specialist_report_id=first_change_report.id,
+                evidence_item_id=second_change_evidence.id,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()

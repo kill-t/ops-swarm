@@ -4,13 +4,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from pydantic import JsonValue
+
 from opsswarm.incidents.persistence import StoredIncident
 from opsswarm.investigation.models import (
+    EvidenceKind,
+    InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
     InvestigationRunStatus,
+    SpecialistReport,
     StrictModel,
     WorkItemError,
     WorkItemKind,
@@ -55,6 +60,55 @@ class StoredWorkItem(StrictModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+
+
+class StoredEvidenceItem(StrictModel):
+    """Evidence Board 中一条规范化证据的业务快照。"""
+
+    id: UUID
+    investigation_run_id: UUID
+    evidence_id: str
+    kind: EvidenceKind
+    source: str
+    summary: str
+    observed_at: datetime
+    attributes: dict[str, JsonValue]
+    content_hash: str
+    created_at: datetime
+
+
+class StoredSpecialistReport(StrictModel):
+    """专业报告及其同一次调查内的证据引用。"""
+
+    id: UUID
+    investigation_run_id: UUID
+    specialist: EvidenceKind
+    summary: str
+    findings: tuple[str, ...]
+    evidence_ids: tuple[str, ...]
+    confidence: float
+    created_at: datetime
+
+    def to_domain(self) -> SpecialistReport:
+        """转换为不带数据库标识的专业报告值对象。"""
+
+        return SpecialistReport(
+            specialist=self.specialist,
+            summary=self.summary,
+            findings=self.findings,
+            evidence_ids=self.evidence_ids,
+            confidence=self.confidence,
+        )
+
+
+class StoredEvidenceBoard(StrictModel):
+    """工程师审查一次调查所需的完整证据视图。"""
+
+    investigation_run_id: UUID
+    status: InvestigationRunStatus
+    conclusion: InvestigationConclusion | None
+    evidence_items: tuple[StoredEvidenceItem, ...]
+    specialist_reports: tuple[StoredSpecialistReport, ...]
 
 
 @dataclass(frozen=True, slots=True)

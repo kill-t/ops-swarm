@@ -50,10 +50,11 @@ class LangChainBaselineProcessor:
             mode=InvestigationMode.SINGLE_AGENT,
             kind=WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION,
         )
-        result = await self._investigator.investigate(context.request)
+        artifacts = await self._investigator.investigate_with_evidence(context.request)
         return ProcessorOutcome(
-            result=result,
-            metrics=evaluate_investigation(result, RELEASE_500_SCENARIO),
+            result=artifacts.result,
+            evidence_items=artifacts.evidence_items,
+            metrics=evaluate_investigation(artifacts.result, RELEASE_500_SCENARIO),
             model_name=self._model_name,
         )
 
@@ -89,6 +90,8 @@ class LangGraphMultiAgentProcessor:
         result = outcome.result
         return ProcessorOutcome(
             result=result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
             metrics=evaluate_investigation(result, RELEASE_500_SCENARIO),
             model_name=self._model_name,
         )

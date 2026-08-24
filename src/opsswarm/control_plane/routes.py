@@ -11,6 +11,7 @@ from opsswarm.control_plane.schemas import (
     AlertIngestionResponse,
     AlertRequest,
     ApiErrorResponse,
+    EvidenceBoardResponse,
     HealthResponse,
     IncidentEventPageResponse,
     IncidentEventResponse,
@@ -160,6 +161,20 @@ def create_router(clock: Clock) -> APIRouter:
         store: InvestigationStoreDependency,
     ) -> InvestigationRunResponse:
         return InvestigationRunResponse.from_stored(await store.get_run(run_id))
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/evidence-board",
+        response_model=EvidenceBoardResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["调查"],
+    )
+    async def get_evidence_board(
+        run_id: UUID,
+        store: InvestigationStoreDependency,
+    ) -> EvidenceBoardResponse:
+        """返回业务库中的证据事实，不直接读取 LangGraph checkpoint。"""
+
+        return EvidenceBoardResponse.from_stored(await store.get_evidence_board(run_id))
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

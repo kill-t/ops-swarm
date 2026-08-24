@@ -169,6 +169,7 @@ class LangGraphParallelInvestigator:
                 returned_evidence_ids=tuple(item.evidence_id for item in evidence),
                 tool_call_count=state["tool_call_count"],
             ),
+            evidence_items=tuple(evidence),
             specialist_reports=tuple(reports),
         )
 

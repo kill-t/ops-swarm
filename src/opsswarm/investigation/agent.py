@@ -9,6 +9,7 @@ from opsswarm.investigation.errors import (
     UnverifiedEvidenceReference,
 )
 from opsswarm.investigation.models import (
+    InvestigationArtifacts,
     InvestigationConclusion,
     InvestigationRequest,
     InvestigationRunResult,
@@ -45,6 +46,14 @@ class SingleAgentInvestigator:
 
     async def investigate(self, request: InvestigationRequest) -> InvestigationRunResult:
         """运行工具循环，并拒绝任何未经工具返回的证据引用。"""
+
+        return (await self.investigate_with_evidence(request)).result
+
+    async def investigate_with_evidence(
+        self,
+        request: InvestigationRequest,
+    ) -> InvestigationArtifacts:
+        """返回结论和工具真实观察，供 Worker 原子写入 Evidence Board。"""
 
         collector = EvidenceCollector()
         tools = create_investigation_tools(self._data_source, collector)
@@ -83,10 +92,13 @@ class SingleAgentInvestigator:
         if unknown_ids:
             raise UnverifiedEvidenceReference(unknown_ids)
 
-        return InvestigationRunResult(
-            conclusion=conclusion,
-            returned_evidence_ids=tuple(sorted(collector.returned_ids)),
-            tool_call_count=collector.tool_call_count,
+        return InvestigationArtifacts(
+            result=InvestigationRunResult(
+                conclusion=conclusion,
+                returned_evidence_ids=tuple(sorted(collector.returned_ids)),
+                tool_call_count=collector.tool_call_count,
+            ),
+            evidence_items=collector.evidence_items,
         )
 
     @staticmethod

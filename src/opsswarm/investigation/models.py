@@ -1,11 +1,15 @@
 """调查输入、证据与结构化结论。"""
 
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+
+MAX_EVIDENCE_ATTRIBUTES_BYTES = 16 * 1024
+FindingText = Annotated[str, Field(min_length=1, max_length=500)]
 
 
 class EvidenceKind(StrEnum):
@@ -89,6 +93,22 @@ class EvidenceObservation(StrictModel):
             raise ValueError("observed_at 必须包含时区")
         return value.astimezone(UTC)
 
+    @field_validator("attributes")
+    @classmethod
+    def limit_attributes_size(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """阻止工具把无限制原始日志伪装成证据属性写入业务库。"""
+
+        serialized = json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        if len(serialized) > MAX_EVIDENCE_ATTRIBUTES_BYTES:
+            raise ValueError("attributes 序列化后不能超过 16 KiB")
+        return value
+
 
 class InvestigationRequest(StrictModel):
     """启动一次单 Agent 调查所需的最小事故上下文。"""
@@ -147,6 +167,52 @@ class InvestigationRunResult(StrictModel):
     returned_evidence_ids: tuple[str, ...]
     tool_call_count: int = Field(ge=0)
 
+    @field_validator("returned_evidence_ids")
+    @classmethod
+    def ensure_unique_returned_evidence_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """工具重复返回同一证据时只保留一个业务引用。"""
+
+        if len(set(value)) != len(value):
+            raise ValueError("returned_evidence_ids 不能重复")
+        return value
+
+
+class InvestigationArtifacts(StrictModel):
+    """一次调查实际产生、可进入 Evidence Board 的业务材料。"""
+
+    result: InvestigationRunResult
+    evidence_items: tuple[EvidenceObservation, ...] = Field(min_length=1, max_length=100)
+    specialist_reports: tuple["SpecialistReport", ...] = Field(
+        default_factory=tuple,
+        max_length=10,
+    )
+
+    @model_validator(mode="after")
+    def validate_evidence_references(self) -> Self:
+        """持久化前再次阻断遗漏、重复和跨专业证据引用。"""
+
+        evidence_by_id = {item.evidence_id: item for item in self.evidence_items}
+        if len(evidence_by_id) != len(self.evidence_items):
+            raise ValueError("Evidence Board 的 evidence_id 不能重复")
+
+        returned_ids = set(self.result.returned_evidence_ids)
+        if returned_ids != set(evidence_by_id):
+            raise ValueError("returned_evidence_ids 必须与 Evidence Board 证据完全一致")
+        if set(self.result.conclusion.evidence_ids) - returned_ids:
+            raise ValueError("调查结论引用了 Evidence Board 中不存在的证据")
+
+        specialists = [report.specialist for report in self.specialist_reports]
+        if len(set(specialists)) != len(specialists):
+            raise ValueError("同一次调查不能保存重复专业报告")
+        for report in self.specialist_reports:
+            for evidence_id in report.evidence_ids:
+                evidence = evidence_by_id.get(evidence_id)
+                if evidence is None:
+                    raise ValueError("专业报告引用了 Evidence Board 中不存在的证据")
+                if evidence.kind is not report.specialist:
+                    raise ValueError("专业报告只能引用同类专业证据")
+        return self
+
 
 class InvestigationMetrics(StrictModel):
     """当前基线可离线计算并持久化的核心指标。"""
@@ -163,7 +229,7 @@ class SpecialistReport(StrictModel):
 
     specialist: EvidenceKind
     summary: str = Field(min_length=1, max_length=1000)
-    findings: tuple[str, ...] = Field(min_length=1, max_length=20)
+    findings: tuple[FindingText, ...] = Field(min_length=1, max_length=20)
     evidence_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=20)
     confidence: float = Field(ge=0, le=1)
 
@@ -175,11 +241,10 @@ class SpecialistReport(StrictModel):
         return value
 
 
-class MultiAgentInvestigationResult(StrictModel):
+class MultiAgentInvestigationResult(InvestigationArtifacts):
     """LangGraph 并行调查结果及各专业节点报告。"""
 
-    result: InvestigationRunResult
-    specialist_reports: tuple[SpecialistReport, ...]
+    specialist_reports: tuple[SpecialistReport, ...] = Field(min_length=1, max_length=10)
 
 
 class InvestigationComparison(StrictModel):

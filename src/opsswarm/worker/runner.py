@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 from opsswarm.investigation.models import (
+    EvidenceObservation,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
+    SpecialistReport,
     StrictModel,
     WorkItemError,
     WorkItemKind,
@@ -20,6 +22,8 @@ class ProcessorOutcome(StrictModel):
     """处理器交给持久化层的结构化成功结果。"""
 
     result: InvestigationRunResult
+    evidence_items: tuple[EvidenceObservation, ...]
+    specialist_reports: tuple[SpecialistReport, ...] = ()
     metrics: InvestigationMetrics
     model_name: str
 
@@ -104,6 +108,8 @@ class InvestigationWorker:
             lease_token=lease_token,
             occurred_at=self._clock(),
             result=outcome.result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
             metrics=outcome.metrics,
             model_name=outcome.model_name,
         )

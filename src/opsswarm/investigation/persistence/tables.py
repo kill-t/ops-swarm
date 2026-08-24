@@ -4,7 +4,18 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -165,3 +176,129 @@ class WorkItemRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvidenceItemRow(Base):
+    """经过大小限制和结构化的只读调查证据。"""
+
+    __tablename__ = "evidence_items"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('log', 'metric', 'change')",
+            name="ck_evidence_items_kind",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(attributes) = 'object'",
+            name="ck_evidence_items_attributes_object",
+        ),
+        CheckConstraint(
+            "content_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_evidence_items_content_hash",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            "evidence_key",
+            name="uq_evidence_items_run_key",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            "id",
+            name="uq_evidence_items_run_id",
+        ),
+        Index(
+            "ix_evidence_items_run_kind_observed",
+            "investigation_run_id",
+            "kind",
+            text("observed_at DESC"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("investigation_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    evidence_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SpecialistReportRow(Base):
+    """专业调查节点提交的结构化报告。"""
+
+    __tablename__ = "specialist_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "specialist IN ('log', 'metric', 'change')",
+            name="ck_specialist_reports_specialist",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(findings) = 'array' AND jsonb_array_length(findings) BETWEEN 1 AND 20",
+            name="ck_specialist_reports_findings_array",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_specialist_reports_confidence",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            "specialist",
+            name="uq_specialist_reports_run_specialist",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            "id",
+            name="uq_specialist_reports_run_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("investigation_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    specialist: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    findings: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SpecialistReportEvidenceRow(Base):
+    """在数据库层保证报告只能关联同一次调查的证据。"""
+
+    __tablename__ = "specialist_report_evidence"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["investigation_run_id", "specialist_report_id"],
+            ["specialist_reports.investigation_run_id", "specialist_reports.id"],
+            ondelete="RESTRICT",
+            name="fk_report_evidence_same_run_report",
+        ),
+        ForeignKeyConstraint(
+            ["investigation_run_id", "evidence_item_id"],
+            ["evidence_items.investigation_run_id", "evidence_items.id"],
+            ondelete="RESTRICT",
+            name="fk_report_evidence_same_run_item",
+        ),
+    )
+
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    specialist_report_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    evidence_item_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )

@@ -16,11 +16,16 @@
 | `GET /api/v1/incidents/{id}` | 返回当前 Incident 快照 | 不存在 `404` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
+| `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
 
 开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent` 以保持现有客户端兼容。非法模式返回结构化 `422`。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
+
+### 2.1 Evidence Board 读取语义
+
+Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint。`queued` 或重试中的运行返回当前状态、空结论和空集合；成功运行返回按稳定业务标识排序的证据与专业报告。单 Agent 可以有证据但没有专业报告，多 Agent 同时返回报告及其 `evidence_ids`。每条证据暴露 SHA-256 `content_hash`，用于调用方检测内容漂移，不把它宣传为外部来源签名。
 
 ## 3. 告警幂等 HTTP 语义
 

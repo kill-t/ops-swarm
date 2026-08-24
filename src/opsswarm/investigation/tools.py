@@ -62,16 +62,34 @@ class ServiceHourQuery(BaseModel):
 class EvidenceCollector:
     """记录本轮工具实际暴露给模型的证据，供结论交叉校验。"""
 
-    returned_ids: set[str] = field(default_factory=set)
     tool_call_count: int = 0
+    _observations: dict[str, EvidenceObservation] = field(default_factory=dict, repr=False)
     _lock: Lock = field(default_factory=Lock, repr=False)
+
+    @property
+    def returned_ids(self) -> set[str]:
+        """返回证据标识副本，避免调用方修改收集器内部状态。"""
+
+        with self._lock:
+            return set(self._observations)
+
+    @property
+    def evidence_items(self) -> tuple[EvidenceObservation, ...]:
+        """按稳定标识排序返回本轮真实工具观察。"""
+
+        with self._lock:
+            return tuple(self._observations[key] for key in sorted(self._observations))
 
     def record(self, observations: Sequence[EvidenceObservation]) -> None:
         """并行工具调用时也原子更新本轮统计。"""
 
         with self._lock:
             self.tool_call_count += 1
-            self.returned_ids.update(item.evidence_id for item in observations)
+            for item in observations:
+                existing = self._observations.get(item.evidence_id)
+                if existing is not None and existing != item:
+                    raise ValueError(f"同一 evidence_id 返回了冲突内容：{item.evidence_id}")
+                self._observations[item.evidence_id] = item
 
 
 def _serialize_observations(

@@ -85,6 +85,8 @@ Agent 测试分三层：
 
 持久 Worker 当前通过业务枚举在 LangChain 单 Agent 与 LangGraph 多 Agent 之间确定性路由。多 Agent 处理器先查询线程 checkpoint 是否存在，再决定首次运行或恢复；模式选择不进入模型提示词。
 
+Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlchemy 在当前任务租约事务中写入规范化 Evidence Board。PostgreSQL 复合外键阻止专业报告跨调查引用证据；这类业务完整性不依赖 LangGraph checkpoint 或模型自觉。
+
 ## 5. 可观测性
 
 | 技术 | 目标 |

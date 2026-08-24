@@ -50,3 +50,4 @@
 - [07 - LangGraph 并行调查基线](07-langgraph-parallel-baseline.md)
 - [08 - LangGraph PostgreSQL checkpoint 恢复](08-postgresql-checkpoint-recovery.md)
 - [09 - 多 Agent 持久 Worker 路由](09-multi-agent-worker-routing.md)
+- [10 - Evidence Board 业务持久化](10-evidence-board.md)

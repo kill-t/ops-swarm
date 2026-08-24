@@ -116,9 +116,13 @@ async def test_multi_agent_worker_retries_from_existing_checkpoint(
 
     first_work = await store.get_work_item(started.work_item.id)
     first_run = await store.get_run(started.run.id)
+    first_board = await store.get_evidence_board(started.run.id)
     assert first_work.status is WorkItemStatus.PENDING
     assert first_work.attempt_count == 1
     assert first_run.status is InvestigationRunStatus.QUEUED
+    assert first_board.conclusion is None
+    assert first_board.evidence_items == ()
+    assert first_board.specialist_reports == ()
     assert first_data_source.calls == {
         EvidenceKind.LOG: 1,
         EvidenceKind.METRIC: 1,
@@ -170,3 +174,20 @@ async def test_multi_agent_worker_retries_from_existing_checkpoint(
     assert completed_work.kind is WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION
     assert completed_work.status is WorkItemStatus.COMPLETED
     assert completed_work.attempt_count == 2
+    board = await store.get_evidence_board(started.run.id)
+    assert board.conclusion == completed_run.result.conclusion
+    assert {item.evidence_id for item in board.evidence_items} == {
+        "log-order-runtime-error",
+        "metric-order-error-spike",
+        "change-order-release-rc1",
+    }
+    assert tuple(report.specialist for report in board.specialist_reports) == (
+        EvidenceKind.CHANGE,
+        EvidenceKind.LOG,
+        EvidenceKind.METRIC,
+    )
+    assert {report.specialist: report.evidence_ids for report in board.specialist_reports} == {
+        EvidenceKind.CHANGE: ("change-order-release-rc1",),
+        EvidenceKind.LOG: ("log-order-runtime-error",),
+        EvidenceKind.METRIC: ("metric-order-error-spike",),
+    }

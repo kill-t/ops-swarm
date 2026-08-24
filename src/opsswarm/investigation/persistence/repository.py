@@ -1,7 +1,10 @@
-"""调查运行与 PostgreSQL 租约任务仓储。"""
+"""调查运行、Evidence Board 与 PostgreSQL 租约任务仓储。"""
 
+import hashlib
+import json
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,11 +20,15 @@ from opsswarm.investigation.errors import (
 )
 from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
+    EvidenceKind,
+    EvidenceObservation,
+    InvestigationArtifacts,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
     InvestigationRunStatus,
+    SpecialistReport,
     WorkItemError,
     WorkItemKind,
     WorkItemStatus,
@@ -29,10 +36,19 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.persistence.records import (
     ClaimedInvestigation,
     StartedInvestigation,
+    StoredEvidenceBoard,
+    StoredEvidenceItem,
     StoredInvestigationRun,
+    StoredSpecialistReport,
     StoredWorkItem,
 )
-from opsswarm.investigation.persistence.tables import InvestigationRunRow, WorkItemRow
+from opsswarm.investigation.persistence.tables import (
+    EvidenceItemRow,
+    InvestigationRunRow,
+    SpecialistReportEvidenceRow,
+    SpecialistReportRow,
+    WorkItemRow,
+)
 
 DEFAULT_PROMPT_VERSION = "single-agent-v1"
 MULTI_AGENT_PROMPT_VERSION = "multi-agent-parallel-v1"
@@ -132,6 +148,60 @@ class InvestigationStore:
             if row is None:
                 raise InvestigationRunNotFound(run_id)
             return _stored_run(row)
+
+    async def get_evidence_board(self, run_id: UUID) -> StoredEvidenceBoard:
+        """读取按稳定顺序组装的证据、专业报告及其引用。"""
+
+        async with self._session_factory() as session:
+            run_row = await session.get(InvestigationRunRow, run_id)
+            if run_row is None:
+                raise InvestigationRunNotFound(run_id)
+
+            evidence_rows = list(
+                await session.scalars(
+                    select(EvidenceItemRow)
+                    .where(EvidenceItemRow.investigation_run_id == run_id)
+                    .order_by(EvidenceItemRow.evidence_key)
+                )
+            )
+            report_rows = list(
+                await session.scalars(
+                    select(SpecialistReportRow)
+                    .where(SpecialistReportRow.investigation_run_id == run_id)
+                    .order_by(SpecialistReportRow.specialist)
+                )
+            )
+            link_rows = list(
+                await session.scalars(
+                    select(SpecialistReportEvidenceRow).where(
+                        SpecialistReportEvidenceRow.investigation_run_id == run_id
+                    )
+                )
+            )
+            evidence_key_by_id = {row.id: row.evidence_key for row in evidence_rows}
+            evidence_ids_by_report: defaultdict[UUID, list[str]] = defaultdict(list)
+            for link in link_rows:
+                evidence_ids_by_report[link.specialist_report_id].append(
+                    evidence_key_by_id[link.evidence_item_id]
+                )
+
+            return StoredEvidenceBoard(
+                investigation_run_id=run_id,
+                status=InvestigationRunStatus(run_row.status),
+                conclusion=(
+                    InvestigationRunResult.model_validate(run_row.result).conclusion
+                    if run_row.result is not None
+                    else None
+                ),
+                evidence_items=tuple(_stored_evidence_item(row) for row in evidence_rows),
+                specialist_reports=tuple(
+                    _stored_specialist_report(
+                        row,
+                        evidence_ids=tuple(sorted(evidence_ids_by_report[row.id])),
+                    )
+                    for row in report_rows
+                ),
+            )
 
     async def get_work_item(self, work_item_id: UUID) -> StoredWorkItem:
         """读取一个持久任务。"""
@@ -251,6 +321,8 @@ class InvestigationStore:
         lease_token: UUID,
         occurred_at: datetime,
         result: InvestigationRunResult,
+        evidence_items: tuple[EvidenceObservation, ...],
+        specialist_reports: tuple[SpecialistReport, ...],
         metrics: InvestigationMetrics,
         model_name: str,
     ) -> StoredInvestigationRun:
@@ -260,6 +332,11 @@ class InvestigationStore:
         model_name = model_name.strip()
         if not model_name or len(model_name) > 200:
             raise ValueError("model_name 长度必须在 1 到 200 之间")
+        artifacts = InvestigationArtifacts(
+            result=result,
+            evidence_items=evidence_items,
+            specialist_reports=specialist_reports,
+        )
 
         async with self._session_factory() as session, session.begin():
             work_row = await _locked_work_item(session, work_item_id)
@@ -279,6 +356,12 @@ class InvestigationStore:
             run_row.last_error = None
             run_row.completed_at = occurred_at
             run_row.updated_at = occurred_at
+            await _persist_evidence_board(
+                session,
+                run_id=run_row.id,
+                artifacts=artifacts,
+                created_at=occurred_at,
+            )
             await session.flush()
             return _stored_run(run_row)
 
@@ -322,6 +405,71 @@ class InvestigationStore:
                 run_row.updated_at = occurred_at
             await session.flush()
             return _stored_work_item(work_row)
+
+
+async def _persist_evidence_board(
+    session: AsyncSession,
+    *,
+    run_id: UUID,
+    artifacts: InvestigationArtifacts,
+    created_at: datetime,
+) -> None:
+    """在调查完成事务中写入规范化证据和专业报告。"""
+
+    evidence_rows = {
+        item.evidence_id: EvidenceItemRow(
+            id=uuid5(run_id, f"evidence:{item.evidence_id}"),
+            investigation_run_id=run_id,
+            evidence_key=item.evidence_id,
+            kind=item.kind.value,
+            source=item.source,
+            summary=item.summary,
+            observed_at=item.observed_at,
+            attributes=item.attributes,
+            content_hash=_evidence_content_hash(item),
+            created_at=created_at,
+        )
+        for item in artifacts.evidence_items
+    }
+    report_rows = {
+        report.specialist: SpecialistReportRow(
+            id=uuid5(run_id, f"specialist-report:{report.specialist.value}"),
+            investigation_run_id=run_id,
+            specialist=report.specialist.value,
+            summary=report.summary,
+            findings=list(report.findings),
+            confidence=report.confidence,
+            created_at=created_at,
+        )
+        for report in artifacts.specialist_reports
+    }
+    session.add_all([*evidence_rows.values(), *report_rows.values()])
+    await session.flush()
+
+    session.add_all(
+        [
+            SpecialistReportEvidenceRow(
+                investigation_run_id=run_id,
+                specialist_report_id=report_rows[report.specialist].id,
+                evidence_item_id=evidence_rows[evidence_id].id,
+            )
+            for report in artifacts.specialist_reports
+            for evidence_id in report.evidence_ids
+        ]
+    )
+
+
+def _evidence_content_hash(item: EvidenceObservation) -> str:
+    """对规范化内容计算稳定摘要，不把数据库标识或采集时间混入。"""
+
+    canonical = json.dumps(
+        item.model_dump(mode="json"),
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _normalize_time(value: datetime, *, field_name: str) -> datetime:
@@ -433,4 +581,36 @@ def _stored_work_item(row: WorkItemRow) -> StoredWorkItem:
         created_at=row.created_at,
         updated_at=row.updated_at,
         completed_at=row.completed_at,
+    )
+
+
+def _stored_evidence_item(row: EvidenceItemRow) -> StoredEvidenceItem:
+    return StoredEvidenceItem(
+        id=row.id,
+        investigation_run_id=row.investigation_run_id,
+        evidence_id=row.evidence_key,
+        kind=EvidenceKind(row.kind),
+        source=row.source,
+        summary=row.summary,
+        observed_at=row.observed_at,
+        attributes=row.attributes,
+        content_hash=row.content_hash,
+        created_at=row.created_at,
+    )
+
+
+def _stored_specialist_report(
+    row: SpecialistReportRow,
+    *,
+    evidence_ids: tuple[str, ...],
+) -> StoredSpecialistReport:
+    return StoredSpecialistReport(
+        id=row.id,
+        investigation_run_id=row.investigation_run_id,
+        specialist=EvidenceKind(row.specialist),
+        summary=row.summary,
+        findings=tuple(row.findings),
+        evidence_ids=evidence_ids,
+        confidence=row.confidence,
+        created_at=row.created_at,
     )

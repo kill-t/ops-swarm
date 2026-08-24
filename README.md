@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复和多 Agent Worker 路由。API 现在可以显式选择单 Agent 或多 Agent；多 Agent 任务失败后由后续 Worker 从同一 checkpoint 恢复。Evidence Board、SSE 和前端尚未接入。
+项目已交付十个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由和 Evidence Board。API 可以显式选择单 Agent 或多 Agent；多 Agent 任务失败后由后续 Worker 从同一 checkpoint 恢复，成功后把证据和专业报告作为业务事实原子落库。证据质疑、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -39,6 +39,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [LangGraph 并行调查基线](docs/architecture/08-langgraph-parallel-baseline.md)
 - [LangGraph PostgreSQL checkpoint 恢复](docs/architecture/09-postgresql-checkpoint-recovery.md)
 - [多 Agent 持久 Worker 路由](docs/architecture/10-multi-agent-worker-routing.md)
+- [Evidence Board 持久化](docs/architecture/11-evidence-board.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -54,7 +55,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint 和多模式 Worker。下一阶段建立 Evidence Board，把证据和专业报告从最终 JSON 结果中拆出为可审查业务事实。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker 和 Evidence Board。下一阶段在已提交证据上建立根因假设、支持/反驳关系与质疑节点。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -120,6 +121,18 @@ uv run python -m opsswarm.worker.main
 ```
 
 当前两种处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路，不代表真实监控系统已经接入。
+
+## Evidence Board
+
+Worker 只有持有有效任务租约时，才能在同一 PostgreSQL 事务中完成调查运行、持久任务、规范化证据和专业报告。单 Agent 保存工具实际返回的证据；多 Agent 额外保存日志、指标和变更专业报告及其引用关系。数据库复合外键禁止报告跨调查引用证据。
+
+查询已提交的 Evidence Board：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-board
+```
+
+运行中或重试中的 LangGraph 节点输出只属于 checkpoint，不会被该接口提前作为业务事实返回。
 
 ## Incident 领域状态机
 

@@ -5,6 +5,7 @@ from opsswarm.investigation.evaluation import compare_investigation_modes, evalu
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    InvestigationArtifacts,
     InvestigationComparison,
     InvestigationConclusion,
     InvestigationMetrics,
@@ -24,6 +25,7 @@ from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
 __all__ = [
     "EvidenceKind",
     "EvidenceObservation",
+    "InvestigationArtifacts",
     "InvestigationComparison",
     "InvestigationConclusion",
     "InvestigationMetrics",

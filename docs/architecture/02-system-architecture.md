@@ -42,8 +42,8 @@ API 与 Worker 是两个独立进程，但共享同一个 Python 包中的领域
 | 模块 | 职责 | 不负责 |
 | --- | --- | --- |
 | Incident | 告警幂等、事故聚合、状态机、时间线 | 模型推理和生产操作 |
-| Investigation | 调查运行、任务拆分、Worker 调度 | 保存最终业务证据 |
-| Evidence | 证据、假设、支持或反驳关系 | 任意修改原始遥测数据 |
+| Investigation | 调查运行、任务拆分、Worker 调度和结构化材料校验 | 任意修改原始遥测数据 |
+| Evidence | 证据、专业报告、引用关系；后续承载假设关系 | 模型 checkpoint 和处置执行 |
 | Planning | 根因结论、处置计划、风险标记 | 直接执行计划 |
 | Approval | 审批请求、决定、审批有效期 | 调用模型代替人工审批 |
 | Execution | 白名单、参数校验、幂等执行、审计 | 任意 Shell 和未登记动作 |
@@ -80,11 +80,13 @@ sequenceDiagram
     Worker->>Graph: 使用 graph_thread_id 启动或恢复
     Graph->>Tool: 查询日志、指标、变更
     Tool-->>Graph: 返回带来源的结构化结果
-    Graph->>DB: 保存证据与运行事件
-    Worker->>DB: 完成任务或记录重试时间
+    Graph-->>Worker: 返回结论、证据和专业报告
+    Worker->>DB: 同事务保存 Evidence Board 并完成任务，或记录重试时间
 ```
 
 `work_items` 使用租约字段 `locked_by`、`locked_until` 和重试计数实现至少一次处理。业务写入和外部动作必须使用幂等键，Worker 崩溃后其他实例才能安全接管。
+
+调查成功提交时，Worker 必须仍持有有效租约。`investigation_runs`、`work_items`、`evidence_items`、`specialist_reports` 和报告—证据关联在同一事务更新。checkpoint 中的中间节点输出不会被 API 当作业务 Evidence Board 返回。
 
 ### 4.3 审批与执行
 
@@ -123,6 +125,8 @@ LangGraph 1.x 用于：
 
 当前并行图已经接入持久 Worker。API 把 `single_agent` 或 `multi_agent` 作为业务模式落库，Worker 同时校验对应任务类型。多 Agent 运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`：如果 checkpoint 不存在则提交初始状态，存在则使用同一线程和空输入恢复。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。
 
+单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
+
 ## 6. PostgreSQL 任务与 SSE
 
 - 控制面不引入专用 Redis 队列，避免演练环境 Redis 故障影响控制面，也减少 MVP 基础设施。
@@ -156,6 +160,7 @@ LangGraph 1.x 用于：
 | `GET /api/v1/incidents/{id}` | 查询 Incident 详情和当前版本 |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单 Agent 或多 Agent |
 | `GET /api/v1/investigations/{run_id}` | 查询调查运行、结果、指标与错误 |
+| `GET /api/v1/investigations/{run_id}/evidence-board` | 查询已提交的结论、规范化证据、专业报告和引用 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 后续阶段提供可重放 SSE |
 | `GET /orders/{id}` | 演练订单查询 |

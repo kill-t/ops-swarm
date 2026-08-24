@@ -33,6 +33,9 @@ erDiagram
     INVESTIGATION_RUNS ||--o{ INVESTIGATION_TASKS : contains
     INVESTIGATION_TASKS ||--o{ TOOL_CALLS : invokes
     INVESTIGATION_RUNS ||--o{ EVIDENCE_ITEMS : collects
+    INVESTIGATION_RUNS ||--o{ SPECIALIST_REPORTS : produces
+    SPECIALIST_REPORTS ||--o{ SPECIALIST_REPORT_EVIDENCE : cites
+    EVIDENCE_ITEMS ||--o{ SPECIALIST_REPORT_EVIDENCE : referenced_by
     INVESTIGATION_RUNS ||--o{ HYPOTHESES : proposes
     HYPOTHESES ||--o{ HYPOTHESIS_EVIDENCE : evaluates
     EVIDENCE_ITEMS ||--o{ HYPOTHESIS_EVIDENCE : supports_or_refutes
@@ -63,7 +66,9 @@ erDiagram
 | `investigation_runs` | 一次单 Agent 或多 Agent 调查及 `graph_thread_id` |
 | `investigation_tasks` | 日志、指标、变更等调查子任务 |
 | `tool_calls` | 工具输入摘要、状态、耗时、错误和成本 |
-| `evidence_items` | 带来源、采集时间、哈希和可信度的证据 |
+| `evidence_items` | 带来源、观察时间、内容摘要和哈希的规范化证据 |
+| `specialist_reports` | 日志、指标和变更专业节点的结构化报告 |
+| `specialist_report_evidence` | 保证报告只引用同一次调查的同类证据 |
 | `hypotheses` | 根因假设、置信度和验证状态 |
 | `hypothesis_evidence` | 证据对假设的支持或反驳关系 |
 
@@ -83,7 +88,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-第一阶段只创建 `incidents`、`alerts` 和 `incident_events`。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表，以及 Evidence Board 三表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -182,6 +187,28 @@ erDiagram
 
 任务类型当前支持 `run_single_agent_investigation` 和 `run_multi_agent_investigation`。应用在创建任务时由 `mode` 确定类型，Worker 处理前再次校验两者一致，不能让模型或提示词选择执行路径。
 
+### 4.6 evidence_items
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识 | UUID 主键；`(investigation_run_id, evidence_key)` 唯一 |
+| 分类与来源 | `kind` 限定日志、指标、变更；保存受限来源名称 |
+| 内容 | 最多 500 字摘要和必须为对象、序列化后不超过 16 KiB 的 `attributes` JSONB，不保存无限制原始日志 |
+| 完整性 | 保存规范化证据内容的 64 位 SHA-256 十六进制摘要 |
+| 时间 | 证据观察时间与业务库创建时间均使用 `TIMESTAMPTZ` |
+
+证据数据库 ID 使用 `run_id` 与 `evidence_key` 推导的 UUID5。内容哈希用于检测保存内容漂移，不代替外部来源签名或可信采集证明。
+
+### 4.7 specialist_reports
+
+每份报告关联一次调查，并以 `(investigation_run_id, specialist)` 保证每类专业节点最多一份。`findings` 必须是包含 1～20 项的 JSONB 数组，`confidence` 限定在 0～1。单 Agent 没有专业报告，但使用相同 `evidence_items` 物理模型。
+
+### 4.8 specialist_report_evidence
+
+关联表保存运行 ID、报告 ID 和证据 ID。报告和证据各自额外提供 `(investigation_run_id, id)` 唯一键，关联表通过两个复合外键强制三者属于同一次调查。应用层还会校验报告只能引用相同 `kind` 的证据。
+
+调查完成时，当前租约校验、运行与任务终态更新、证据、专业报告和关联必须在同一事务提交。失败或重试中的 checkpoint 输出不提前进入业务表。
+
 ## 5. Incident 状态机
 
 ```mermaid
@@ -255,7 +282,7 @@ flowchart TD
 ## 7. 后续物理设计原则
 
 - `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`。
-- `evidence_items` 保存来源 URI、时间范围、内容摘要、哈希和采集工具，不直接塞入无限制原始日志。
+- 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - `hypothesis_evidence` 明确关系是支持还是反驳，避免只保存 Agent 最终结论。
 - `action_plans` 必须版本化；审批绑定精确版本，计划变化后旧审批失效。
 - `operation_executions.idempotency_key` 唯一，重复调用返回已有结果。
