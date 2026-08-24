@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机，以及 PostgreSQL 事故持久化。当前已经能幂等接收告警、按指纹并发聚合 Incident、原子保存状态和审计事件，并在数据库重连后恢复；Incident API、LLM 和前端尚未接入。
+项目已交付四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化和 FastAPI 控制面。当前可以通过 HTTP 幂等接收告警、分页查询 Incident、开始调查并按游标读取时间线；LLM、调查 Worker、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -33,6 +33,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [系统架构](docs/architecture/02-system-architecture.md)
 - [技术栈选型](docs/architecture/03-technology-stack.md)
 - [数据库设计](docs/architecture/04-database-design.md)
+- [API 设计](docs/architecture/05-api-design.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -47,7 +48,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 评测集以及单 Agent、多 Agent 对比。
 9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化和不可变时间线。下一切片将把这些能力通过 FastAPI 暴露为告警接收、Incident 查询、状态动作和事件查询接口。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化、不可变时间线和 FastAPI 控制面。下一阶段开始建立不依赖多 Agent 的单 Agent 调查基线。
 
 ## Incident 领域状态机
 
@@ -68,6 +69,37 @@ uv run alembic current
 ```
 
 默认连接只服务本地开发，可通过 `OPSSWARM_DATABASE_URL` 覆盖。停止容器使用 `docker compose down`；命名卷会保留数据库内容，用于验证重启恢复。
+
+## 运行控制面 API
+
+业务库迁移完成后启动只绑定本机的控制面：
+
+```powershell
+uv run uvicorn opsswarm.control_plane.main:app --host 127.0.0.1 --port 8000
+```
+
+接口文档位于 `http://127.0.0.1:8000/docs`。接收一条演练告警：
+
+```powershell
+$alertBody = @{
+  source = "fault-simulator"
+  external_event_id = "alert-001"
+  fingerprint = "order-service:http-500"
+  service_name = "order-service"
+  severity = "p1"
+  title = "订单接口大量返回 500"
+  payload = @{ status_code = 500 }
+  occurred_at = "2026-01-01T08:00:00+08:00"
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/alerts `
+  -ContentType "application/json" `
+  -Body $alertBody
+```
+
+当前控制面没有登录和权限系统，仅允许本地演练使用。请求中的 `actor_id` 只是审计声明，不是可信身份凭据。
 
 ## 运行故障模拟切片
 

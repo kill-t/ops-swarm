@@ -58,7 +58,7 @@ API 与 Worker 是两个独立进程，但共享同一个 Python 包中的领域
 ### 4.1 告警与 Incident
 
 1. 告警源调用 `POST /api/v1/alerts`。
-2. API 先根据 `(source, external_event_id)` 判断完全重复。
+2. API 校验输入后，由 Incident 仓储根据 `(source, external_event_id)` 判断完全重复。
 3. 新告警根据 `fingerprint` 查找未关闭 Incident；找到则聚合，找不到则创建。
 4. 告警、Incident 变更和 `incident_events` 在同一事务提交。
 5. API 返回 Incident 标识以及是否发生去重。
@@ -145,12 +145,12 @@ LangGraph 1.x 用于：
 
 ## 8. 接口边界
 
-首个可运行切片预留：
+当前已实现的控制面接口：
 
 | 方法与路径 | 行为 |
 | --- | --- |
 | `POST /api/v1/alerts` | 幂等接收告警；新告警返回 `201`，完全重复返回 `200` |
-| `GET /api/v1/incidents` | 按状态、严重级别和时间分页查询 |
+| `GET /api/v1/incidents` | 按状态筛选，使用展示序号倒序游标分页 |
 | `GET /api/v1/incidents/{id}` | 查询 Incident 详情和当前版本 |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 从 `open` 开始调查，必须提供 `expected_version` |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
@@ -158,7 +158,7 @@ LangGraph 1.x 用于：
 | `GET /orders/{id}` | 演练订单查询 |
 | `PUT /__admin/faults/release-500` | 在演练环境启用或关闭确定性 500 故障 |
 
-非法状态迁移、过期版本或冲突操作统一返回 `409 Conflict`。请求校验错误返回 `422`。错误响应后续统一包含稳定错误码、中文消息和追踪标识。
+非法状态迁移、过期版本或冲突操作统一返回 `409 Conflict`。请求校验错误返回 `422`。当前领域错误响应包含稳定错误码、中文消息和结构化详情；追踪标识将在可观测性切片统一加入。
 
 ## 9. 部署与安全边界
 

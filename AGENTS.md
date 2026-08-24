@@ -1,6 +1,6 @@
 # OpsSwarm 项目协作约定
 
-本文件保存对整个仓库长期有效的协作规则。详细产品与架构设计以 [项目章程](docs/architecture/01-project-charter.md)、[系统架构](docs/architecture/02-system-architecture.md)、[技术栈](docs/architecture/03-technology-stack.md) 和 [数据库设计](docs/architecture/04-database-design.md) 为准。
+本文件保存对整个仓库长期有效的协作规则。详细产品与架构设计以 [项目章程](docs/architecture/01-project-charter.md)、[系统架构](docs/architecture/02-system-architecture.md)、[技术栈](docs/architecture/03-technology-stack.md)、[数据库设计](docs/architecture/04-database-design.md) 和 [API 设计](docs/architecture/05-api-design.md) 为准。
 
 ## 项目边界
 

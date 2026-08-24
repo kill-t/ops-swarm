@@ -66,6 +66,31 @@ class IncidentStore:
                 raise IncidentNotFound(str(incident_id))
             return _stored_incident(row)
 
+    async def list_incidents(
+        self,
+        *,
+        status: IncidentStatus | None = None,
+        before_display_number: int | None = None,
+        limit: int = 50,
+    ) -> Sequence[StoredIncident]:
+        """按展示序号倒序读取稳定的 Incident 游标分页。"""
+
+        if before_display_number is not None and before_display_number < 1:
+            raise ValueError("before_display_number 必须大于等于 1")
+        if not 1 <= limit <= 500:
+            raise ValueError("limit 必须在 1 到 500 之间")
+
+        statement = select(IncidentRow)
+        if status is not None:
+            statement = statement.where(IncidentRow.status == status.value)
+        if before_display_number is not None:
+            statement = statement.where(IncidentRow.display_number < before_display_number)
+        statement = statement.order_by(IncidentRow.display_number.desc()).limit(limit)
+
+        async with self._session_factory() as session:
+            rows = (await session.scalars(statement)).all()
+            return tuple(_stored_incident(row) for row in rows)
+
     async def transition(
         self,
         incident_id: UUID,

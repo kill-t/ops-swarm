@@ -44,3 +44,4 @@
 - [01 - 确定性版本 500 故障模拟](01-deterministic-release-500-fault.md)
 - [02 - Incident 纯领域状态机](02-incident-domain-state-machine.md)
 - [03 - PostgreSQL 事故持久化](03-postgresql-incident-persistence.md)
+- [04 - FastAPI 事故控制面](04-fastapi-incident-control-plane.md)
