@@ -35,6 +35,16 @@ from opsswarm.investigation.persistence.records import (
 from opsswarm.investigation.persistence.tables import InvestigationRunRow, WorkItemRow
 
 DEFAULT_PROMPT_VERSION = "single-agent-v1"
+MULTI_AGENT_PROMPT_VERSION = "multi-agent-parallel-v1"
+
+_PROMPT_VERSION_BY_MODE = {
+    InvestigationMode.SINGLE_AGENT: DEFAULT_PROMPT_VERSION,
+    InvestigationMode.MULTI_AGENT: MULTI_AGENT_PROMPT_VERSION,
+}
+_WORK_KIND_BY_MODE = {
+    InvestigationMode.SINGLE_AGENT: WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION,
+    InvestigationMode.MULTI_AGENT: WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION,
+}
 
 
 class InvestigationStore:
@@ -52,6 +62,7 @@ class InvestigationStore:
         actor: IncidentActor,
         reason: str,
         max_attempts: int = 3,
+        mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
     ) -> StartedInvestigation:
         """在同一事务中迁移 Incident、创建运行并投递持久任务。"""
 
@@ -69,13 +80,16 @@ class InvestigationStore:
                 actor=actor,
                 reason=reason,
             )
+            run_id = uuid4()
             run_row = InvestigationRunRow(
-                id=uuid4(),
+                id=run_id,
                 incident_id=incident_id,
-                mode=InvestigationMode.SINGLE_AGENT.value,
+                mode=mode.value,
                 status=InvestigationRunStatus.QUEUED.value,
-                prompt_version=DEFAULT_PROMPT_VERSION,
-                graph_thread_id=None,
+                prompt_version=_PROMPT_VERSION_BY_MODE[mode],
+                graph_thread_id=(
+                    build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
+                ),
                 model_name=None,
                 result=None,
                 metrics=None,
@@ -88,7 +102,7 @@ class InvestigationStore:
             work_row = WorkItemRow(
                 id=uuid4(),
                 investigation_run_id=run_row.id,
-                kind=WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION.value,
+                kind=_WORK_KIND_BY_MODE[mode].value,
                 status=WorkItemStatus.PENDING.value,
                 idempotency_key=f"start-investigation:{incident_id}:{incident.incident.version}",
                 available_at=occurred_at,

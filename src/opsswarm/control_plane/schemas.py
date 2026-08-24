@@ -73,6 +73,7 @@ class StartInvestigationRequest(StrictApiModel):
     expected_version: int = Field(ge=1)
     actor_id: str = Field(min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
+    mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
 
 
 class InvestigationRunResponse(StrictApiModel):

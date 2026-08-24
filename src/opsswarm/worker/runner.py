@@ -6,10 +6,12 @@ from typing import Protocol
 
 from opsswarm.investigation.models import (
     InvestigationMetrics,
+    InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
     StrictModel,
     WorkItemError,
+    WorkItemKind,
 )
 from opsswarm.investigation.persistence import InvestigationStore
 
@@ -22,10 +24,19 @@ class ProcessorOutcome(StrictModel):
     model_name: str
 
 
+class ProcessorContext(StrictModel):
+    """Worker 交给处理器的持久路由上下文。"""
+
+    request: InvestigationRequest
+    mode: InvestigationMode
+    work_item_kind: WorkItemKind
+    graph_thread_id: str | None
+
+
 class InvestigationProcessor(Protocol):
     """隔离 LangChain、假模型和未来 LangGraph 处理器。"""
 
-    async def process(self, request: InvestigationRequest) -> ProcessorOutcome:
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
         """调查一个事故并返回可持久化结果。"""
 
 
@@ -70,7 +81,14 @@ class InvestigationWorker:
             raise RuntimeError("已领取任务缺少 lease_token")
 
         try:
-            outcome = await self._processor.process(claimed.request)
+            outcome = await self._processor.process(
+                ProcessorContext(
+                    request=claimed.request,
+                    mode=claimed.run.mode,
+                    work_item_kind=claimed.work_item.kind,
+                    graph_thread_id=claimed.run.graph_thread_id,
+                )
+            )
         except Exception as error:
             await self._store.fail(
                 claimed.work_item.id,

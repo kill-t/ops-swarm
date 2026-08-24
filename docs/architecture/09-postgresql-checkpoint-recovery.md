@@ -96,13 +96,12 @@ OpsSwarm 显式允许调查请求、证据、专业报告、结论及其枚举�
 
 ## 8. 当前限制与下一步
 
-- 现有 API 仍只创建 `single_agent` 运行和任务。
-- 现有 Worker 尚未打开 checkpointer，也不会调用 `resume()`。
+- API 与 Worker 已支持 `single_agent`、`multi_agent` 两种持久模式；多 Agent 重试会查询并恢复 checkpoint。
 - checkpoint 尚无过期清理、容量观测、备份和加密策略。
 - checkpoint 保存恢复状态，但最终结论、证据、审批和执行审计仍必须写业务库。
 - 冻结数据源当前为同步接口，接真实遥测前要增加异步超时和取消策略。
 
-下一切片增加显式 `multi_agent` 调查模式和对应持久任务类型，让 Worker 根据业务运行模式选择单 Agent 或 LangGraph 处理器，并用当前 `graph_thread_id` 完成失败重试后的恢复。
+多 Agent Worker 路由已在下一切片完成；后续建立 Evidence Board，持久化各专业报告和证据，而不是只保存最终结果 JSON。
 
 ## 9. 面试表达
 

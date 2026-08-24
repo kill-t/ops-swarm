@@ -102,6 +102,7 @@ class LangGraphParallelInvestigator:
         )
         builder.add_edge("synthesize", END)
         self._has_checkpointer = checkpointer is not None
+        self._checkpointer = checkpointer
         self._workflow = builder.compile(
             checkpointer=checkpointer,
             name="parallel_investigation",
@@ -136,6 +137,14 @@ class LangGraphParallelInvestigator:
             config=self._execution_config(thread_id),
         )
         return self._build_result(cast(_GraphState, state))
+
+    async def has_checkpoint(self, *, thread_id: str) -> bool:
+        """判断线程是否已经写入至少一个可恢复 checkpoint。"""
+
+        if self._checkpointer is None:
+            raise RuntimeError("当前并行调查图没有配置 checkpointer")
+        config = self._execution_config(thread_id)
+        return await self._checkpointer.aget_tuple(config) is not None
 
     def _execution_config(self, thread_id: str | None) -> RunnableConfig:
         config: RunnableConfig = {"max_concurrency": 3}

@@ -160,7 +160,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | 当前 `mode=single_agent`，保存 `prompt_version`；`graph_thread_id` 已用于关联独立 checkpoint 数据库，Worker 多模式将在下一切片接入 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent` 并保存对应 `prompt_version`；多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |
@@ -179,6 +179,8 @@ erDiagram
 | 时间 | 创建、更新和终态完成时间 |
 
 领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
+
+任务类型当前支持 `run_single_agent_investigation` 和 `run_multi_agent_investigation`。应用在创建任务时由 `mode` 确定类型，Worker 处理前再次校验两者一致，不能让模型或提示词选择执行路径。
 
 ## 5. Incident 状态机
 

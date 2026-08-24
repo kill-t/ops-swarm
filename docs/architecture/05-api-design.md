@@ -20,6 +20,8 @@
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
 
+开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent` 以保持现有客户端兼容。非法模式返回结构化 `422`。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
+
 ## 3. 告警幂等 HTTP 语义
 
 `POST /api/v1/alerts` 的状态码描述“外部告警是否首次接收”，不描述“是否创建新 Incident”：

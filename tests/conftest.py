@@ -4,10 +4,13 @@ import sys
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 
+import psycopg
 import pytest
 import pytest_asyncio
 from alembic.config import Config
+from psycopg import sql
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
@@ -47,6 +50,24 @@ def migrated_database_url() -> Iterator[str]:
                 os.environ.pop("OPSSWARM_DATABASE_URL", None)
             else:
                 os.environ["OPSSWARM_DATABASE_URL"] = previous_url
+
+
+@pytest.fixture(scope="session")
+def checkpoint_database_url(migrated_database_url: str) -> Iterator[str]:
+    """在同一临时 PostgreSQL 实例中创建隔离的 checkpoint 数据库。"""
+
+    source_url = make_url(migrated_database_url)
+    checkpoint_name = "opsswarm_checkpoints"
+    admin_url = source_url.set(drivername="postgresql", database="postgres").render_as_string(
+        hide_password=False
+    )
+    checkpoint_url = source_url.set(
+        drivername="postgresql",
+        database=checkpoint_name,
+    ).render_as_string(hide_password=False)
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(checkpoint_name)))
+    yield checkpoint_url
 
 
 @pytest_asyncio.fixture

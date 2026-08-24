@@ -4,7 +4,7 @@
 
 单 Agent 基线已经证明工具循环和离线评测可以重复运行，但进程内调用无法抵抗 API 或 Worker 重启。本阶段把“开始调查”变成一个持久化业务动作：Incident 状态、调查运行和待处理任务在同一个 PostgreSQL 事务中创建，再由独立 Worker 领取。
 
-当前只运行 `single_agent` 模式。LangGraph、多 Agent、常驻轮询、SSE 和真实观测平台不进入本切片。
+初始切片只运行 `single_agent`；当前已经在相同任务租约边界内增加 `multi_agent` 模式和 checkpoint 恢复。常驻轮询、SSE 和真实观测平台仍未实现。
 
 ## 2. 事务与进程边界
 
@@ -19,12 +19,12 @@ sequenceDiagram
     DB-->>API: incident + investigation + work_item
     Worker->>DB: FOR UPDATE SKIP LOCKED 领取并写入租约令牌
     DB-->>Worker: Incident 最小上下文和租约
-    Worker->>Processor: process(InvestigationRequest)
+    Worker->>Processor: process(ProcessorContext)
     Processor-->>Worker: 结构化结果与评测指标
     Worker->>DB: 携带租约令牌提交成功或失败
 ```
 
-API 只负责快速投递，不在请求进程中调用模型。Worker 和 API 共享领域模型及业务数据库，但分别创建、释放数据库连接池。调查处理器通过 `InvestigationProcessor` 协议注入，因此测试可以使用假处理器，当前实现可以使用 LangChain 单 Agent，后续也可以替换为 LangGraph。
+API 只负责快速投递，不在请求进程中调用模型。Worker 和 API 共享领域模型及业务数据库，但分别创建、释放数据库连接池。`ProcessorContext` 同时携带请求、模式、持久任务类型和 `graph_thread_id`；确定性路由器选择 LangChain 单 Agent 或 LangGraph 多 Agent，测试仍可通过 `InvestigationProcessor` 协议注入假处理器。
 
 ## 3. 持久状态
 
@@ -45,7 +45,7 @@ queued → running → succeeded
 - `succeeded`：结构化调查结果已经落库。
 - `failed`：重试次数耗尽，或最后一次租约到期且无法确认结果。
 
-运行保存模式、提示版本、实际模型名、结果、离线指标、有限错误摘要和生命周期时间。`graph_thread_id` 预留给 LangGraph，但当前保持为空。
+运行保存模式、提示版本、实际模型名、结果、离线指标、有限错误摘要和生命周期时间。单 Agent 的 `graph_thread_id` 默认为空；多 Agent 创建时必须原子写入确定性线程 ID。
 
 ### 3.2 work_items
 
@@ -75,7 +75,7 @@ Worker 提交结果必须同时匹配任务状态、租约令牌和租约有效�
 
 ## 5. API 契约
 
-`POST /api/v1/incidents/{id}/actions/start-investigation` 仍要求 `expected_version`、`actor_id` 和原因，但响应现在同时包含：
+`POST /api/v1/incidents/{id}/actions/start-investigation` 仍要求 `expected_version`、`actor_id` 和原因，并允许可选 `mode`，响应同时包含：
 
 - 迁移到 `investigating` 的 Incident 快照。
 - 状态为 `queued` 的 Investigation 快照。
@@ -107,11 +107,11 @@ uv run python -m opsswarm.worker.main
 
 - Worker 是单次命令，没有轮询间隔、信号处理、心跳或优雅停机。
 - `investigation_runs.result` 暂以受 Pydantic 校验的 JSONB 保存；Evidence Board 还未拆分为独立证据表。
-- 当前只有单 Agent 处理器和冻结数据源，没有 LangGraph checkpoint。
+- 单 Agent 和多 Agent 处理器都仍使用冻结数据源，尚未接真实遥测平台。
 - API 没有身份认证，开始调查的 `actor_id` 仍是不可信审计声明。
 - 尚未通过 SSE 把运行状态推送给前端。
 
-下一阶段可以在持久任务边界内引入 LangGraph：先实现协调节点和三个并行调查节点，再把 `graph_thread_id` 与独立 checkpoint 数据库关联。无论图内部怎样变化，API 投递、任务租约和业务结果审计保持稳定。
+下一阶段把图返回的证据与专业报告拆入 Evidence Board 业务表。无论图内部怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
 
 ## 8. 面试表达
 

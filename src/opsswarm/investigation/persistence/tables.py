@@ -20,7 +20,14 @@ class InvestigationRunRow(Base):
 
     __tablename__ = "investigation_runs"
     __table_args__ = (
-        CheckConstraint("mode IN ('single_agent')", name="ck_investigation_runs_mode"),
+        CheckConstraint(
+            "mode IN ('single_agent', 'multi_agent')",
+            name="ck_investigation_runs_mode",
+        ),
+        CheckConstraint(
+            "mode <> 'multi_agent' OR graph_thread_id IS NOT NULL",
+            name="ck_investigation_runs_multi_thread",
+        ),
         CheckConstraint(f"status IN ({RUN_STATUS_SQL})", name="ck_investigation_runs_status"),
         CheckConstraint(
             "result IS NULL OR jsonb_typeof(result) = 'object'",
@@ -96,7 +103,7 @@ class WorkItemRow(Base):
     __tablename__ = "work_items"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('run_single_agent_investigation')",
+            "kind IN ('run_single_agent_investigation', 'run_multi_agent_investigation')",
             name="ck_work_items_kind",
         ),
         CheckConstraint(f"status IN ({WORK_STATUS_SQL})", name="ck_work_items_status"),

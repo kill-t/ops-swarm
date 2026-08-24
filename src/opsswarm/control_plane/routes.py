@@ -145,6 +145,7 @@ def create_router(clock: Clock) -> APIRouter:
             occurred_at=clock(),
             actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
             reason=request.reason,
+            mode=request.mode,
         )
         return StartInvestigationResponse.from_started(started)
 

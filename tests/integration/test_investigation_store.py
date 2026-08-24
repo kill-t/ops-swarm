@@ -21,14 +21,15 @@ from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     InvestigationConclusion,
     InvestigationMetrics,
-    InvestigationRequest,
+    InvestigationMode,
     InvestigationRunResult,
     InvestigationRunStatus,
     WorkItemError,
+    WorkItemKind,
     WorkItemStatus,
 )
 from opsswarm.investigation.persistence import InvestigationStore, StartedInvestigation
-from opsswarm.worker import InvestigationWorker, ProcessorOutcome
+from opsswarm.worker import InvestigationWorker, ProcessorContext, ProcessorOutcome
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -76,6 +77,7 @@ async def start_investigation(
     *,
     suffix: str = "001",
     max_attempts: int = 3,
+    mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     incident_store = IncidentStore(session_factory)
     incident = await incident_store.ingest_alert(
@@ -99,6 +101,7 @@ async def start_investigation(
         actor=HUMAN_ACTOR,
         reason="开始自动调查",
         max_attempts=max_attempts,
+        mode=mode,
     )
     return store, started
 
@@ -115,7 +118,10 @@ async def test_start_atomically_persists_incident_run_and_work_item(
 
     assert persisted_incident.incident.status is IncidentStatus.INVESTIGATING
     assert persisted_incident.incident.version == 2
+    assert persisted_run.mode is InvestigationMode.SINGLE_AGENT
+    assert persisted_run.graph_thread_id is None
     assert persisted_run.status is InvestigationRunStatus.QUEUED
+    assert persisted_work.kind is WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION
     assert persisted_work.status is WorkItemStatus.PENDING
     assert persisted_work.attempt_count == 0
     assert len(await incident_store.list_events(persisted_incident.incident.id)) == 2
@@ -124,7 +130,10 @@ async def test_start_atomically_persists_incident_run_and_work_item(
 async def test_graph_thread_id_binding_is_deterministic_and_idempotent(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    store, started = await start_investigation(database_session_factory)
+    store, started = await start_investigation(
+        database_session_factory,
+        mode=InvestigationMode.MULTI_AGENT,
+    )
 
     first = await store.ensure_graph_thread_id(
         started.run.id,
@@ -136,6 +145,8 @@ async def test_graph_thread_id_binding_is_deterministic_and_idempotent(
     )
 
     assert first.graph_thread_id == build_graph_thread_id(started.run.id)
+    assert first.mode is InvestigationMode.MULTI_AGENT
+    assert started.work_item.kind is WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION
     assert second.graph_thread_id == first.graph_thread_id
     assert second.updated_at == first.updated_at
 
@@ -324,18 +335,18 @@ class RecordingProcessor:
     """记录 Worker 传入的事故上下文并返回固定成功结果。"""
 
     def __init__(self) -> None:
-        self.requests: list[InvestigationRequest] = []
+        self.contexts: list[ProcessorContext] = []
 
-    async def process(self, request: InvestigationRequest) -> ProcessorOutcome:
-        self.requests.append(request)
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+        self.contexts.append(context)
         return make_outcome()
 
 
 class FailingProcessor:
     """模拟可重试的模型超时。"""
 
-    async def process(self, request: InvestigationRequest) -> ProcessorOutcome:
-        del request
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+        del context
         raise TimeoutError("模型调用超时")
 
 
@@ -362,7 +373,8 @@ async def test_worker_processes_one_item_and_persists_structured_result(
     )
 
     assert await worker.run_once() is True
-    assert processor.requests[0].incident_id == started.incident.incident.id
+    assert processor.contexts[0].request.incident_id == started.incident.incident.id
+    assert processor.contexts[0].mode is InvestigationMode.SINGLE_AGENT
     run = await store.get_run(started.run.id)
     work = await store.get_work_item(started.work_item.id)
     assert run.status is InvestigationRunStatus.SUCCEEDED

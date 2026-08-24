@@ -193,6 +193,55 @@ async def test_start_investigation_and_status_filter(
     assert [item["id"] for item in filtered.json()["items"]] == [incident_id]
 
 
+async def test_start_multi_agent_investigation_persists_graph_thread(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-multi-001"),
+    )
+    incident_id = created.json()["incident"]["id"]
+
+    started = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "使用并行调查模式",
+            "mode": "multi_agent",
+        },
+    )
+
+    assert started.status_code == 200
+    investigation = started.json()["investigation"]
+    assert investigation["mode"] == "multi_agent"
+    assert investigation["prompt_version"] == "multi-agent-parallel-v1"
+    assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
+
+
+async def test_start_investigation_rejects_unknown_mode(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-invalid-mode"),
+    )
+    incident_id = created.json()["incident"]["id"]
+
+    response = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "非法模式",
+            "mode": "swarm_everything",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "request_validation_error"
+
+
 async def test_missing_investigation_run_returns_structured_404(
     control_client: httpx2.AsyncClient,
 ) -> None:

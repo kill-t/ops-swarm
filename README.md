@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线和 PostgreSQL checkpoint 恢复。当前已经能在某个并行节点失败后跨数据库连接恢复，只重新运行失败节点；多 Agent Worker 模式、SSE 和前端尚未接入。
+项目已交付九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复和多 Agent Worker 路由。API 现在可以显式选择单 Agent 或多 Agent；多 Agent 任务失败后由后续 Worker 从同一 checkpoint 恢复。Evidence Board、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -38,6 +38,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [持久调查任务与独立 Worker](docs/architecture/07-persistent-investigation-worker.md)
 - [LangGraph 并行调查基线](docs/architecture/08-langgraph-parallel-baseline.md)
 - [LangGraph PostgreSQL checkpoint 恢复](docs/architecture/09-postgresql-checkpoint-recovery.md)
+- [多 Agent 持久 Worker 路由](docs/architecture/10-multi-agent-worker-routing.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -53,7 +54,22 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查和 PostgreSQL checkpoint。下一阶段把 `multi_agent` 模式接入持久 Worker，并保持单 Agent 基线可选。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint 和多模式 Worker。下一阶段建立 Evidence Board，把证据和专业报告从最终 JSON 结果中拆出为可审查业务事实。
+
+## 单 Agent 与多 Agent 任务模式
+
+开始调查接口的 `mode` 可取 `single_agent` 或 `multi_agent`，省略时保持单 Agent 默认值。模式不是模型决定的，而是作为业务运行和持久任务的一部分写入 PostgreSQL。
+
+```json
+{
+  "expected_version": 1,
+  "actor_id": "engineer-001",
+  "reason": "使用并行调查模式",
+  "mode": "multi_agent"
+}
+```
+
+Worker 校验运行模式与任务类型一致：单 Agent 调用 LangChain 基线；多 Agent 查询对应线程是否已有 checkpoint，存在则恢复，不存在才启动新图。
 
 ## LangGraph PostgreSQL checkpoint
 
@@ -103,7 +119,7 @@ $env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
 uv run python -m opsswarm.worker.main
 ```
 
-当前处理器仍读取冻结 `release_500` 证据，主要用于验证持久任务、Agent 调用和结果落库链路，不代表真实监控系统已经接入。
+当前两种处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路，不代表真实监控系统已经接入。
 
 ## Incident 领域状态机
 

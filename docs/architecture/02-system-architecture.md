@@ -121,7 +121,7 @@ LangGraph 1.x 用于：
 
 图状态只保存恢复工作流所需的可序列化数据和业务标识，不保存数据库 Session、网络客户端或未受控 Python 对象。Incident 与 `graph_thread_id` 的对应关系保存在业务库。
 
-当前并行图已经支持可选 `AsyncPostgresSaver`。业务运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`；启动时提交初始状态，恢复时使用同一 `thread_id` 和空输入读取最近 checkpoint。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。当前尚未接入持久 Worker 的模式选择。
+当前并行图已经接入持久 Worker。API 把 `single_agent` 或 `multi_agent` 作为业务模式落库，Worker 同时校验对应任务类型。多 Agent 运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`：如果 checkpoint 不存在则提交初始状态，存在则使用同一线程和空输入恢复。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。
 
 ## 6. PostgreSQL 任务与 SSE
 
@@ -154,7 +154,7 @@ LangGraph 1.x 用于：
 | `POST /api/v1/alerts` | 幂等接收告警；新告警返回 `201`，完全重复返回 `200` |
 | `GET /api/v1/incidents` | 按状态筛选，使用展示序号倒序游标分页 |
 | `GET /api/v1/incidents/{id}` | 查询 Incident 详情和当前版本 |
-| `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version` |
+| `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单 Agent 或多 Agent |
 | `GET /api/v1/investigations/{run_id}` | 查询调查运行、结果、指标与错误 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 后续阶段提供可重放 SSE |

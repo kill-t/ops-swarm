@@ -83,6 +83,8 @@ Agent 测试分三层：
 
 当前已经把 `langgraph` 和 `langgraph-checkpoint-postgres` 声明为直接生产依赖，实现 Graph API 并行调查和 `AsyncPostgresSaver` 跨连接恢复。并行测试不能依赖分支完成顺序，所有进入综合提示的证据和报告都按稳定业务标识排序。checkpoint 反序列化使用显式项目类型白名单，不允许数据库内容触发任意 Python 类型加载。
 
+持久 Worker 当前通过业务枚举在 LangChain 单 Agent 与 LangGraph 多 Agent 之间确定性路由。多 Agent 处理器先查询线程 checkpoint 是否存在，再决定首次运行或恢复；模式选择不进入模型提示词。
+
 ## 5. 可观测性
 
 | 技术 | 目标 |

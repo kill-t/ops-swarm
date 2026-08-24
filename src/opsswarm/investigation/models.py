@@ -33,9 +33,10 @@ class Recommendation(StrEnum):
 
 
 class InvestigationMode(StrEnum):
-    """用于单 Agent 与未来多 Agent 公平对照的运行模式。"""
+    """用于单 Agent 与多 Agent 公平对照的运行模式。"""
 
     SINGLE_AGENT = "single_agent"
+    MULTI_AGENT = "multi_agent"
 
 
 class InvestigationRunStatus(StrEnum):
@@ -60,6 +61,7 @@ class WorkItemKind(StrEnum):
     """Worker 可以确定性路由的任务类型。"""
 
     RUN_SINGLE_AGENT_INVESTIGATION = "run_single_agent_investigation"
+    RUN_MULTI_AGENT_INVESTIGATION = "run_multi_agent_investigation"
 
 
 class StrictModel(BaseModel):
