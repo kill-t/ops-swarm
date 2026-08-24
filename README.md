@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化和 FastAPI 控制面。当前可以通过 HTTP 幂等接收告警、分页查询 Incident、开始调查并按游标读取时间线；LLM、调查 Worker、SSE 和前端尚未接入。
+项目已交付五个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面和单 Agent 调查基线。当前可以通过 HTTP 管理事故，也可以让可注入模型使用三类只读工具调查冻结故障，输出带真实证据引用的结构化根因并计算离线指标；调查 Worker、LangGraph、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -34,6 +34,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [技术栈选型](docs/architecture/03-technology-stack.md)
 - [数据库设计](docs/architecture/04-database-design.md)
 - [API 设计](docs/architecture/05-api-design.md)
+- [单 Agent 调查基线](docs/architecture/06-single-agent-baseline.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -48,7 +49,19 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 评测集以及单 Agent、多 Agent 对比。
 9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化、不可变时间线和 FastAPI 控制面。下一阶段开始建立不依赖多 Agent 的单 Agent 调查基线。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化、不可变时间线、FastAPI 控制面和单 Agent 调查基线。下一阶段把调查运行接入持久任务与独立 Worker，确保任务和结果可恢复，再进入 LangGraph 多 Agent 编排。
+
+## 单 Agent 调查基线
+
+`opsswarm.investigation` 使用 LangChain 1.x 组装单 Agent 工具循环，但只暴露日志、指标和变更三个有界只读工具。结论必须符合 `InvestigationConclusion`，并且只能引用本轮工具实际返回的证据 ID。固定 `release_500` 场景用于离线计算根因 Top-1、证据召回、建议准确率、安全违规率和工具调用数。
+
+默认测试使用假模型和冻结工具结果，不需要模型密钥或网络：
+
+```powershell
+uv run pytest tests/unit/investigation -q
+```
+
+真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 和 `LLM_TEMPERATURE` 显式配置。当前没有自动调用真实模型的命令，避免开发或持续集成误产生费用。
 
 ## Incident 领域状态机
 

@@ -45,3 +45,4 @@
 - [02 - Incident 纯领域状态机](02-incident-domain-state-machine.md)
 - [03 - PostgreSQL 事故持久化](03-postgresql-incident-persistence.md)
 - [04 - FastAPI 事故控制面](04-fastapi-incident-control-plane.md)
+- [05 - 单 Agent 调查基线与离线评测](05-single-agent-investigation-baseline.md)
