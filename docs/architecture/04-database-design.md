@@ -169,6 +169,22 @@ stateDiagram-v2
     closed --> [*]
 ```
 
+状态图中的迁移由以下稳定动作名驱动。API 命令、Worker 任务和未来 LangGraph 节点只能提交动作，不能直接指定目标状态：
+
+| 当前状态 | 动作 | 目标状态 | 业务含义 |
+| --- | --- | --- | --- |
+| `open` | `start_investigation` | `investigating` | 接受事故并开始调查 |
+| `investigating` | `request_approval` | `awaiting_approval` | 已形成需要人工审批的处置计划 |
+| `investigating` | `start_verification` | `verifying` | 无需执行变更，直接验证是否已恢复 |
+| `awaiting_approval` | `approve_plan` | `mitigating` | 工程师批准计划，允许进入受控执行 |
+| `awaiting_approval` | `reject_plan` | `investigating` | 拒绝计划或要求补充调查 |
+| `mitigating` | `complete_mitigation` | `verifying` | 白名单执行器完成操作，开始验证 |
+| `mitigating` | `fail_mitigation` | `investigating` | 执行失败，带结果回到调查 |
+| `verifying` | `confirm_recovery` | `resolved` | 恢复条件持续满足 |
+| `verifying` | `fail_verification` | `investigating` | 未恢复或证据不足，继续调查 |
+| `resolved` | `close` | `closed` | 工程师正式关闭事故 |
+| `resolved` | `reopen` | `investigating` | 正式关闭前复发，重新调查 |
+
 `closed` 是终态。关闭后收到相同指纹的新告警时创建新 Incident，不重新打开历史事故。
 
 状态迁移必须：
@@ -178,6 +194,8 @@ stateDiagram-v2
 3. 设置对应生命周期时间字段。
 4. 在同一事务追加 `incident_events`。
 5. 受影响行数为零时返回 `409 Conflict`，不能静默覆盖并发修改。
+
+领域层使用不可变 Incident 快照表达当前版本，并把每次创建或迁移返回为 `IncidentMutation`：其中同时包含新快照和 `IncidentEvent`。领域层不依赖 ORM，也不直接提交事务；仓储层必须把二者原子持久化。事件中的 `actor_type`、`actor_id` 和 `reason` 只承担审计职责，身份认证、审批有效性和操作授权由应用层及后续处置域负责。
 
 ## 6. 告警幂等与并发聚合
 

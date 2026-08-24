@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已完成项目章程与架构设计，并交付第一个可运行切片：`order-service` 确定性版本 500 故障模拟。该切片只建立故障演练基座，尚未实现 Incident、数据库、LLM 或前端。
+项目已交付两个小切片：`order-service` 确定性版本 500 故障模拟，以及不依赖框架的 Incident 领域状态机。当前已经能在内存中创建事故、校验 11 条业务迁移、检测乐观锁冲突并产生配套审计事件；数据库、Incident API、LLM 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -47,9 +47,15 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 评测集以及单 Agent、多 Agent 对比。
 9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：本切片已完成确定性故障注入，后续切片依次增加 Incident 状态机、告警幂等、PostgreSQL 持久化和不可变时间线。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入和 Incident 领域状态机，后续切片依次增加告警幂等、PostgreSQL 持久化和不可变时间线。
 
-## 运行第一个切片
+## Incident 领域状态机
+
+`opsswarm.incidents` 是独立于 FastAPI、SQLAlchemy 和 Agent 框架的纯领域模块。调用方提交当前 Incident、业务动作、期望版本、发生时间和操作者，状态机返回新的不可变 Incident 快照与一条审计事件。它不直接写数据库；后续持久化层必须在同一事务内保存两者。
+
+这种边界让状态迁移规则可以快速进行纯单元测试，也保证未来无论由 REST API、Worker 还是 LangGraph 节点触发，都会经过同一套确定性规则。
+
+## 运行故障模拟切片
 
 ### 本地运行
 
