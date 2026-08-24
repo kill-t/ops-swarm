@@ -58,3 +58,7 @@ class SpecialistKindMismatch(InvestigationError):
 
 class IncompleteSpecialistReports(InvestigationError):
     """综合节点没有收到全部专业调查报告。"""
+
+
+class GraphThreadIdMismatch(InvestigationError):
+    """业务运行已经关联到另一个不符合确定性规则的图线程。"""

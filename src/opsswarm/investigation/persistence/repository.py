@@ -10,10 +10,12 @@ from opsswarm.incidents import IncidentAction, IncidentActor
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.errors import (
+    GraphThreadIdMismatch,
     InvestigationRunNotFound,
     WorkItemLeaseLost,
     WorkItemNotFound,
 )
+from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     InvestigationMetrics,
     InvestigationMode,
@@ -125,6 +127,34 @@ class InvestigationStore:
             if row is None:
                 raise WorkItemNotFound(work_item_id)
             return _stored_work_item(row)
+
+    async def ensure_graph_thread_id(
+        self,
+        run_id: UUID,
+        *,
+        occurred_at: datetime,
+    ) -> StoredInvestigationRun:
+        """幂等地把业务运行绑定到由运行 ID 推导的 LangGraph thread。"""
+
+        occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
+        expected_thread_id = build_graph_thread_id(run_id)
+        async with self._session_factory() as session, session.begin():
+            row = await session.scalar(
+                select(InvestigationRunRow)
+                .where(InvestigationRunRow.id == run_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise InvestigationRunNotFound(run_id)
+            if occurred_at < row.updated_at:
+                raise ValueError("graph_thread_id 绑定时间不能早于调查运行当前更新时间")
+            if row.graph_thread_id is None:
+                row.graph_thread_id = expected_thread_id
+                row.updated_at = occurred_at
+                await session.flush()
+            elif row.graph_thread_id != expected_thread_id:
+                raise GraphThreadIdMismatch(f"调查运行 {run_id} 已关联到不匹配的 graph_thread_id")
+            return _stored_run(row)
 
     async def claim_next(
         self,

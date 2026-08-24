@@ -121,7 +121,7 @@ LangGraph 1.x 用于：
 
 图状态只保存恢复工作流所需的可序列化数据和业务标识，不保存数据库 Session、网络客户端或未受控 Python 对象。Incident 与 `graph_thread_id` 的对应关系保存在业务库。
 
-当前已实现第一个显式并行图：确定性协调器扇出日志、指标和变更三个专业分析节点，三者全部完成后进入综合节点。共享证据与报告通过 reducer 合并，并在综合前按稳定标识排序。当前尚未启用 checkpointer，也未接入持久 Worker 的模式选择。
+当前并行图已经支持可选 `AsyncPostgresSaver`。业务运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`；启动时提交初始状态，恢复时使用同一 `thread_id` 和空输入读取最近 checkpoint。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。当前尚未接入持久 Worker 的模式选择。
 
 ## 6. PostgreSQL 任务与 SSE
 
@@ -167,7 +167,7 @@ LangGraph 1.x 用于：
 
 - 本地 MVP 单租户、无 JWT，仅绑定 localhost 和 Compose 私有网络，并明确标记不可用于生产。
 - 审批阶段再引入操作员身份和角色；没有可信身份之前不能声称具备生产审批能力。
-- 业务数据库 `opsswarm` 由 Alembic 管理；checkpoint 数据库 `opsswarm_checkpoints` 由 LangGraph 初始化流程管理。
+- 业务数据库 `opsswarm` 由 Alembic 管理；checkpoint 数据库 `opsswarm_checkpoints` 由 LangGraph 初始化流程管理。两者位于同一个本地 PostgreSQL 容器，但属于不同逻辑数据库。
 - API、Worker、执行器和演练服务使用不同数据库或网络权限，执行器是唯一拥有受控写操作能力的组件。
 - 外部模型、LangSmith 和真实平台集成都必须可关闭；离线测试不依赖它们。
 

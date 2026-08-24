@@ -79,12 +79,12 @@ LangGraph 使用同一上游节点连接多个下游节点进行扇出，并使�
 ## 8. 当前限制与下一步
 
 - 图尚未作为 `multi_agent` 模式接入 `investigation_runs` 和 Worker。
-- 没有 PostgreSQL checkpointer，Worker 崩溃时仍从整张图重新运行。
+- 并行图已经支持 PostgreSQL checkpointer，但现有 Worker 尚未选择或传入它。
 - 三个数据源目前是同步冻结实现，真实遥测适配需要异步 I/O 和超时策略。
 - 尚未保存单节点模型调用次数、Token、成本和耗时。
 - 没有质疑节点、证据不足分支或调查循环。
 
-下一切片建立独立 `opsswarm_checkpoints` 数据库，把图 `thread_id` 关联到业务库的 `graph_thread_id`，验证节点级 checkpoint 与进程重启恢复；随后再把多 Agent 模式接入 Worker。
+独立 `opsswarm_checkpoints` 数据库、`graph_thread_id` 关联规则和节点级恢复已在下一切片完成；后续把多 Agent 模式接入 Worker。
 
 ## 9. 面试表达
 

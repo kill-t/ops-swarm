@@ -19,6 +19,8 @@
 
 业务库中的 `investigation_runs.graph_thread_id` 保存 LangGraph `thread_id`。两个数据库不建立跨库外键；删除或清理 checkpoint 不得删除业务审计记录。
 
+本地 Compose 使用一个 `ops-swarm-control-db-1` 容器和一个持久数据卷。`opsswarm_checkpoints` 是该 PostgreSQL 实例内的第二个逻辑数据库，因此 Docker Desktop 不会显示第二个数据库容器。全新数据卷由 `docker/postgres/init-checkpoint-db.sql` 创建数据库；`checkpoint_migrations`、`checkpoints`、`checkpoint_blobs` 和 `checkpoint_writes` 由 LangGraph 的幂等 `setup()` 管理，不进入 Alembic 元数据。
+
 ## 3. 全局逻辑模型
 
 ```mermaid
@@ -158,7 +160,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | 当前 `mode=single_agent`，保存 `prompt_version`；`graph_thread_id` 为未来 checkpoint 预留 |
+| 模式与版本 | 当前 `mode=single_agent`，保存 `prompt_version`；`graph_thread_id` 已用于关联独立 checkpoint 数据库，Worker 多模式将在下一切片接入 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |

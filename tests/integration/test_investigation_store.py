@@ -17,6 +17,7 @@ from opsswarm.incidents import (
 )
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.errors import WorkItemLeaseLost
+from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     InvestigationConclusion,
     InvestigationMetrics,
@@ -118,6 +119,25 @@ async def test_start_atomically_persists_incident_run_and_work_item(
     assert persisted_work.status is WorkItemStatus.PENDING
     assert persisted_work.attempt_count == 0
     assert len(await incident_store.list_events(persisted_incident.incident.id)) == 2
+
+
+async def test_graph_thread_id_binding_is_deterministic_and_idempotent(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(database_session_factory)
+
+    first = await store.ensure_graph_thread_id(
+        started.run.id,
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+    )
+    second = await store.ensure_graph_thread_id(
+        started.run.id,
+        occurred_at=BASE_TIME + timedelta(seconds=3),
+    )
+
+    assert first.graph_thread_id == build_graph_thread_id(started.run.id)
+    assert second.graph_thread_id == first.graph_thread_id
+    assert second.updated_at == first.updated_at
 
 
 async def test_task_insert_failure_rolls_back_incident_transition(

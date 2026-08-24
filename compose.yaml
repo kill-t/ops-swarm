@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:15432:5432"
     volumes:
       - control-db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-checkpoint-db.sql:/docker-entrypoint-initdb.d/10-create-checkpoint-db.sql:ro
     healthcheck:
       test:
         - CMD-SHELL

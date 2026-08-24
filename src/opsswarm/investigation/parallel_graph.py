@@ -2,8 +2,10 @@
 
 import operator
 from collections.abc import Sequence
-from typing import Annotated, NotRequired, Protocol, TypedDict
+from typing import Annotated, NotRequired, Protocol, TypedDict, cast
 
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from opsswarm.investigation.errors import (
@@ -12,6 +14,7 @@ from opsswarm.investigation.errors import (
     SpecialistKindMismatch,
     UnverifiedEvidenceReference,
 )
+from opsswarm.investigation.graph_thread import normalize_graph_thread_id
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -78,6 +81,7 @@ class LangGraphParallelInvestigator:
         data_source: InvestigationDataSource,
         analyst: SpecialistAnalyst,
         synthesizer: ConclusionSynthesizer,
+        checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._data_source = data_source
         self._analyst = analyst
@@ -97,9 +101,18 @@ class LangGraphParallelInvestigator:
             "synthesize",
         )
         builder.add_edge("synthesize", END)
-        self._workflow = builder.compile(name="parallel_investigation")
+        self._has_checkpointer = checkpointer is not None
+        self._workflow = builder.compile(
+            checkpointer=checkpointer,
+            name="parallel_investigation",
+        )
 
-    async def investigate(self, request: InvestigationRequest) -> MultiAgentInvestigationResult:
+    async def investigate(
+        self,
+        request: InvestigationRequest,
+        *,
+        thread_id: str | None = None,
+    ) -> MultiAgentInvestigationResult:
         """运行并行图，并把非确定顺序的分支输出排序后返回。"""
 
         state = await self._workflow.ainvoke(
@@ -109,8 +122,33 @@ class LangGraphParallelInvestigator:
                 "reports": [],
                 "tool_call_count": 0,
             },
-            config={"max_concurrency": 3},
+            config=self._execution_config(thread_id),
         )
+        return self._build_result(cast(_GraphState, state))
+
+    async def resume(self, *, thread_id: str) -> MultiAgentInvestigationResult:
+        """使用同一 thread_id 从 PostgreSQL 中最近的 checkpoint 继续。"""
+
+        if not self._has_checkpointer:
+            raise RuntimeError("当前并行调查图没有配置 checkpointer")
+        state = await self._workflow.ainvoke(
+            None,
+            config=self._execution_config(thread_id),
+        )
+        return self._build_result(cast(_GraphState, state))
+
+    def _execution_config(self, thread_id: str | None) -> RunnableConfig:
+        config: RunnableConfig = {"max_concurrency": 3}
+        if thread_id is not None:
+            config["configurable"] = {"thread_id": normalize_graph_thread_id(thread_id)}
+        elif self._has_checkpointer:
+            raise ValueError("启用 checkpointer 后必须提供 thread_id")
+        return config
+
+    @staticmethod
+    def _build_result(state: _GraphState) -> MultiAgentInvestigationResult:
+        """从已完成或恢复后的图状态构造稳定业务结果。"""
+
         conclusion = state.get("conclusion")
         if conclusion is None:
             raise MissingStructuredConclusion("并行调查图未返回结构化结论")

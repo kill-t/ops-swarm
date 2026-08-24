@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker 和 LangGraph 并行调查基线。当前已经能显式扇出日志、指标、变更三个专业节点并综合带证据结论；checkpoint、SSE 和前端尚未接入。
+项目已交付八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线和 PostgreSQL checkpoint 恢复。当前已经能在某个并行节点失败后跨数据库连接恢复，只重新运行失败节点；多 Agent Worker 模式、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -37,6 +37,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [单 Agent 调查基线](docs/architecture/06-single-agent-baseline.md)
 - [持久调查任务与独立 Worker](docs/architecture/07-persistent-investigation-worker.md)
 - [LangGraph 并行调查基线](docs/architecture/08-langgraph-parallel-baseline.md)
+- [LangGraph PostgreSQL checkpoint 恢复](docs/architecture/09-postgresql-checkpoint-recovery.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -52,7 +53,20 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务和 LangGraph 并行调查。下一阶段接入独立 PostgreSQL checkpoint，验证图节点跨进程恢复。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查和 PostgreSQL checkpoint。下一阶段把 `multi_agent` 模式接入持久 Worker，并保持单 Agent 基线可选。
+
+## LangGraph PostgreSQL checkpoint
+
+业务事实仍保存在 `opsswarm`，LangGraph 节点快照保存在同一 PostgreSQL 容器中的独立数据库 `opsswarm_checkpoints`。它们通过业务库的 `investigation_runs.graph_thread_id` 关联，不建立跨库外键。
+
+本地首次初始化：
+
+```powershell
+docker compose up -d --wait control-db
+uv run python -m opsswarm.checkpoints.setup
+```
+
+全新数据卷会通过 Compose 初始化脚本创建 checkpoint 数据库；LangGraph 自己的表由上述幂等命令管理，不归 Alembic 管理。默认 URL 可通过 `OPSSWARM_CHECKPOINT_DATABASE_URL` 覆盖。
 
 ## LangGraph 并行调查基线
 

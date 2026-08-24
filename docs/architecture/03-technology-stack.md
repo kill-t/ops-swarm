@@ -81,7 +81,7 @@ Agent 测试分三层：
 2. 使用冻结故障数据集离线评测根因、证据和计划。
 3. 显式开启时才运行真实模型端到端评测，并记录模型、提示版本、Token、成本和延迟。
 
-当前已经把 `langgraph` 声明为直接生产依赖，并实现 Graph API 并行调查基线；尚未引入 PostgreSQL checkpointer。并行测试不能依赖分支完成顺序，所有进入综合提示的证据和报告都按稳定业务标识排序。
+当前已经把 `langgraph` 和 `langgraph-checkpoint-postgres` 声明为直接生产依赖，实现 Graph API 并行调查和 `AsyncPostgresSaver` 跨连接恢复。并行测试不能依赖分支完成顺序，所有进入综合提示的证据和报告都按稳定业务标识排序。checkpoint 反序列化使用显式项目类型白名单，不允许数据库内容触发任意 Python 类型加载。
 
 ## 5. 可观测性
 
