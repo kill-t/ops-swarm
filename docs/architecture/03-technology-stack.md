@@ -63,13 +63,15 @@ OpsSwarm 的单 Agent 基线需要模型选择工具、读取工具结果并返�
 | --- | --- |
 | pytest | 单元测试与集成测试入口 |
 | pytest-asyncio | 异步应用服务、数据库和 Worker 测试 |
-| HTTPX | FastAPI ASGI/API 测试 |
+| HTTPX2 | FastAPI/Starlette TestClient 的当前 HTTP 客户端依赖 |
 | Testcontainers | 启动隔离的真实 PostgreSQL 测试实例 |
 | Ruff | 格式与静态规则检查 |
 | mypy | 关键领域模型和接口的静态类型检查 |
 | coverage.py | 观察关键分支覆盖，不追求无意义的总覆盖率数字 |
 
 SQLite 不用于替代 PostgreSQL 集成测试，因为部分唯一索引、JSONB、`TIMESTAMPTZ`、行锁和 `SKIP LOCKED` 都是关键行为。
+
+Starlette 当前仍兼容旧版 HTTPX，但已将其标记为弃用；项目测试使用 HTTPX2，避免在新工程中引入已知迁移债务。
 
 Agent 测试分三层：
 

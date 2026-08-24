@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目目前处于“项目章程与架构设计”阶段，尚未生成业务代码，也不能启动服务。当前重点是先固定产品边界、可靠性原则、技术栈和数据模型，再按小功能切片逐步实现。
+项目已完成项目章程与架构设计，并交付第一个可运行切片：`order-service` 确定性版本 500 故障模拟。该切片只建立故障演练基座，尚未实现 Incident、数据库、LLM 或前端。
 
 ## 为什么做 OpsSwarm
 
@@ -47,7 +47,48 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 评测集以及单 Agent、多 Agent 对比。
 9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-第一个可运行切片将使用“新版本触发大量 500”场景，先打通故障注入、告警入库、Incident 去重、状态迁移和不可变时间线。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：本切片已完成确定性故障注入，后续切片依次增加 Incident 状态机、告警幂等、PostgreSQL 持久化和不可变时间线。
+
+## 运行第一个切片
+
+### 本地运行
+
+```powershell
+uv sync
+uv run uvicorn opsswarm.fault_lab.main:app --host 127.0.0.1 --port 8000
+```
+
+在另一个 PowerShell 窗口验证：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/orders/order-001
+
+Invoke-RestMethod `
+  -Method Put `
+  -Uri http://127.0.0.1:8000/__admin/faults/release-500 `
+  -ContentType 'application/json' `
+  -Body '{"enabled":true}'
+
+Invoke-WebRequest http://127.0.0.1:8000/orders/order-001 -SkipHttpErrorCheck
+```
+
+### Docker Compose 运行
+
+```powershell
+docker compose up --build -d --wait
+Invoke-RestMethod http://127.0.0.1:18001/health
+docker compose down
+```
+
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。故障开关默认关闭，服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+
+## 测试与检查
+
+```powershell
+uv run ruff check .
+uv run mypy
+uv run pytest
+```
 
 ## 安全声明
 

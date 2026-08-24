@@ -53,7 +53,7 @@ git branch --show-current
 
 ## 限制与下一步
 
-本阶段没有可运行服务。下一切片将初始化 Python 工程和 Docker Compose 测试环境，实现 `release_500` 故障开关、告警幂等接入、Incident 状态机、乐观锁和不可变时间线；不接入 LLM 和前端。
+本阶段没有可运行服务。进入实现时将原阶段目标继续拆小：先交付 `release_500` 故障模拟，再分别实现 Incident 领域状态机、PostgreSQL 告警幂等和不可变时间线；所有这些切片都不接入 LLM 和前端。
 
 ## 面试表达
 

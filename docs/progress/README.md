@@ -41,3 +41,4 @@
 ## 4. 当前记录
 
 - [00 - 项目章程与架构设计](00-project-charter-and-architecture.md)
+- [01 - 确定性版本 500 故障模拟](01-deterministic-release-500-fault.md)
