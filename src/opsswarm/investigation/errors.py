@@ -50,3 +50,11 @@ class WorkItemLeaseLost(InvestigationError):
     def __init__(self, work_item_id: UUID) -> None:
         self.work_item_id = work_item_id
         super().__init__(f"持久任务租约已经失效：{work_item_id}")
+
+
+class SpecialistKindMismatch(InvestigationError):
+    """专业节点返回了不属于自身职责的报告类型。"""
+
+
+class IncompleteSpecialistReports(InvestigationError):
+    """综合节点没有收到全部专业调查报告。"""

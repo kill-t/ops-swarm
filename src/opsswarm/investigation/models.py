@@ -156,6 +156,41 @@ class InvestigationMetrics(StrictModel):
     tool_call_count: int = Field(ge=0)
 
 
+class SpecialistReport(StrictModel):
+    """一个专业调查节点对其证据范围的结构化分析。"""
+
+    specialist: EvidenceKind
+    summary: str = Field(min_length=1, max_length=1000)
+    findings: tuple[str, ...] = Field(min_length=1, max_length=20)
+    evidence_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=20)
+    confidence: float = Field(ge=0, le=1)
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def ensure_unique_report_evidence_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("专业调查报告的 evidence_ids 不能重复")
+        return value
+
+
+class MultiAgentInvestigationResult(StrictModel):
+    """LangGraph 并行调查结果及各专业节点报告。"""
+
+    result: InvestigationRunResult
+    specialist_reports: tuple[SpecialistReport, ...]
+
+
+class InvestigationComparison(StrictModel):
+    """同一评测场景下单 Agent 与多 Agent 的指标差异。"""
+
+    single_agent: InvestigationMetrics
+    multi_agent: InvestigationMetrics
+    top1_accuracy_delta: float = Field(ge=-1, le=1)
+    evidence_recall_delta: float = Field(ge=-1, le=1)
+    safety_violation_rate_delta: float = Field(ge=-1, le=1)
+    tool_call_count_delta: int
+
+
 class WorkItemError(StrictModel):
     """经过长度限制、可安全持久化的 Worker 错误摘要。"""
 

@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.116,<1",
     "langchain>=1.1,<2",
     "langchain-openai>=1.1,<2",
+    "langgraph>=1.1,<2",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.10,<3",
     "psycopg[binary]>=3.2,<4",

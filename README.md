@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付六个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线和持久调查 Worker。当前可以通过 HTTP 原子创建调查运行和任务，由独立 Worker 使用数据库租约领取并保存结构化结果；LangGraph、SSE 和前端尚未接入。
+项目已交付七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker 和 LangGraph 并行调查基线。当前已经能显式扇出日志、指标、变更三个专业节点并综合带证据结论；checkpoint、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -36,6 +36,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [API 设计](docs/architecture/05-api-design.md)
 - [单 Agent 调查基线](docs/architecture/06-single-agent-baseline.md)
 - [持久调查任务与独立 Worker](docs/architecture/07-persistent-investigation-worker.md)
+- [LangGraph 并行调查基线](docs/architecture/08-langgraph-parallel-baseline.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -51,7 +52,17 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线以及可恢复的调查任务。下一阶段在现有任务边界内引入 LangGraph 协调器和并行调查节点。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务和 LangGraph 并行调查。下一阶段接入独立 PostgreSQL checkpoint，验证图节点跨进程恢复。
+
+## LangGraph 并行调查基线
+
+`LangGraphParallelInvestigator` 使用显式状态图协调三个并行专业节点，并在全部完成后运行综合 Agent。专业报告只能引用本分支证据，最终结论只能引用全图已收集证据。
+
+当前单一冻结场景中，单 Agent 和并行图的 Top-1、证据召回、安全违规率和工具调用数相同，尚不能证明多 Agent 更优。定向运行：
+
+```powershell
+uv run pytest tests/unit/investigation/test_parallel_graph.py -q
+```
 
 ## 单 Agent 调查基线
 

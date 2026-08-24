@@ -47,3 +47,4 @@
 - [04 - FastAPI 事故控制面](04-fastapi-incident-control-plane.md)
 - [05 - 单 Agent 调查基线与离线评测](05-single-agent-investigation-baseline.md)
 - [06 - 持久调查任务与独立 Worker](06-persistent-investigation-worker.md)
+- [07 - LangGraph 并行调查基线](07-langgraph-parallel-baseline.md)
