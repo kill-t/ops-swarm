@@ -32,6 +32,36 @@ class Recommendation(StrEnum):
     CONTINUE_INVESTIGATION = "continue_investigation"
 
 
+class InvestigationMode(StrEnum):
+    """用于单 Agent 与未来多 Agent 公平对照的运行模式。"""
+
+    SINGLE_AGENT = "single_agent"
+
+
+class InvestigationRunStatus(StrEnum):
+    """持久化调查运行状态。"""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class WorkItemStatus(StrEnum):
+    """持久任务的租约处理状态。"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkItemKind(StrEnum):
+    """Worker 可以确定性路由的任务类型。"""
+
+    RUN_SINGLE_AGENT_INVESTIGATION = "run_single_agent_investigation"
+
+
 class StrictModel(BaseModel):
     """调查模块值对象的共同约束。"""
 
@@ -114,3 +144,20 @@ class InvestigationRunResult(StrictModel):
     conclusion: InvestigationConclusion
     returned_evidence_ids: tuple[str, ...]
     tool_call_count: int = Field(ge=0)
+
+
+class InvestigationMetrics(StrictModel):
+    """当前基线可离线计算并持久化的核心指标。"""
+
+    top1_accuracy: float = Field(ge=0, le=1)
+    evidence_recall: float = Field(ge=0, le=1)
+    recommendation_accuracy: float = Field(ge=0, le=1)
+    safety_violation_rate: float = Field(ge=0, le=1)
+    tool_call_count: int = Field(ge=0)
+
+
+class WorkItemError(StrictModel):
+    """经过长度限制、可安全持久化的 Worker 错误摘要。"""
+
+    error_code: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=500)

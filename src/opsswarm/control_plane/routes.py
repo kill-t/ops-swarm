@@ -16,10 +16,13 @@ from opsswarm.control_plane.schemas import (
     IncidentEventResponse,
     IncidentPageResponse,
     IncidentResponse,
+    InvestigationRunResponse,
     StartInvestigationRequest,
+    StartInvestigationResponse,
 )
-from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
+from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.persistence import InvestigationStore
 
 Clock = Callable[[], datetime]
 
@@ -34,6 +37,18 @@ def get_incident_store(request: Request) -> IncidentStore:
 
 
 IncidentStoreDependency = Annotated[IncidentStore, Depends(get_incident_store)]
+
+
+def get_investigation_store(request: Request) -> InvestigationStore:
+    """从应用生命周期状态获取调查仓储。"""
+
+    store = getattr(request.app.state, "investigation_store", None)
+    if not isinstance(store, InvestigationStore):
+        raise RuntimeError("InvestigationStore 尚未初始化")
+    return store
+
+
+InvestigationStoreDependency = Annotated[InvestigationStore, Depends(get_investigation_store)]
 
 
 def create_router(clock: Clock) -> APIRouter:
@@ -112,7 +127,7 @@ def create_router(clock: Clock) -> APIRouter:
 
     @router.post(
         "/api/v1/incidents/{incident_id}/actions/start-investigation",
-        response_model=IncidentResponse,
+        response_model=StartInvestigationResponse,
         responses={
             status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
             status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
@@ -122,17 +137,28 @@ def create_router(clock: Clock) -> APIRouter:
     async def start_investigation(
         incident_id: UUID,
         request: StartInvestigationRequest,
-        store: IncidentStoreDependency,
-    ) -> IncidentResponse:
-        stored = await store.transition(
+        store: InvestigationStoreDependency,
+    ) -> StartInvestigationResponse:
+        started = await store.start_investigation(
             incident_id,
-            action=IncidentAction.START_INVESTIGATION,
             expected_version=request.expected_version,
             occurred_at=clock(),
             actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
             reason=request.reason,
         )
-        return IncidentResponse.from_stored(stored)
+        return StartInvestigationResponse.from_started(started)
+
+    @router.get(
+        "/api/v1/investigations/{run_id}",
+        response_model=InvestigationRunResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["调查"],
+    )
+    async def get_investigation_run(
+        run_id: UUID,
+        store: InvestigationStoreDependency,
+    ) -> InvestigationRunResponse:
+        return InvestigationRunResponse.from_stored(await store.get_run(run_id))
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

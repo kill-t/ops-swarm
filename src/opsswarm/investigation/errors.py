@@ -1,5 +1,7 @@
 """调查领域错误。"""
 
+from uuid import UUID
+
 
 class InvestigationError(Exception):
     """调查模块可预期错误的基类。"""
@@ -24,3 +26,27 @@ class UnverifiedEvidenceReference(InvestigationError):
         self.evidence_ids = frozenset(evidence_ids)
         joined_ids = "、".join(sorted(evidence_ids))
         super().__init__(f"调查结论引用了未经工具返回的证据：{joined_ids}")
+
+
+class InvestigationRunNotFound(InvestigationError):
+    """目标调查运行不存在。"""
+
+    def __init__(self, run_id: UUID) -> None:
+        self.run_id = run_id
+        super().__init__(f"调查运行不存在：{run_id}")
+
+
+class WorkItemNotFound(InvestigationError):
+    """目标持久任务不存在。"""
+
+    def __init__(self, work_item_id: UUID) -> None:
+        self.work_item_id = work_item_id
+        super().__init__(f"持久任务不存在：{work_item_id}")
+
+
+class WorkItemLeaseLost(InvestigationError):
+    """Worker 持有的租约已过期或已被其他实例接管。"""
+
+    def __init__(self, work_item_id: UUID) -> None:
+        self.work_item_id = work_item_id
+        super().__init__(f"持久任务租约已经失效：{work_item_id}")

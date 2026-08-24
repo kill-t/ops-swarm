@@ -173,14 +173,39 @@ async def test_start_investigation_and_status_filter(
     )
 
     assert started.status_code == 200
-    assert started.json()["status"] == "investigating"
-    assert started.json()["version"] == 2
+    started_body = started.json()
+    assert started_body["incident"]["status"] == "investigating"
+    assert started_body["incident"]["version"] == 2
+    assert started_body["investigation"]["status"] == "queued"
+    assert started_body["investigation"]["mode"] == "single_agent"
+    assert started_body["work_item_status"] == "pending"
+
+    run_response = await control_client.get(
+        f"/api/v1/investigations/{started_body['investigation']['id']}"
+    )
+    assert run_response.status_code == 200
+    assert run_response.json() == started_body["investigation"]
 
     filtered = await control_client.get(
         "/api/v1/incidents",
         params={"status": "investigating"},
     )
     assert [item["id"] for item in filtered.json()["items"]] == [incident_id]
+
+
+async def test_missing_investigation_run_returns_structured_404(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    run_id = uuid4()
+
+    response = await control_client.get(f"/api/v1/investigations/{run_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error_code": "investigation_run_not_found",
+        "message": f"调查运行不存在：{run_id}",
+        "details": {"run_id": str(run_id)},
+    }
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

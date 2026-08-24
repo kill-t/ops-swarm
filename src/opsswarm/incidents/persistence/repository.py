@@ -104,56 +104,15 @@ class IncidentStore:
         """原子更新乐观锁版本并追加对应状态事件。"""
 
         async with self._session_factory() as session, session.begin():
-            row = await session.get(IncidentRow, incident_id)
-            if row is None:
-                raise IncidentNotFound(str(incident_id))
-
-            current = _incident_from_row(row)
-            mutation = transition_incident(
-                current,
+            return await transition_incident_in_session(
+                session,
+                incident_id,
                 action=action,
                 expected_version=expected_version,
                 occurred_at=occurred_at,
                 actor=actor,
                 reason=reason,
             )
-            updated = mutation.incident
-            result = cast(
-                CursorResult[Any],
-                await session.execute(
-                    update(IncidentRow)
-                    .where(
-                        IncidentRow.id == incident_id,
-                        IncidentRow.version == expected_version,
-                    )
-                    .values(
-                        status=updated.status.value,
-                        version=updated.version,
-                        resolved_at=updated.resolved_at,
-                        closed_at=updated.closed_at,
-                        updated_at=updated.updated_at,
-                    )
-                ),
-            )
-            if result.rowcount != 1:
-                actual_version = await session.scalar(
-                    select(IncidentRow.version).where(IncidentRow.id == incident_id)
-                )
-                if actual_version is None:
-                    raise IncidentNotFound(str(incident_id))
-                raise IncidentVersionConflict(
-                    expected_version=expected_version,
-                    actual_version=actual_version,
-                )
-
-            session.add(
-                _event_row(
-                    mutation.event,
-                    payload={"action": action.value},
-                )
-            )
-            await session.flush()
-            return StoredIncident(incident=updated, display_number=row.display_number)
 
     async def list_events(
         self,
@@ -380,3 +339,66 @@ def _constraint_name(error: IntegrityError) -> str | None:
     diagnostic = getattr(error.orig, "diag", None)
     constraint_name = getattr(diagnostic, "constraint_name", None)
     return constraint_name if isinstance(constraint_name, str) else None
+
+
+async def transition_incident_in_session(
+    session: AsyncSession,
+    incident_id: UUID,
+    *,
+    action: IncidentAction,
+    expected_version: int,
+    occurred_at: datetime,
+    actor: IncidentActor,
+    reason: str,
+) -> StoredIncident:
+    """在调用方事务中迁移 Incident，供跨模块原子用例复用。"""
+
+    row = await session.get(IncidentRow, incident_id)
+    if row is None:
+        raise IncidentNotFound(str(incident_id))
+
+    mutation = transition_incident(
+        _incident_from_row(row),
+        action=action,
+        expected_version=expected_version,
+        occurred_at=occurred_at,
+        actor=actor,
+        reason=reason,
+    )
+    updated = mutation.incident
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            update(IncidentRow)
+            .where(
+                IncidentRow.id == incident_id,
+                IncidentRow.version == expected_version,
+            )
+            .values(
+                status=updated.status.value,
+                version=updated.version,
+                resolved_at=updated.resolved_at,
+                closed_at=updated.closed_at,
+                updated_at=updated.updated_at,
+            )
+        ),
+    )
+    if result.rowcount != 1:
+        actual_version = await session.scalar(
+            select(IncidentRow.version).where(IncidentRow.id == incident_id)
+        )
+        if actual_version is None:
+            raise IncidentNotFound(str(incident_id))
+        raise IncidentVersionConflict(
+            expected_version=expected_version,
+            actual_version=actual_version,
+        )
+
+    session.add(
+        _event_row(
+            mutation.event,
+            payload={"action": action.value},
+        )
+    )
+    await session.flush()
+    return StoredIncident(incident=updated, display_number=row.display_number)

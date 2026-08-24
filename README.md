@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付五个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面和单 Agent 调查基线。当前可以通过 HTTP 管理事故，也可以让可注入模型使用三类只读工具调查冻结故障，输出带真实证据引用的结构化根因并计算离线指标；调查 Worker、LangGraph、SSE 和前端尚未接入。
+项目已交付六个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线和持久调查 Worker。当前可以通过 HTTP 原子创建调查运行和任务，由独立 Worker 使用数据库租约领取并保存结构化结果；LangGraph、SSE 和前端尚未接入。
 
 ## 为什么做 OpsSwarm
 
@@ -35,6 +35,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [数据库设计](docs/architecture/04-database-design.md)
 - [API 设计](docs/architecture/05-api-design.md)
 - [单 Agent 调查基线](docs/architecture/06-single-agent-baseline.md)
+- [持久调查任务与独立 Worker](docs/architecture/07-persistent-investigation-worker.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -42,14 +43,15 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 1. 项目章程、架构边界和最小目录。
 2. 确定性故障模拟服务与 Incident 状态机，不接 LLM。
 3. 单 Agent 调查基线。
-4. 协调 Agent 与日志、指标、变更并行调查节点。
-5. Evidence Board、质疑节点和结构化处置计划。
-6. 人工审批、白名单执行器和幂等操作。
-7. 恢复验证、失败恢复与时间线 UI。
-8. 评测集以及单 Agent、多 Agent 对比。
-9. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
+4. 持久调查任务、租约重试和独立 Worker。
+5. 协调 Agent 与日志、指标、变更并行调查节点。
+6. Evidence Board、质疑节点和结构化处置计划。
+7. 人工审批、白名单执行器和幂等操作。
+8. 恢复验证、失败恢复与时间线 UI。
+9. 评测集以及单 Agent、多 Agent 对比。
+10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、PostgreSQL 持久化、不可变时间线、FastAPI 控制面和单 Agent 调查基线。下一阶段把调查运行接入持久任务与独立 Worker，确保任务和结果可恢复，再进入 LangGraph 多 Agent 编排。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线以及可恢复的调查任务。下一阶段在现有任务边界内引入 LangGraph 协调器和并行调查节点。
 
 ## 单 Agent 调查基线
 
@@ -61,7 +63,22 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 uv run pytest tests/unit/investigation -q
 ```
 
-真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 和 `LLM_TEMPERATURE` 显式配置。当前没有自动调用真实模型的命令，避免开发或持续集成误产生费用。
+真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 和 `LLM_TEMPERATURE` 显式配置。自动化测试不读取这些变量，也不会产生模型费用。
+
+## 持久调查 Worker
+
+开始调查接口会在同一事务中保存 Incident 状态变化、`investigation_runs` 和 `work_items`。Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 领取任务，并通过到期时间和唯一租约令牌阻止迟到实例覆盖结果。
+
+当前 Worker 每次运行至多处理一个任务，需要显式配置真实模型：
+
+```powershell
+$env:LLM_API_KEY = "本地模型服务密钥"
+$env:LLM_MODEL = "模型名称"
+$env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
+uv run python -m opsswarm.worker.main
+```
+
+当前处理器仍读取冻结 `release_500` 证据，主要用于验证持久任务、Agent 调用和结果落库链路，不代表真实监控系统已经接入。
 
 ## Incident 领域状态机
 
@@ -81,7 +98,7 @@ uv run alembic upgrade head
 uv run alembic current
 ```
 
-默认连接只服务本地开发，可通过 `OPSSWARM_DATABASE_URL` 覆盖。停止容器使用 `docker compose down`；命名卷会保留数据库内容，用于验证重启恢复。
+默认连接只服务本地开发，可通过 `OPSSWARM_DATABASE_URL` 覆盖。日常停止使用 `docker compose stop control-db`，下次执行 `docker compose start control-db` 复用原容器。`docker compose down` 会删除容器但保留命名卷；不要执行会删除数据卷的 `docker compose down -v`。
 
 ## 运行控制面 API
 

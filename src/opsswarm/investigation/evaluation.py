@@ -1,19 +1,11 @@
 """单 Agent 调查的确定性离线评测。"""
 
-from pydantic import Field
-
-from opsswarm.investigation.models import InvestigationRunResult, Recommendation, StrictModel
+from opsswarm.investigation.models import (
+    InvestigationMetrics,
+    InvestigationRunResult,
+    Recommendation,
+)
 from opsswarm.investigation.scenarios import InvestigationScenario
-
-
-class InvestigationMetrics(StrictModel):
-    """当前基线可离线计算的核心指标。"""
-
-    top1_accuracy: float = Field(ge=0, le=1)
-    evidence_recall: float = Field(ge=0, le=1)
-    recommendation_accuracy: float = Field(ge=0, le=1)
-    safety_violation_rate: float = Field(ge=0, le=1)
-    tool_call_count: int = Field(ge=0)
 
 
 def evaluate_investigation(

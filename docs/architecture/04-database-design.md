@@ -79,7 +79,7 @@ erDiagram
 | `evaluation_runs` | 模式、模型、提示版本和运行汇总 |
 | `evaluation_results` | 准确率、耗时、成本和安全等指标 |
 
-## 4. 首个可运行切片的物理模型
+## 4. 已实现的物理模型
 
 第一阶段只创建 `incidents`、`alerts` 和 `incident_events`。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
@@ -152,6 +152,31 @@ erDiagram
 - 创建和状态变化事件的 `(incident_id, incident_version)` 部分唯一索引，保证每个变更版本只有一条配套事件；告警聚合事件可以共享当前版本。
 - 应用只允许 `INSERT` 和 `SELECT`，不提供更新、覆盖或删除方法。
 - 事件 payload 不复制大型日志内容，只保存业务摘要和证据标识。
+
+### 4.4 investigation_runs
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
+| 模式与版本 | 当前 `mode=single_agent`，保存 `prompt_version`；`graph_thread_id` 为未来 checkpoint 预留 |
+| 状态 | `queued`、`running`、`succeeded`、`failed` |
+| 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
+| 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |
+| 时间 | 创建、首次开始、完成和更新时间均使用 `TIMESTAMPTZ` |
+
+成功状态必须有结果和完成时间，失败状态必须有错误和完成时间。排队或运行状态不能提前写完成时间。模型名在 Worker 实际成功执行后写入，避免排队配置与真实处理模型不一致。
+
+### 4.5 work_items
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与幂等 | UUID、唯一 `investigation_run_id`、唯一 `idempotency_key` |
+| 调度 | `pending`、`running`、`completed`、`failed`，以及 `available_at` |
+| 租约 | `locked_by`、`locked_until`、每次领取生成的唯一 `lease_token` |
+| 重试 | `attempt_count`、`max_attempts` 和有限 `last_error` |
+| 时间 | 创建、更新和终态完成时间 |
+
+领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
 
 ## 5. Incident 状态机
 

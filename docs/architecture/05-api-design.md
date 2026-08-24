@@ -14,7 +14,8 @@
 | `POST /api/v1/alerts` | 新外部告警 `201`；完全重复 `200` | 请求或领域校验 `422` |
 | `GET /api/v1/incidents` | 状态筛选和倒序游标分页 | 查询参数错误 `422` |
 | `GET /api/v1/incidents/{id}` | 返回当前 Incident 快照 | 不存在 `404` |
-| `POST /api/v1/incidents/{id}/actions/start-investigation` | `open` 迁移为 `investigating` | 不存在 `404`；版本或迁移冲突 `409` |
+| `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
+| `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -73,6 +74,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `incident_not_found` | `404` | Incident 不存在 |
 | `incident_version_conflict` | `409` | `expected_version` 已过期 |
 | `invalid_incident_transition` | `409` | 当前状态不允许执行指定动作 |
+| `investigation_run_not_found` | `404` | 调查运行不存在 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

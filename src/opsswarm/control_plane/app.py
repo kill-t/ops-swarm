@@ -22,6 +22,8 @@ from opsswarm.incidents import (
     InvalidIncidentTransition,
 )
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
+from opsswarm.investigation.persistence import InvestigationStore
 
 
 def utc_now() -> datetime:
@@ -33,6 +35,7 @@ def utc_now() -> datetime:
 def create_app(
     *,
     incident_store: IncidentStore | None = None,
+    investigation_store: InvestigationStore | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -40,8 +43,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        if incident_store is not None:
+        if incident_store is not None or investigation_store is not None:
+            if incident_store is None or investigation_store is None:
+                raise RuntimeError("注入控制面仓储时必须同时提供两个仓储")
             application.state.incident_store = incident_store
+            application.state.investigation_store = investigation_store
             yield
             return
 
@@ -49,6 +55,7 @@ def create_app(
         database = Database(settings.database_url)
         application.state.database = database
         application.state.incident_store = IncidentStore(database.session_factory)
+        application.state.investigation_store = InvestigationStore(database.session_factory)
         try:
             yield
         finally:
@@ -61,6 +68,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.incident_store = incident_store
+    app.state.investigation_store = investigation_store
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)
@@ -135,6 +143,27 @@ def create_app(
             )
 
         response = ApiErrorResponse(error_code="incident_domain_error", message=str(error))
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(InvestigationError)
+    async def handle_investigation_error(
+        _: Request,
+        error: InvestigationError,
+    ) -> JSONResponse:
+        if isinstance(error, InvestigationRunNotFound):
+            response = ApiErrorResponse(
+                error_code="investigation_run_not_found",
+                message=str(error),
+                details={"run_id": str(error.run_id)},
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=response.model_dump(mode="json"),
+            )
+        response = ApiErrorResponse(error_code="investigation_error", message=str(error))
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=response.model_dump(mode="json"),

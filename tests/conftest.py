@@ -58,7 +58,10 @@ async def database_session_factory(
     engine = create_async_engine(migrated_database_url, pool_pre_ping=True)
     async with engine.begin() as connection:
         await connection.execute(
-            text("TRUNCATE TABLE incident_events, alerts, incidents RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE TABLE work_items, investigation_runs, incident_events, alerts, "
+                "incidents RESTART IDENTITY CASCADE"
+            )
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:

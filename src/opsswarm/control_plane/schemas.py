@@ -15,6 +15,15 @@ from opsswarm.incidents import (
     IncidentStatus,
 )
 from opsswarm.incidents.persistence import StoredIncident, StoredIncidentEvent
+from opsswarm.investigation.models import (
+    InvestigationMetrics,
+    InvestigationMode,
+    InvestigationRunResult,
+    InvestigationRunStatus,
+    WorkItemError,
+    WorkItemStatus,
+)
+from opsswarm.investigation.persistence import StartedInvestigation, StoredInvestigationRun
 
 
 class StrictApiModel(BaseModel):
@@ -66,6 +75,29 @@ class StartInvestigationRequest(StrictApiModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class InvestigationRunResponse(StrictApiModel):
+    """持久化调查运行的 HTTP 表示。"""
+
+    id: UUID
+    incident_id: UUID
+    mode: InvestigationMode
+    status: InvestigationRunStatus
+    prompt_version: str
+    graph_thread_id: str | None
+    model_name: str | None
+    result: InvestigationRunResult | None
+    metrics: InvestigationMetrics | None
+    last_error: WorkItemError | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    updated_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredInvestigationRun) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
 class IncidentResponse(StrictApiModel):
     """Incident 当前快照的 HTTP 表示。"""
 
@@ -102,6 +134,24 @@ class IncidentResponse(StrictApiModel):
             closed_at=incident.closed_at,
             created_at=incident.created_at,
             updated_at=incident.updated_at,
+        )
+
+
+class StartInvestigationResponse(StrictApiModel):
+    """原子开始调查后返回事故、运行和持久任务标识。"""
+
+    incident: IncidentResponse
+    investigation: InvestigationRunResponse
+    work_item_id: UUID
+    work_item_status: WorkItemStatus
+
+    @classmethod
+    def from_started(cls, started: StartedInvestigation) -> Self:
+        return cls(
+            incident=IncidentResponse.from_stored(started.incident),
+            investigation=InvestigationRunResponse.from_stored(started.run),
+            work_item_id=started.work_item.id,
+            work_item_status=started.work_item.status,
         )
 
 
