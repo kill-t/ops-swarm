@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求，以及审批决定与过期收敛。高风险回滚计划可以被批准或拒绝，但批准不会直接执行任何动作；当前也没有 SSE 或前端。
+项目已交付十五个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛，以及确定性白名单执行器。高风险回滚计划只有在精确版本审批通过后，才能以幂等键关闭本地 `release_500` 故障；当前还没有恢复验证、SSE 或前端。
 
 ## 为什么做 OpsSwarm
 
@@ -44,6 +44,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [版本化处置计划与风险分级](docs/architecture/13-action-plan-and-risk-policy.md)
 - [精确版本审批请求与原子状态迁移](docs/architecture/14-approval-request.md)
 - [审批决定、过期收敛与审计](docs/architecture/15-approval-decision.md)
+- [确定性白名单执行器与幂等操作](docs/architecture/16-deterministic-operation-executor.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -59,7 +60,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求和不可变审批决定。下一阶段建立确定性白名单执行器；执行范围仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定，以及带租约和幂等记录的本地白名单执行。下一阶段建立确定性恢复验证；执行范围仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -156,7 +157,15 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 批准和拒绝使用独立语义化接口；终态不可覆盖，同方向重试幂等，相反决定返回冲突。到达时已过期的请求由系统收敛为 `expired`，计划和 Incident 返回调查语义。`actor_id` 仍只是本地审计声明，不是可信登录身份。
 
-批准后计划为 `approved`，Incident 为 `mitigating`，但系统没有执行器，也不会调用故障开关。批准表达的是后续白名单执行器的资格，不等于动作已经发生。
+批准后计划为 `approved`，Incident 为 `mitigating`。随后只能通过具体步骤 ID 和幂等键调用白名单执行接口；执行器重新校验当前计划、批准记录、Incident 版本和固定动作参数，成功后进入 `verifying`，失败后返回 `investigating`。
+
+## 确定性白名单执行
+
+`POST /api/v1/action-steps/{step_id}/executions` 不接受 Shell、URL 或动作参数，只接受幂等键和期望 Incident 版本。当前唯一适配器把已经批准的 `rollback_release` 映射为固定本地请求：关闭 `order-service` 的 `release_500` 故障开关。
+
+执行记录先以 15 秒租约写入 PostgreSQL，再调用最长 3 秒的本地 HTTP 适配器，最后以有效租约提交成功或失败终态。同一幂等键重复请求不会重复执行；进程中断后只能用相同键在租约过期后接管。外部动作使用“设置为关闭”而非“切换”，因此物理重放仍保持相同效果。
+
+这是一种可恢复的至少一次执行设计，不宣称跨 PostgreSQL 和 HTTP 实现分布式事务或物理上的恰好一次。执行成功只表示动作已完成，Incident 会进入 `verifying`；是否真正恢复由下一切片独立判断。
 
 ## Incident 领域状态机
 
@@ -237,10 +246,10 @@ Invoke-WebRequest http://127.0.0.1:8000/orders/order-001 -SkipHttpErrorCheck
 ```powershell
 docker compose up --build -d --wait
 Invoke-RestMethod http://127.0.0.1:18001/health
-docker compose down
+docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。故障开关默认关闭，服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。故障开关默认关闭，服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 ## 测试与检查
 

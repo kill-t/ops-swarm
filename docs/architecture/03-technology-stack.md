@@ -22,6 +22,7 @@
 | 业务数据库 | PostgreSQL 17 | 保存业务事实、审计、事件和持久任务，支持 JSONB、部分索引和行锁 |
 | 任务调度 | PostgreSQL 租约队列 | MVP 无需额外消息中间件，支持 `SKIP LOCKED` 和故障接管 |
 | 实时进度 | SSE + REST | 进度单向推送，审批使用 REST；比 WebSocket 更符合实际交互 |
+| 受控 HTTP | HTTPX2 异步客户端 | 执行固定本地白名单请求；关闭环境代理继承并限制地址和超时 |
 
 ## 3. Agent 技术栈
 
@@ -90,6 +91,8 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 根因质疑使用版本化纯 Python 规则，不增加第二个 LLM 裁判。LangGraph 负责把规则节点放入可恢复序列，Pydantic 校验输出结构，PostgreSQL 保存假设和逐证据关系；业务规则仍可在毫秒级纯单元测试中覆盖。
 
 处置计划当前使用确定性模板建立安全基线：Pydantic 只接受白名单动作和精确参数模型，纯 Python `action-risk-v1` 策略重算风险，PostgreSQL 保存不可变版本并用检查约束阻止高风险动作绕过审批。审批请求与决定使用 SQLAlchemy 事务和 PostgreSQL 行锁同步计划、Incident 与时间线，以 SHA-256 检测内容漂移，并通过数据库检查约束保证终态审计完整；LangChain 和 LangGraph 都不参与审批有效性判断。未来 LangChain 可以生成相同 `ActionPlan` 契约的候选计划，但不能替代风险策略或审批。
+
+白名单执行使用 HTTPX2 访问固定本地管理路径，并以 Pydantic 校验有限响应。SQLAlchemy/PostgreSQL 在环境操作前保存全局幂等键与短租约，完成时用新读取的 UTC 时间重新校验租约，再原子提交执行终态、Incident 迁移和时间线。该设计承认数据库与 HTTP 之间没有分布式事务，通过幂等的目标状态设置实现安全重放，而不是错误宣称物理恰好一次。
 
 ## 5. 可观测性
 

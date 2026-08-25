@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
+from opsswarm.execution import OperationResult
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.models import (
     InvestigationArtifacts,
@@ -21,10 +22,24 @@ from opsswarm.investigation.models import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.planning.persistence import StoredActionStep
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 BASE_TIME = datetime(2026, 1, 1, 8, 0, tzinfo=UTC)
+
+
+class ApiOperationAdapter:
+    """API 集成测试不依赖真实网络，但保持相同白名单结果契约。"""
+
+    async def execute(self, step: StoredActionStep) -> OperationResult:
+        return OperationResult(
+            output={
+                "fault": "release_500",
+                "enabled": False,
+                "service": step.target_name,
+            }
+        )
 
 
 def fixed_clock() -> datetime:
@@ -59,6 +74,7 @@ async def control_client(
     app = create_app(
         database_settings=DatabaseSettings(database_url=migrated_database_url),
         clock=fixed_clock,
+        operation_adapter=ApiOperationAdapter(),
     )
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
@@ -433,6 +449,47 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["status"] == "mitigating"
     assert incident.json()["version"] == 4
 
+    step_id = plan_body["action_plan"]["steps"][0]["id"]
+    execution_payload = {
+        "idempotency_key": "api-execution-001",
+        "expected_incident_version": 4,
+    }
+    execution = await control_client.post(
+        f"/api/v1/action-steps/{step_id}/executions",
+        json=execution_payload,
+    )
+    assert execution.status_code == 201
+    execution_body = execution.json()
+    assert execution_body["created"] is True
+    assert execution_body["execution_performed"] is True
+    assert execution_body["operation_execution"]["status"] == "succeeded"
+    assert execution_body["operation_execution"]["result"]["enabled"] is False
+    execution_id = execution_body["operation_execution"]["id"]
+
+    duplicate_execution = await control_client.post(
+        f"/api/v1/action-steps/{step_id}/executions",
+        json=execution_payload,
+    )
+    assert duplicate_execution.status_code == 200
+    assert duplicate_execution.json() == {
+        **execution_body,
+        "created": False,
+        "execution_performed": False,
+    }
+    stored_execution = await control_client.get(f"/api/v1/operation-executions/{execution_id}")
+    assert stored_execution.status_code == 200
+    assert stored_execution.json() == execution_body["operation_execution"]
+    repeated_with_new_key = await control_client.post(
+        f"/api/v1/action-steps/{step_id}/executions",
+        json={**execution_payload, "idempotency_key": "api-execution-002"},
+    )
+    assert repeated_with_new_key.status_code == 409
+    assert repeated_with_new_key.json()["error_code"] == "operation_step_already_succeeded"
+
+    incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
+    assert incident.json()["status"] == "verifying"
+    assert incident.json()["version"] == 5
+
 
 async def test_start_investigation_rejects_unknown_mode(
     control_client: httpx2.AsyncClient,
@@ -507,6 +564,23 @@ async def test_missing_investigation_run_returns_structured_404(
         )
         assert missing_decision.status_code == 404
         assert missing_decision.json()["error_code"] == "approval_request_not_found"
+
+    step_id = uuid4()
+    missing_execution = await control_client.post(
+        f"/api/v1/action-steps/{step_id}/executions",
+        json={
+            "idempotency_key": "missing-execution-001",
+            "expected_incident_version": 1,
+        },
+    )
+    assert missing_execution.status_code == 404
+    assert missing_execution.json()["error_code"] == "operation_step_not_found"
+    execution_id = uuid4()
+    missing_execution_record = await control_client.get(
+        f"/api/v1/operation-executions/{execution_id}"
+    )
+    assert missing_execution_record.status_code == 404
+    assert missing_execution_record.json()["error_code"] == "operation_execution_not_found"
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

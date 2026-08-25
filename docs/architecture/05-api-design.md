@@ -23,6 +23,8 @@
 | `GET /api/v1/approval-requests/{request_id}` | 重验计划内容后返回限时审批请求 | 不存在 `404`；内容漂移 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/approve` | 首次批准 `decision_applied=true`；同向重试为 `false` | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
+| `POST /api/v1/action-steps/{step_id}/executions` | 首次执行 `201`；幂等终态 `200`；同键运行中 `202` | 不存在 `404`；授权、版本、幂等或租约冲突 `409`；已审计适配器失败 `502` |
+| `GET /api/v1/operation-executions/{execution_id}` | 返回持久执行状态、有限结果或失败摘要 | 不存在 `404` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -46,6 +48,14 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 请求绑定计划 ID、版本和内容 SHA-256，固定 30 分钟有效。GET 会重新校验计划策略与内容哈希。批准和拒绝是不可变终态；同方向重试返回原决定，相反方向返回冲突。决定到达时已经过期会先持久化 `expired` 并把 Incident 返回调查，再响应 `409`。
 
 批准把 Incident 迁移到 `mitigating`，但接口不调用执行器或环境工具。`actor_id` 只供本地审计，不能证明调用者身份。
+
+### 2.4 受控执行语义
+
+执行 POST 只接受 8～100 字符的 `idempotency_key` 和 `expected_incident_version`。路径中的 `step_id` 决定要执行的数据库步骤；客户端不能提交动作类型、目标、参数、命令或 URL。服务端重新校验当前批准计划与内容哈希后，先创建带 15 秒租约的 `running` 记录，再调用最长 3 秒的固定本地适配器。
+
+首次创建并成功完成返回 `201`、`created=true`、`execution_performed=true`。相同键的终态重试返回 `200` 且不重复调用适配器；有效租约内的并发同键请求返回 `202` 和同一 `running` 记录。进程中断后，相同键只能在租约过期后接管并增加 `attempt_count`。响应不暴露内部 `lease_token`。
+
+适配器失败会先保存 `failed`、错误摘要和 Incident 回调查，再返回 `502`。成功保存有限结果并把 Incident 推进到 `verifying`，但不代表业务已经恢复。调用方必须通过执行记录 GET 和后续恢复验证读取事实，不能把 HTTP 请求已返回等同于事故已解决。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -118,6 +128,14 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `approval_request_already_decided` | `409` | 请求已经进入与当前命令相反的终态 |
 | `approval_request_expired` | `409` | 请求已收敛为过期，人工决定未应用 |
 | `action_plan_not_decidable` | `409` | pending 请求关联的计划不在待审批状态 |
+| `operation_step_not_found` | `404` | 处置步骤不存在 |
+| `operation_execution_not_found` | `404` | 执行记录不存在 |
+| `operation_not_authorized` | `409` | Incident、当前计划或精确批准不满足执行条件 |
+| `operation_idempotency_conflict` | `409` | 幂等键已绑定另一个步骤 |
+| `operation_step_already_running` | `409` | 步骤已有使用其他幂等键的运行记录 |
+| `operation_step_already_succeeded` | `409` | 步骤已经使用其他幂等键成功执行 |
+| `execution_lease_lost` | `409` | 当前执行实例的租约已过期或被接管 |
+| `operation_execution_failed` | `502` | 受控适配器失败，失败事实和 Incident 回流已落库 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

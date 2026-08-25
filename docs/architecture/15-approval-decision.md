@@ -4,7 +4,7 @@
 
 本切片让工程师能够对 `pending` 审批请求提交批准或拒绝，并把超时请求确定性收敛为 `expired`。每个终态都保存操作者、原因和时间，计划、Incident 与时间线必须同步变化。
 
-批准只表达“这个精确计划版本获得执行资格”：审批请求和计划变为 `approved`，Incident 进入 `mitigating`。当前没有执行器、操作记录或环境写权限，因此批准接口本身不会调用 Docker、Shell、SQL、故障开关或外部平台。
+批准只表达“这个精确计划版本获得执行资格”：审批请求和计划变为 `approved`，Incident 进入 `mitigating`。批准接口本身不会调用 Docker、Shell、SQL、故障开关或外部平台；后续执行必须通过独立白名单执行接口再次校验授权，详细设计见 [确定性白名单执行器](16-deterministic-operation-executor.md)。
 
 ## 2. 状态与业务动作
 
@@ -76,10 +76,10 @@ sequenceDiagram
 - `actor_id` 仍是 localhost 演练的审计声明，不是可信身份认证。
 - 没有角色、双人复核、租户、审批策略组或撤销批准。
 - 过期策略固定为 30 分钟，没有后台扫描器；没有决定命令时保持 `pending`。
-- 批准后 Incident 停在 `mitigating`，但没有任何操作被执行。
+- 批准后 Incident 停在 `mitigating`，必须由独立执行命令和幂等键触发固定本地操作。
 - LangGraph 暂停恢复尚未接入决定命令，业务事实仍以 PostgreSQL 为准。
 
-下一切片建立确定性白名单执行器和 `operation_executions`：只接受已批准计划，重新校验版本、哈希和动作参数，使用唯一幂等键执行本地故障演练操作，并完整保存结果。危险范围仍限制在 Compose 演练环境。
+后续已建立确定性白名单执行器和 `operation_executions`：只接受已批准计划，重新校验版本、哈希和动作参数，使用唯一幂等键执行本地故障演练操作，并完整保存结果。下一阶段将使用独立 `verification_runs` 判断系统是否真正恢复。
 
 ## 7. 面试表达
 

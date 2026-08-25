@@ -64,6 +64,12 @@ class ApprovalRequestRow(Base):
             "action_plan_id",
             name="uq_approval_requests_action_plan",
         ),
+        UniqueConstraint(
+            "id",
+            "action_plan_id",
+            "action_plan_version",
+            name="uq_approval_requests_exact_plan_binding",
+        ),
         Index(
             "ix_approval_requests_status_expires",
             "status",

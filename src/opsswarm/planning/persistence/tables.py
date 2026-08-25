@@ -113,6 +113,11 @@ class ActionStepRow(Base):
             "step_order",
             name="uq_action_steps_plan_order",
         ),
+        UniqueConstraint(
+            "id",
+            "action_plan_id",
+            name="uq_action_steps_id_plan",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)

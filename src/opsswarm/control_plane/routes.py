@@ -21,15 +21,20 @@ from opsswarm.control_plane.schemas import (
     DecideApprovalRequest,
     DecideApprovalRequestResponse,
     EvidenceBoardResponse,
+    ExecuteOperationRequest,
+    ExecuteOperationResponse,
     HealthResponse,
     IncidentEventPageResponse,
     IncidentEventResponse,
     IncidentPageResponse,
     IncidentResponse,
     InvestigationRunResponse,
+    OperationExecutionResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
 )
+from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
+from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
@@ -86,6 +91,21 @@ def get_approval_request_store(request: Request) -> ApprovalRequestStore:
 ApprovalRequestStoreDependency = Annotated[
     ApprovalRequestStore,
     Depends(get_approval_request_store),
+]
+
+
+def get_operation_execution_service(request: Request) -> OperationExecutionService:
+    """从应用生命周期状态获取确定性执行服务。"""
+
+    service = getattr(request.app.state, "operation_execution_service", None)
+    if not isinstance(service, OperationExecutionService):
+        raise RuntimeError("OperationExecutionService 尚未初始化")
+    return service
+
+
+OperationExecutionServiceDependency = Annotated[
+    OperationExecutionService,
+    Depends(get_operation_execution_service),
 ]
 
 
@@ -365,6 +385,65 @@ def create_router(clock: Clock) -> APIRouter:
             store,
             ApprovalDecision.REJECT,
         )
+
+    @router.post(
+        "/api/v1/action-steps/{step_id}/executions",
+        response_model=ExecuteOperationResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": ExecuteOperationResponse,
+                "description": "幂等返回已有终态或租约恢复结果",
+            },
+            status.HTTP_202_ACCEPTED: {
+                "model": ExecuteOperationResponse,
+                "description": "同一幂等操作正在执行",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+            status.HTTP_502_BAD_GATEWAY: {"model": ApiErrorResponse},
+        },
+        tags=["受控执行"],
+    )
+    async def execute_action_step(
+        step_id: UUID,
+        request: ExecuteOperationRequest,
+        response: Response,
+        service: OperationExecutionServiceDependency,
+    ) -> ExecuteOperationResponse:
+        """执行固定本地动作；请求不能提供命令、URL 或任意参数。"""
+
+        outcome = await service.execute_step(
+            step_id,
+            idempotency_key=request.idempotency_key,
+            expected_incident_version=request.expected_incident_version,
+            occurred_at=clock(),
+        )
+        if outcome.execution.status is ExecutionStatus.FAILED:
+            if outcome.execution.failure is None:
+                raise RuntimeError("failed 执行缺少失败详情")
+            raise OperationExecutionFailed(
+                outcome.execution.id,
+                error_code=outcome.execution.failure.error_code,
+                message=outcome.execution.failure.message,
+            )
+        if outcome.execution.status is ExecutionStatus.RUNNING:
+            response.status_code = status.HTTP_202_ACCEPTED
+        elif not outcome.created:
+            response.status_code = status.HTTP_200_OK
+        return ExecuteOperationResponse.from_outcome(outcome)
+
+    @router.get(
+        "/api/v1/operation-executions/{execution_id}",
+        response_model=OperationExecutionResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["受控执行"],
+    )
+    async def get_operation_execution(
+        execution_id: UUID,
+        service: OperationExecutionServiceDependency,
+    ) -> OperationExecutionResponse:
+        return OperationExecutionResponse.from_stored(await service.get(execution_id))
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

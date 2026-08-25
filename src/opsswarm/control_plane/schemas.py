@@ -12,6 +12,11 @@ from opsswarm.approval.persistence import (
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
+from opsswarm.execution import ExecutionStatus
+from opsswarm.execution.persistence import (
+    OperationExecutionOutcome,
+    StoredOperationExecution,
+)
 from opsswarm.incidents import (
     ActorType,
     AlertIngestionResult,
@@ -370,6 +375,79 @@ class DecideApprovalRequestResponse(StrictApiModel):
         return cls(
             decision_applied=outcome.decision_applied,
             approval_request=ApprovalRequestResponse.from_stored(outcome.request),
+        )
+
+
+class ExecuteOperationRequest(StrictApiModel):
+    """领取白名单步骤时的幂等键和 Incident 乐观锁。"""
+
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]+$",
+    )
+    expected_incident_version: int = Field(ge=1)
+
+
+class OperationExecutionResponse(StrictApiModel):
+    """不暴露内部租约令牌的执行记录。"""
+
+    id: UUID
+    idempotency_key: str
+    incident_id: UUID
+    approval_request_id: UUID
+    action_plan_id: UUID
+    action_plan_version: int
+    action_step_id: UUID
+    status: ExecutionStatus
+    executor_name: str
+    incident_version_before: int
+    attempt_count: int
+    locked_until: datetime | None
+    result: dict[str, JsonValue] | None
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+    @classmethod
+    def from_stored(cls, stored: StoredOperationExecution) -> Self:
+        return cls(
+            id=stored.id,
+            idempotency_key=stored.idempotency_key,
+            incident_id=stored.incident_id,
+            approval_request_id=stored.approval_request_id,
+            action_plan_id=stored.action_plan_id,
+            action_plan_version=stored.action_plan_version,
+            action_step_id=stored.action_step_id,
+            status=stored.status,
+            executor_name=stored.executor_name,
+            incident_version_before=stored.incident_version_before,
+            attempt_count=stored.attempt_count,
+            locked_until=stored.locked_until,
+            result=stored.result.output if stored.result is not None else None,
+            error_code=stored.failure.error_code if stored.failure is not None else None,
+            error_message=stored.failure.message if stored.failure is not None else None,
+            created_at=stored.created_at,
+            updated_at=stored.updated_at,
+            completed_at=stored.completed_at,
+        )
+
+
+class ExecuteOperationResponse(StrictApiModel):
+    """区分新记录、租约恢复和纯幂等读取。"""
+
+    created: bool
+    execution_performed: bool
+    operation_execution: OperationExecutionResponse
+
+    @classmethod
+    def from_outcome(cls, outcome: OperationExecutionOutcome) -> Self:
+        return cls(
+            created=outcome.created,
+            execution_performed=outcome.execution_performed,
+            operation_execution=OperationExecutionResponse.from_stored(outcome.execution),
         )
 
 

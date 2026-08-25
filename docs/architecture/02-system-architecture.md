@@ -96,10 +96,10 @@ sequenceDiagram
 1. 候选计划只能生成经过 Pydantic 校验的 `ActionPlan`，每个步骤声明动作类型、目标、参数和验证方式；当前冻结场景先使用确定性模板。
 2. 确定性规则引擎根据动作白名单重算风险和审批要求，不能采信模型自报等级。
 3. 工程师通过 REST 提交批准或拒绝，超时使用独立系统终态；决定与操作者、原因和时间永久留痕。
-4. 执行器重新校验计划版本、审批有效性、动作参数和幂等键。
-5. 执行结果落库后进入确定性恢复验证；失败或未恢复时返回调查阶段。
+4. 执行器重新校验当前计划版本、审批内容哈希、Incident 乐观锁版本、动作参数和幂等键，先持久化短租约再调用固定适配器。
+5. 执行成功与 Incident 进入验证、执行失败与 Incident 返回调查分别在同一事务落库；恢复是否成立由后续确定性验证独立判断。
 
-审批不是一句聊天文本，而是绑定计划版本、动作集合、操作者和有效期的业务对象。决定已实现为不可变终态；批准只进入 `mitigating`，不会绕过尚未实现的确定性执行器。
+审批不是一句聊天文本，而是绑定计划版本、动作集合、操作者和有效期的业务对象。决定是不可变终态；批准只进入 `mitigating`，执行接口还必须经过独立授权校验。当前唯一适配器只会把 `order-service` 的 `release_500` 设置为关闭，不接受任意命令、URL 或客户端参数。
 
 ## 5. LangChain 与 LangGraph 边界
 
@@ -130,7 +130,7 @@ LangGraph 1.x 用于：
 
 单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
 
-多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域生成独立持久化的 `draft` 草案；审批域锁定 Incident，并在同一事务中把计划和 Incident 迁移到 `awaiting_approval`、追加事件并创建绑定内容哈希的请求。批准和拒绝仍未实现。
+多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域生成独立持久化的 `draft` 草案；审批域锁定 Incident，并在同一事务中把计划和 Incident 迁移到 `awaiting_approval`、追加事件并创建绑定内容哈希的请求。批准、拒绝与本地白名单执行都由确定性应用服务处理，LangChain 和 LangGraph 不参与授权判断。
 
 ## 6. PostgreSQL 任务与 SSE
 
@@ -166,6 +166,12 @@ LangGraph 1.x 用于：
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单 Agent 或多 Agent |
 | `GET /api/v1/investigations/{run_id}` | 查询调查运行、结果、指标与错误 |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 查询已提交的结论、规范化证据、专业报告和引用 |
+| `POST /api/v1/investigations/{run_id}/action-plans` | 从已支持假设和证据生成版本化白名单计划 |
+| `POST /api/v1/action-plans/{plan_id}/approval-requests` | 为当前计划精确版本创建限时审批请求 |
+| `POST /api/v1/approval-requests/{request_id}/actions/approve` | 以不可变人工决定批准精确计划版本 |
+| `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 |
+| `POST /api/v1/action-steps/{step_id}/executions` | 使用幂等键执行已批准的固定本地白名单步骤 |
+| `GET /api/v1/operation-executions/{execution_id}` | 查询持久执行状态、有限结果或失败摘要 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 后续阶段提供可重放 SSE |
 | `GET /orders/{id}` | 演练订单查询 |
@@ -190,5 +196,7 @@ LangGraph 1.x 用于：
 | Agent 节点失败 | 从最近 checkpoint 恢复，已完成并行节点不重复运行 |
 | 模型超时或限流 | 记录可重试错误并使用退避，不修改 Incident 为已解决 |
 | 执行请求重复 | 由操作幂等键返回原执行结果 |
+| 执行进程在外部动作后崩溃 | 同一幂等键在 15 秒租约过期后接管并安全重放目标状态设置 |
+| 迟到执行实例提交终态 | 租约令牌或到期时间不匹配时拒绝提交 |
 | 审批过期或计划变化 | 拒绝执行并重新进入审批 |
 | 恢复验证失败 | 保存验证证据并返回 `investigating` |

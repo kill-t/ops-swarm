@@ -29,6 +29,21 @@ from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
+from opsswarm.execution import (
+    ExecutionError,
+    ExecutionLeaseLost,
+    FaultLabOperationAdapter,
+    OperationAdapter,
+    OperationExecutionFailed,
+    OperationExecutionNotFound,
+    OperationIdempotencyConflict,
+    OperationNotAuthorized,
+    OperationStepAlreadyRunning,
+    OperationStepAlreadySucceeded,
+    OperationStepNotFound,
+)
+from opsswarm.execution.persistence import OperationExecutionStore
+from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import (
     IncidentDomainError,
     IncidentNotFound,
@@ -62,6 +77,8 @@ def create_app(
     investigation_store: InvestigationStore | None = None,
     action_plan_store: ActionPlanStore | None = None,
     approval_request_store: ApprovalRequestStore | None = None,
+    operation_execution_store: OperationExecutionStore | None = None,
+    operation_adapter: OperationAdapter | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -74,14 +91,20 @@ def create_app(
             investigation_store,
             action_plan_store,
             approval_request_store,
+            operation_execution_store,
         )
         if any(store is not None for store in stores):
             if any(store is None for store in stores):
-                raise RuntimeError("注入控制面仓储时必须同时提供四个仓储")
+                raise RuntimeError("注入控制面仓储时必须同时提供五个仓储")
             application.state.incident_store = incident_store
             application.state.investigation_store = investigation_store
             application.state.action_plan_store = action_plan_store
             application.state.approval_request_store = approval_request_store
+            application.state.operation_execution_service = OperationExecutionService(
+                cast(OperationExecutionStore, operation_execution_store),
+                operation_adapter if operation_adapter is not None else FaultLabOperationAdapter(),
+                clock=clock,
+            )
             yield
             return
 
@@ -92,6 +115,12 @@ def create_app(
         application.state.investigation_store = InvestigationStore(database.session_factory)
         application.state.action_plan_store = ActionPlanStore(database.session_factory)
         application.state.approval_request_store = ApprovalRequestStore(database.session_factory)
+        execution_store = OperationExecutionStore(database.session_factory)
+        application.state.operation_execution_service = OperationExecutionService(
+            execution_store,
+            operation_adapter if operation_adapter is not None else FaultLabOperationAdapter(),
+            clock=clock,
+        )
         try:
             yield
         finally:
@@ -107,6 +136,7 @@ def create_app(
     app.state.investigation_store = investigation_store
     app.state.action_plan_store = action_plan_store
     app.state.approval_request_store = approval_request_store
+    app.state.operation_execution_service = None
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)
@@ -338,6 +368,82 @@ def create_app(
             )
         else:
             response = ApiErrorResponse(error_code="approval_error", message=str(error))
+        return JSONResponse(
+            status_code=http_status,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(ExecutionError)
+    async def handle_execution_error(
+        _: Request,
+        error: ExecutionError,
+    ) -> JSONResponse:
+        http_status = status.HTTP_409_CONFLICT
+        if isinstance(error, OperationStepNotFound):
+            response = ApiErrorResponse(
+                error_code="operation_step_not_found",
+                message=str(error),
+                details={"step_id": str(error.step_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, OperationExecutionNotFound):
+            response = ApiErrorResponse(
+                error_code="operation_execution_not_found",
+                message=str(error),
+                details={"execution_id": str(error.execution_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, OperationExecutionFailed):
+            response = ApiErrorResponse(
+                error_code="operation_execution_failed",
+                message=str(error),
+                details={
+                    "execution_id": str(error.execution_id),
+                    "operation_error_code": error.error_code,
+                },
+            )
+            http_status = status.HTTP_502_BAD_GATEWAY
+        elif isinstance(error, OperationNotAuthorized):
+            response = ApiErrorResponse(
+                error_code="operation_not_authorized",
+                message=str(error),
+                details={
+                    "step_id": str(error.step_id),
+                    "reason_code": error.reason_code,
+                },
+            )
+        elif isinstance(error, OperationIdempotencyConflict):
+            response = ApiErrorResponse(
+                error_code="operation_idempotency_conflict",
+                message=str(error),
+                details={"idempotency_key": error.idempotency_key},
+            )
+        elif isinstance(error, OperationStepAlreadyRunning):
+            response = ApiErrorResponse(
+                error_code="operation_step_already_running",
+                message=str(error),
+                details={
+                    "step_id": str(error.step_id),
+                    "execution_id": str(error.execution_id),
+                },
+            )
+        elif isinstance(error, OperationStepAlreadySucceeded):
+            response = ApiErrorResponse(
+                error_code="operation_step_already_succeeded",
+                message=str(error),
+                details={
+                    "step_id": str(error.step_id),
+                    "execution_id": str(error.execution_id),
+                },
+            )
+        elif isinstance(error, ExecutionLeaseLost):
+            response = ApiErrorResponse(
+                error_code="execution_lease_lost",
+                message=str(error),
+                details={"execution_id": str(error.execution_id)},
+            )
+        else:
+            response = ApiErrorResponse(error_code="execution_error", message=str(error))
         return JSONResponse(
             status_code=http_status,
             content=response.model_dump(mode="json"),

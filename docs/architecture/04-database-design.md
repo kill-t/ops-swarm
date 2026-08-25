@@ -43,6 +43,7 @@ erDiagram
     ACTION_PLANS ||--o{ ACTION_STEPS : contains
     ACTION_PLANS ||--o{ APPROVAL_REQUESTS : requests
     ACTION_STEPS ||--o{ OPERATION_EXECUTIONS : executes
+    APPROVAL_REQUESTS ||--o{ OPERATION_EXECUTIONS : authorizes
     OPERATION_EXECUTIONS ||--o{ VERIFICATION_RUNS : verifies
     INVESTIGATION_RUNS ||--o{ WORK_ITEMS : schedules
     EVALUATION_CASES ||--o{ EVALUATION_RUNS : evaluates
@@ -88,7 +89,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表，以及审批请求表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表，以及操作执行表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -259,6 +260,22 @@ erDiagram
 
 数据库约束要求：`pending` 的全部决定字段为空；`approved`、`rejected` 必须有 `human`、操作者 ID、原因和时间；`expired` 必须有无操作者 ID 的 `system`、原因和时间。决定时间不得早于请求创建时间。
 
+### 4.14 operation_executions
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与幂等 | UUID 主键、8～100 字符的全局唯一 `idempotency_key` |
+| 精确授权绑定 | Incident ID、审批请求 ID、计划 ID 与版本、步骤 ID；复合外键保证审批、计划版本和步骤归属一致 |
+| 生命周期 | `running`、`succeeded`、`failed`，并保存固定 `executor_name` 与执行前 Incident 版本 |
+| 租约与恢复 | `attempt_count`、运行态唯一 `lease_token`、`locked_until`、创建与更新时间 |
+| 有限终态 | 成功保存最多 16 KiB 的结果对象；失败保存稳定错误码与最多 500 字摘要；两者都保存完成时间 |
+
+`idempotency_key` 唯一约束保证一个逻辑请求只对应一条记录。`action_step_id` 上的两个部分唯一索引分别限制同一步骤最多一个 `running` 和一个 `succeeded` 记录；失败记录保留审计，但只有 Incident 再次经过合法调查与审批流程后才可能重试。
+
+领取事务使用幂等键的 PostgreSQL 事务级咨询锁，并依次锁定步骤和 Incident。首次领取写入 15 秒租约；相同键在租约有效时只返回现有运行记录，租约过期后生成新令牌并增加尝试次数。完成事务要求令牌匹配且完成时刻仍早于租约到期，否则迟到实例不能写终态。
+
+生命周期检查约束保证：运行态必须有租约且没有结果；成功态必须清理租约并只保存 JSON 对象结果；失败态必须清理租约并只保存完整错误。执行成功或失败与 Incident 状态迁移、乐观锁版本和 `incident_events` 在同一事务提交。Alembic 降级会在存在任何执行审计时主动拒绝删除表，避免无声丢失操作历史。
+
 ## 5. Incident 状态机
 
 ```mermaid
@@ -337,7 +354,6 @@ flowchart TD
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
 - 审批必须绑定已实现的 `action_plans` 精确 ID 和版本；计划变化后旧审批失效。
-- `operation_executions.idempotency_key` 唯一，重复调用返回已有结果。
 - `tool_calls` 和评测表保存模型、提示、工具版本、延迟、Token 和错误分类，支持公平对比。
 - 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。
 

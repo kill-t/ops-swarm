@@ -89,7 +89,7 @@ class ApprovalRequestStore:
             )
             if existing is not None:
                 return ApprovalRequestCreation(
-                    request=await _stored_request(session, existing),
+                    request=await load_approval_request_in_session(session, existing),
                     created=False,
                 )
 
@@ -132,7 +132,7 @@ class ApprovalRequestStore:
             session.add(request_row)
             await session.flush()
             return ApprovalRequestCreation(
-                request=await _stored_request(session, request_row),
+                request=await load_approval_request_in_session(session, request_row),
                 created=True,
             )
 
@@ -143,7 +143,7 @@ class ApprovalRequestStore:
             row = await session.get(ApprovalRequestRow, request_id)
             if row is None:
                 raise ApprovalRequestNotFound(request_id)
-            return await _stored_request(session, row)
+            return await load_approval_request_in_session(session, row)
 
     async def decide(
         self,
@@ -188,7 +188,7 @@ class ApprovalRequestStore:
             # 请求可能在等待 Incident 行锁期间被另一决定更新，必须重新读取终态。
             await session.refresh(request_row)
             await session.refresh(plan_row)
-            stored_request = await _stored_request(session, request_row)
+            stored_request = await load_approval_request_in_session(session, request_row)
             target_request_status = _decision_request_status(decision)
             if stored_request.status is not ApprovalRequestStatus.PENDING:
                 if stored_request.status in {target_request_status, ApprovalRequestStatus.EXPIRED}:
@@ -215,7 +215,7 @@ class ApprovalRequestStore:
                     occurred_at=occurred_at,
                 )
                 return ApprovalDecisionOutcome(
-                    request=await _stored_request(session, request_row),
+                    request=await load_approval_request_in_session(session, request_row),
                     decision_applied=False,
                 )
 
@@ -236,7 +236,7 @@ class ApprovalRequestStore:
             plan_row.status = _decision_plan_status(decision).value
             await session.flush()
             return ApprovalDecisionOutcome(
-                request=await _stored_request(session, request_row),
+                request=await load_approval_request_in_session(session, request_row),
                 decision_applied=True,
             )
 
@@ -253,10 +253,11 @@ async def _current_plan_row(session: AsyncSession, run_id: UUID) -> ActionPlanRo
     )
 
 
-async def _stored_request(
+async def load_approval_request_in_session(
     session: AsyncSession,
     row: ApprovalRequestRow,
 ) -> StoredApprovalRequest:
+    """在调用方事务中读取并重验审批绑定的计划内容。"""
     plan_row = await session.get(ActionPlanRow, row.action_plan_id)
     if plan_row is None:
         raise RuntimeError("审批请求关联的处置计划不存在")

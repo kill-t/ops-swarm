@@ -55,3 +55,4 @@
 - [12 - 版本化处置计划与风险分级](12-action-plan-and-risk-policy.md)
 - [13 - 精确版本审批请求与原子状态迁移](13-approval-request.md)
 - [14 - 审批决定、过期收敛与审计](14-approval-decision.md)
+- [15 - 确定性白名单执行器与幂等操作](15-deterministic-operation-executor.md)
