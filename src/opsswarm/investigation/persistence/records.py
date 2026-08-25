@@ -9,12 +9,15 @@ from pydantic import JsonValue
 from opsswarm.incidents.persistence import StoredIncident
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceRelation,
+    HypothesisStatus,
     InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
     InvestigationRunStatus,
+    RootCause,
     SpecialistReport,
     StrictModel,
     WorkItemError,
@@ -101,6 +104,32 @@ class StoredSpecialistReport(StrictModel):
         )
 
 
+class StoredHypothesisEvidence(StrictModel):
+    """持久化假设对一条证据的质疑判断。"""
+
+    evidence_item_id: UUID
+    evidence_id: str
+    relation: EvidenceRelation
+    rule_code: str
+    rationale: str
+    created_at: datetime
+
+
+class StoredHypothesis(StrictModel):
+    """主根因假设、状态及完整证据关系。"""
+
+    id: UUID
+    investigation_run_id: UUID
+    root_cause: RootCause
+    statement: str
+    confidence: float
+    status: HypothesisStatus
+    challenge_summary: str
+    rule_version: str
+    evidence_assessments: tuple[StoredHypothesisEvidence, ...]
+    created_at: datetime
+
+
 class StoredEvidenceBoard(StrictModel):
     """工程师审查一次调查所需的完整证据视图。"""
 
@@ -109,6 +138,7 @@ class StoredEvidenceBoard(StrictModel):
     conclusion: InvestigationConclusion | None
     evidence_items: tuple[StoredEvidenceItem, ...]
     specialist_reports: tuple[StoredSpecialistReport, ...]
+    hypotheses: tuple[StoredHypothesis, ...]
 
 
 @dataclass(frozen=True, slots=True)

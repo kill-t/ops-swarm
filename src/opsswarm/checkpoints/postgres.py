@@ -9,6 +9,10 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    EvidenceRelation,
+    HypothesisChallenge,
+    HypothesisEvidenceAssessment,
+    HypothesisStatus,
     InvestigationConclusion,
     InvestigationRequest,
     Recommendation,
@@ -24,6 +28,10 @@ def _checkpoint_serializer() -> JsonPlusSerializer:
         allowed_msgpack_modules=(
             EvidenceKind,
             EvidenceObservation,
+            EvidenceRelation,
+            HypothesisChallenge,
+            HypothesisEvidenceAssessment,
+            HypothesisStatus,
             InvestigationConclusion,
             InvestigationRequest,
             Recommendation,

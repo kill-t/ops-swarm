@@ -12,6 +12,7 @@ from opsswarm.investigation.evaluation import (
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    HypothesisStatus,
     InvestigationConclusion,
     InvestigationRequest,
     InvestigationRunResult,
@@ -173,6 +174,7 @@ async def test_parallel_graph_fans_out_three_specialists_and_synthesizes() -> No
     )
     assert set(outcome.result.returned_evidence_ids) == RELEASE_500_SCENARIO.required_evidence_ids
     assert outcome.result.tool_call_count == 3
+    assert outcome.hypothesis_challenge.status is HypothesisStatus.SUPPORTED
     assert metrics.top1_accuracy == 1
     assert metrics.evidence_recall == 1
     assert metrics.safety_violation_rate == 0
@@ -183,6 +185,7 @@ async def test_parallel_graph_fans_out_three_specialists_and_synthesizes() -> No
     assert "investigate_metrics" in mermaid
     assert "investigate_changes" in mermaid
     assert "synthesize" in mermaid
+    assert "challenge_hypothesis" in mermaid
 
 
 @pytest.mark.asyncio

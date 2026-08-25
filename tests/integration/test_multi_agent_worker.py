@@ -16,6 +16,8 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceRelation,
+    HypothesisStatus,
     InvestigationMode,
     InvestigationRunStatus,
     WorkItemKind,
@@ -123,6 +125,7 @@ async def test_multi_agent_worker_retries_from_existing_checkpoint(
     assert first_board.conclusion is None
     assert first_board.evidence_items == ()
     assert first_board.specialist_reports == ()
+    assert first_board.hypotheses == ()
     assert first_data_source.calls == {
         EvidenceKind.LOG: 1,
         EvidenceKind.METRIC: 1,
@@ -190,4 +193,10 @@ async def test_multi_agent_worker_retries_from_existing_checkpoint(
         EvidenceKind.CHANGE: ("change-order-release-rc1",),
         EvidenceKind.LOG: ("log-order-runtime-error",),
         EvidenceKind.METRIC: ("metric-order-error-spike",),
+    }
+    assert len(board.hypotheses) == 1
+    hypothesis = board.hypotheses[0]
+    assert hypothesis.status is HypothesisStatus.SUPPORTED
+    assert {item.relation for item in hypothesis.evidence_assessments} == {
+        EvidenceRelation.SUPPORTS
     }

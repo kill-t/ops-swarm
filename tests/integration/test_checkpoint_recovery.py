@@ -6,7 +6,7 @@ import pytest
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.graph_thread import build_graph_thread_id
-from opsswarm.investigation.models import EvidenceKind
+from opsswarm.investigation.models import EvidenceKind, HypothesisStatus
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from tests.checkpoint_fakes import (
@@ -67,3 +67,8 @@ async def test_postgres_checkpoint_resumes_only_failed_parallel_node(
     assert set(outcome.result.returned_evidence_ids) == RELEASE_500_SCENARIO.required_evidence_ids
     assert latest_checkpoint is not None
     assert latest_checkpoint.checkpoint["channel_values"]["conclusion"] == outcome.result.conclusion
+    assert outcome.hypothesis_challenge.status is HypothesisStatus.SUPPORTED
+    assert (
+        latest_checkpoint.checkpoint["channel_values"]["hypothesis_challenge"]
+        == outcome.hypothesis_challenge
+    )

@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
+from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.models import (
+    InvestigationArtifacts,
     InvestigationConclusion,
     InvestigationMetrics,
     InvestigationRunResult,
@@ -275,6 +277,13 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
         )
         for item in RELEASE_500_SCENARIO.evidence
     )
+    challenge = challenge_investigation(
+        InvestigationArtifacts(
+            result=result,
+            evidence_items=RELEASE_500_SCENARIO.evidence,
+            specialist_reports=reports,
+        )
+    )
     await store.complete(
         claimed.work_item.id,
         lease_token=claimed.work_item.lease_token,
@@ -282,6 +291,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
         result=result,
         evidence_items=RELEASE_500_SCENARIO.evidence,
         specialist_reports=reports,
+        hypothesis_challenge=challenge,
         metrics=InvestigationMetrics(
             top1_accuracy=1,
             evidence_recall=1,
@@ -305,6 +315,12 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
         "metric",
     ]
     assert all(len(item["content_hash"]) == 64 for item in body["evidence_items"])
+    assert len(body["hypotheses"]) == 1
+    assert body["hypotheses"][0]["status"] == "supported"
+    assert body["hypotheses"][0]["rule_version"] == "hypothesis-challenge-v1"
+    assert {item["relation"] for item in body["hypotheses"][0]["evidence_assessments"]} == {
+        "supports"
+    }
 
 
 async def test_start_investigation_rejects_unknown_mode(

@@ -5,6 +5,7 @@ from typing import Protocol
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from opsswarm.investigation.agent import SingleAgentInvestigator
+from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.evaluation import evaluate_investigation
 from opsswarm.investigation.models import (
     InvestigationMode,
@@ -54,6 +55,7 @@ class LangChainBaselineProcessor:
         return ProcessorOutcome(
             result=artifacts.result,
             evidence_items=artifacts.evidence_items,
+            hypothesis_challenge=challenge_investigation(artifacts),
             metrics=evaluate_investigation(artifacts.result, RELEASE_500_SCENARIO),
             model_name=self._model_name,
         )
@@ -92,6 +94,7 @@ class LangGraphMultiAgentProcessor:
             result=result,
             evidence_items=outcome.evidence_items,
             specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=outcome.hypothesis_challenge,
             metrics=evaluate_investigation(result, RELEASE_500_SCENARIO),
             model_name=self._model_name,
         )

@@ -88,7 +88,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表，以及 Evidence Board 三表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表，以及根因假设与证据关系两表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -209,6 +209,23 @@ erDiagram
 
 调查完成时，当前租约校验、运行与任务终态更新、证据、专业报告和关联必须在同一事务提交。失败或重试中的 checkpoint 输出不提前进入业务表。
 
+### 4.9 hypotheses
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与归属 | UUID 主键；`investigation_run_id` 外键且唯一，当前每次调查最多一个主假设 |
+| 假设内容 | 根因枚举、结论陈述和 0～1 置信度 |
+| 质疑结果 | `supported`、`contested`、`insufficient_evidence`，同时保存中文摘要与规则版本 |
+| 时间 | 业务库创建时间使用 `TIMESTAMPTZ` |
+
+假设数据库 ID 使用 `run_id` 和固定主假设名称推导 UUID5。状态不是模型自报结果；Worker 与仓储使用相同版本化规则重新计算后才允许保存。
+
+### 4.10 hypothesis_evidence
+
+关联表保存运行 ID、假设 ID、证据 ID、`supports`、`refutes` 或 `context` 关系，以及规则码、中文理由和创建时间。假设和证据各自提供 `(investigation_run_id, id)` 唯一键，关联表通过两个复合外键强制三者属于同一次调查。
+
+应用层要求关系集合与 Evidence Board 的全部证据完全一致，避免只挑选支持结论的证据。调查成功时，租约校验、运行与任务终态、Evidence Board、主假设和全部质疑关系必须在同一事务提交。
+
 ## 5. Incident 状态机
 
 ```mermaid
@@ -283,7 +300,7 @@ flowchart TD
 
 - `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`。
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
-- `hypothesis_evidence` 明确关系是支持还是反驳，避免只保存 Agent 最终结论。
+- 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
 - `action_plans` 必须版本化；审批绑定精确版本，计划变化后旧审批失效。
 - `operation_executions.idempotency_key` 唯一，重复调用返回已有结果。
 - `tool_calls` 和评测表保存模型、提示、工具版本、延迟、Token 和错误分类，支持公平对比。

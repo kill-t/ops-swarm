@@ -302,3 +302,88 @@ class SpecialistReportEvidenceRow(Base):
         PostgreSQLUUID(as_uuid=True),
         primary_key=True,
     )
+
+
+class HypothesisRow(Base):
+    """一次调查的主根因假设及确定性质疑状态。"""
+
+    __tablename__ = "hypotheses"
+    __table_args__ = (
+        CheckConstraint(
+            "root_cause IN ('release_500_regression', 'database_pool_misconfiguration', "
+            "'redis_unavailable', 'undetermined')",
+            name="ck_hypotheses_root_cause",
+        ),
+        CheckConstraint(
+            "status IN ('supported', 'contested', 'insufficient_evidence')",
+            name="ck_hypotheses_status",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_hypotheses_confidence",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            name="uq_hypotheses_run",
+        ),
+        UniqueConstraint(
+            "investigation_run_id",
+            "id",
+            name="uq_hypotheses_run_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("investigation_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    root_cause: Mapped[str] = mapped_column(String(64), nullable=False)
+    statement: Mapped[str] = mapped_column(String(1000), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    challenge_summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HypothesisEvidenceRow(Base):
+    """证据对同一次调查主根因假设的支持、反驳或上下文关系。"""
+
+    __tablename__ = "hypothesis_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "relation IN ('supports', 'refutes', 'context')",
+            name="ck_hypothesis_evidence_relation",
+        ),
+        ForeignKeyConstraint(
+            ["investigation_run_id", "hypothesis_id"],
+            ["hypotheses.investigation_run_id", "hypotheses.id"],
+            ondelete="RESTRICT",
+            name="fk_hypothesis_evidence_same_run_hypothesis",
+        ),
+        ForeignKeyConstraint(
+            ["investigation_run_id", "evidence_item_id"],
+            ["evidence_items.investigation_run_id", "evidence_items.id"],
+            ondelete="RESTRICT",
+            name="fk_hypothesis_evidence_same_run_item",
+        ),
+    )
+
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    hypothesis_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    evidence_item_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+    )
+    relation: Mapped[str] = mapped_column(String(16), nullable=False)
+    rule_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    rationale: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

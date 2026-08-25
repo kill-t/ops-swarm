@@ -2,10 +2,15 @@
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import Protocol, Self
 
+from pydantic import model_validator
+
+from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.models import (
     EvidenceObservation,
+    HypothesisChallenge,
+    InvestigationArtifacts,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
@@ -24,8 +29,21 @@ class ProcessorOutcome(StrictModel):
     result: InvestigationRunResult
     evidence_items: tuple[EvidenceObservation, ...]
     specialist_reports: tuple[SpecialistReport, ...] = ()
+    hypothesis_challenge: HypothesisChallenge
     metrics: InvestigationMetrics
     model_name: str
+
+    @model_validator(mode="after")
+    def validate_challenge(self) -> Self:
+        """让伪造质疑结果在处理器边界失败并进入 Worker 重试。"""
+
+        artifacts = InvestigationArtifacts(
+            result=self.result,
+            evidence_items=self.evidence_items,
+            specialist_reports=self.specialist_reports,
+        )
+        validate_hypothesis_challenge(artifacts, self.hypothesis_challenge)
+        return self
 
 
 class ProcessorContext(StrictModel):
@@ -110,6 +128,7 @@ class InvestigationWorker:
             result=outcome.result,
             evidence_items=outcome.evidence_items,
             specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=outcome.hypothesis_challenge,
             metrics=outcome.metrics,
             model_name=outcome.model_name,
         )

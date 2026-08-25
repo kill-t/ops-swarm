@@ -16,10 +16,14 @@ from opsswarm.incidents import (
     IncidentStatus,
 )
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.errors import WorkItemLeaseLost
 from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceRelation,
+    HypothesisStatus,
+    InvestigationArtifacts,
     InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
@@ -31,7 +35,10 @@ from opsswarm.investigation.models import (
     WorkItemStatus,
 )
 from opsswarm.investigation.persistence import InvestigationStore, StartedInvestigation
-from opsswarm.investigation.persistence.tables import SpecialistReportEvidenceRow
+from opsswarm.investigation.persistence.tables import (
+    HypothesisEvidenceRow,
+    SpecialistReportEvidenceRow,
+)
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.worker import InvestigationWorker, ProcessorContext, ProcessorOutcome
 
@@ -63,9 +70,14 @@ def make_outcome() -> ProcessorOutcome:
         ),
         tool_call_count=3,
     )
+    artifacts = InvestigationArtifacts(
+        result=result,
+        evidence_items=RELEASE_500_SCENARIO.evidence,
+    )
     return ProcessorOutcome(
         result=result,
         evidence_items=RELEASE_500_SCENARIO.evidence,
+        hypothesis_challenge=challenge_investigation(artifacts),
         metrics=InvestigationMetrics(
             top1_accuracy=1,
             evidence_recall=1,
@@ -81,19 +93,26 @@ def make_multi_agent_outcome() -> ProcessorOutcome:
     """在统一结果契约上增加三份可关联的专业报告。"""
 
     baseline = make_outcome()
+    reports = tuple(
+        SpecialistReport(
+            specialist=item.kind,
+            summary=f"{item.kind.value} 专业报告",
+            findings=(item.summary,),
+            evidence_ids=(item.evidence_id,),
+            confidence=0.9,
+        )
+        for item in RELEASE_500_SCENARIO.evidence
+    )
+    artifacts = InvestigationArtifacts(
+        result=baseline.result,
+        evidence_items=baseline.evidence_items,
+        specialist_reports=reports,
+    )
     return ProcessorOutcome(
         result=baseline.result,
         evidence_items=baseline.evidence_items,
-        specialist_reports=tuple(
-            SpecialistReport(
-                specialist=item.kind,
-                summary=f"{item.kind.value} 专业报告",
-                findings=(item.summary,),
-                evidence_ids=(item.evidence_id,),
-                confidence=0.9,
-            )
-            for item in RELEASE_500_SCENARIO.evidence
-        ),
+        specialist_reports=reports,
+        hypothesis_challenge=challenge_investigation(artifacts),
         metrics=baseline.metrics,
         model_name=baseline.model_name,
     )
@@ -267,6 +286,7 @@ async def test_expired_lease_is_reclaimed_and_stale_worker_cannot_complete(
             result=outcome.result,
             evidence_items=outcome.evidence_items,
             specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=outcome.hypothesis_challenge,
             metrics=outcome.metrics,
             model_name=outcome.model_name,
         )
@@ -278,6 +298,7 @@ async def test_expired_lease_is_reclaimed_and_stale_worker_cannot_complete(
         result=outcome.result,
         evidence_items=outcome.evidence_items,
         specialist_reports=outcome.specialist_reports,
+        hypothesis_challenge=outcome.hypothesis_challenge,
         metrics=outcome.metrics,
         model_name=outcome.model_name,
     )
@@ -362,6 +383,43 @@ async def test_expired_last_attempt_is_closed_as_terminal_failure(
     assert run.status is InvestigationRunStatus.FAILED
 
 
+async def test_store_rejects_tampered_hypothesis_before_completing_work(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(database_session_factory)
+    claimed = await store.claim_next(
+        worker_id="worker-tampered-challenge",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=10),
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    outcome = make_outcome()
+    tampered = outcome.hypothesis_challenge.model_copy(
+        update={"status": HypothesisStatus.CONTESTED}
+    )
+
+    with pytest.raises(ValueError, match="与当前确定性规则不一致"):
+        await store.complete(
+            claimed.work_item.id,
+            lease_token=claimed.work_item.lease_token,
+            occurred_at=BASE_TIME + timedelta(seconds=3),
+            result=outcome.result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=tampered,
+            metrics=outcome.metrics,
+            model_name=outcome.model_name,
+        )
+
+    work = await store.get_work_item(started.work_item.id)
+    run = await store.get_run(started.run.id)
+    board = await store.get_evidence_board(started.run.id)
+    assert work.status is WorkItemStatus.RUNNING
+    assert run.status is InvestigationRunStatus.RUNNING
+    assert board.evidence_items == ()
+    assert board.hypotheses == ()
+
+
 class RecordingProcessor:
     """记录 Worker 传入的事故上下文并返回固定成功结果。"""
 
@@ -422,6 +480,11 @@ async def test_worker_processes_one_item_and_persists_structured_result(
     )
     assert all(len(item.content_hash) == 64 for item in board.evidence_items)
     assert board.specialist_reports == ()
+    assert len(board.hypotheses) == 1
+    assert board.hypotheses[0].status is HypothesisStatus.SUPPORTED
+    assert {item.relation for item in board.hypotheses[0].evidence_assessments} == {
+        EvidenceRelation.SUPPORTS
+    }
 
     idle_times = iter([BASE_TIME + timedelta(seconds=4)])
     idle_worker = InvestigationWorker(
@@ -462,7 +525,7 @@ async def test_worker_failure_is_safely_summarized_and_requeued(
     assert run.status is InvestigationRunStatus.QUEUED
 
 
-async def test_database_rejects_cross_run_report_evidence_reference(
+async def test_database_rejects_cross_run_evidence_references(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     store, first_started = await start_investigation(
@@ -490,6 +553,7 @@ async def test_database_rejects_cross_run_report_evidence_reference(
             result=outcome.result,
             evidence_items=outcome.evidence_items,
             specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=outcome.hypothesis_challenge,
             metrics=outcome.metrics,
             model_name=outcome.model_name,
         )
@@ -511,6 +575,22 @@ async def test_database_rejects_cross_run_report_evidence_reference(
                 investigation_run_id=first_started.run.id,
                 specialist_report_id=first_change_report.id,
                 evidence_item_id=second_change_evidence.id,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    first_hypothesis = first_board.hypotheses[0]
+    async with database_session_factory() as session:
+        session.add(
+            HypothesisEvidenceRow(
+                investigation_run_id=first_started.run.id,
+                hypothesis_id=first_hypothesis.id,
+                evidence_item_id=second_change_evidence.id,
+                relation="supports",
+                rule_code="invalid_cross_run_test",
+                rationale="该关系应被复合外键拒绝。",
+                created_at=BASE_TIME + timedelta(seconds=6),
             )
         )
         with pytest.raises(IntegrityError):

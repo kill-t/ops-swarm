@@ -81,12 +81,13 @@ sequenceDiagram
     Graph->>Tool: 查询日志、指标、变更
     Tool-->>Graph: 返回带来源的结构化结果
     Graph-->>Worker: 返回结论、证据和专业报告
-    Worker->>DB: 同事务保存 Evidence Board 并完成任务，或记录重试时间
+    Graph-->>Worker: 返回确定性根因质疑结果
+    Worker->>DB: 同事务保存 Evidence Board、假设关系并完成任务，或记录重试时间
 ```
 
 `work_items` 使用租约字段 `locked_by`、`locked_until` 和重试计数实现至少一次处理。业务写入和外部动作必须使用幂等键，Worker 崩溃后其他实例才能安全接管。
 
-调查成功提交时，Worker 必须仍持有有效租约。`investigation_runs`、`work_items`、`evidence_items`、`specialist_reports` 和报告—证据关联在同一事务更新。checkpoint 中的中间节点输出不会被 API 当作业务 Evidence Board 返回。
+调查成功提交时，Worker 必须仍持有有效租约。`investigation_runs`、`work_items`、`evidence_items`、`specialist_reports`、`hypotheses` 及两类证据关联在同一事务更新。checkpoint 中的中间节点输出不会被 API 当作业务 Evidence Board 返回。
 
 ### 4.3 审批与执行
 
@@ -126,6 +127,8 @@ LangGraph 1.x 用于：
 当前并行图已经接入持久 Worker。API 把 `single_agent` 或 `multi_agent` 作为业务模式落库，Worker 同时校验对应任务类型。多 Agent 运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`：如果 checkpoint 不存在则提交初始状态，存在则使用同一线程和空输入恢复。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。
 
 单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
+
+多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。质疑状态不会自动推进 Incident，计划域完成前仍停留在 `investigating`。
 
 ## 6. PostgreSQL 任务与 SSE
 

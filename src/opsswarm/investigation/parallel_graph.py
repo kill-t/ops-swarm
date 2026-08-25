@@ -8,6 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
+from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.errors import (
     IncompleteSpecialistReports,
     MissingStructuredConclusion,
@@ -18,6 +19,8 @@ from opsswarm.investigation.graph_thread import normalize_graph_thread_id
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    HypothesisChallenge,
+    InvestigationArtifacts,
     InvestigationConclusion,
     InvestigationRequest,
     InvestigationRunResult,
@@ -62,6 +65,7 @@ class _GraphState(TypedDict):
     reports: Annotated[list[SpecialistReport], operator.add]
     tool_call_count: Annotated[int, operator.add]
     conclusion: NotRequired[InvestigationConclusion]
+    hypothesis_challenge: NotRequired[HypothesisChallenge]
 
 
 class _GraphUpdate(TypedDict, total=False):
@@ -70,6 +74,7 @@ class _GraphUpdate(TypedDict, total=False):
     reports: list[SpecialistReport]
     tool_call_count: int
     conclusion: InvestigationConclusion
+    hypothesis_challenge: HypothesisChallenge
 
 
 class LangGraphParallelInvestigator:
@@ -92,6 +97,7 @@ class LangGraphParallelInvestigator:
         builder.add_node("investigate_metrics", self._investigate_metrics)
         builder.add_node("investigate_changes", self._investigate_changes)
         builder.add_node("synthesize", self._synthesize)
+        builder.add_node("challenge_hypothesis", self._challenge_hypothesis)
         builder.add_edge(START, "coordinate")
         builder.add_edge("coordinate", "investigate_logs")
         builder.add_edge("coordinate", "investigate_metrics")
@@ -100,7 +106,8 @@ class LangGraphParallelInvestigator:
             ["investigate_logs", "investigate_metrics", "investigate_changes"],
             "synthesize",
         )
-        builder.add_edge("synthesize", END)
+        builder.add_edge("synthesize", "challenge_hypothesis")
+        builder.add_edge("challenge_hypothesis", END)
         self._has_checkpointer = checkpointer is not None
         self._checkpointer = checkpointer
         self._workflow = builder.compile(
@@ -158,12 +165,25 @@ class LangGraphParallelInvestigator:
     def _build_result(state: _GraphState) -> MultiAgentInvestigationResult:
         """从已完成或恢复后的图状态构造稳定业务结果。"""
 
+        artifacts = LangGraphParallelInvestigator._build_artifacts(state)
+        challenge = state.get("hypothesis_challenge")
+        if challenge is None:
+            raise MissingStructuredConclusion("并行调查图未返回根因假设质疑结果")
+        return MultiAgentInvestigationResult(
+            result=artifacts.result,
+            evidence_items=artifacts.evidence_items,
+            specialist_reports=artifacts.specialist_reports,
+            hypothesis_challenge=challenge,
+        )
+
+    @staticmethod
+    def _build_artifacts(state: _GraphState) -> InvestigationArtifacts:
         conclusion = state.get("conclusion")
         if conclusion is None:
             raise MissingStructuredConclusion("并行调查图未返回结构化结论")
         evidence = sorted(state["evidence"], key=lambda item: item.evidence_id)
         reports = sorted(state["reports"], key=lambda item: item.specialist.value)
-        return MultiAgentInvestigationResult(
+        return InvestigationArtifacts(
             result=InvestigationRunResult(
                 conclusion=conclusion,
                 returned_evidence_ids=tuple(item.evidence_id for item in evidence),
@@ -246,3 +266,10 @@ class LangGraphParallelInvestigator:
         if unknown_ids:
             raise UnverifiedEvidenceReference(unknown_ids)
         return {"conclusion": conclusion}
+
+    @staticmethod
+    def _challenge_hypothesis(state: _GraphState) -> _GraphUpdate:
+        """使用确定性规则质疑综合结论，不再次调用模型。"""
+
+        artifacts = LangGraphParallelInvestigator._build_artifacts(state)
+        return {"hypothesis_challenge": challenge_investigation(artifacts)}

@@ -1,10 +1,15 @@
 """OpsSwarm 调查领域、单 Agent 与 LangGraph 并行基线。"""
 
 from opsswarm.investigation.agent import SingleAgentInvestigator
+from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.evaluation import compare_investigation_modes, evaluate_investigation
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    EvidenceRelation,
+    HypothesisChallenge,
+    HypothesisEvidenceAssessment,
+    HypothesisStatus,
     InvestigationArtifacts,
     InvestigationComparison,
     InvestigationConclusion,
@@ -25,6 +30,10 @@ from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
 __all__ = [
     "EvidenceKind",
     "EvidenceObservation",
+    "EvidenceRelation",
+    "HypothesisChallenge",
+    "HypothesisEvidenceAssessment",
+    "HypothesisStatus",
     "InvestigationArtifacts",
     "InvestigationComparison",
     "InvestigationConclusion",
@@ -42,5 +51,6 @@ __all__ = [
     "WorkItemKind",
     "WorkItemStatus",
     "compare_investigation_modes",
+    "challenge_investigation",
     "evaluate_investigation",
 ]

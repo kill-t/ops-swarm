@@ -20,6 +20,22 @@ class EvidenceKind(StrEnum):
     CHANGE = "change"
 
 
+class EvidenceRelation(StrEnum):
+    """证据对主根因假设的确定性关系。"""
+
+    SUPPORTS = "supports"
+    REFUTES = "refutes"
+    CONTEXT = "context"
+
+
+class HypothesisStatus(StrEnum):
+    """质疑节点对主根因假设的审查结果。"""
+
+    SUPPORTED = "supported"
+    CONTESTED = "contested"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+
+
 class RootCause(StrEnum):
     """MVP 故障集中的根因分类。"""
 
@@ -241,10 +257,54 @@ class SpecialistReport(StrictModel):
         return value
 
 
+class HypothesisEvidenceAssessment(StrictModel):
+    """一条证据与主根因假设之间的可审计判断。"""
+
+    evidence_id: str = Field(min_length=1, max_length=100)
+    relation: EvidenceRelation
+    rule_code: str = Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9][a-z0-9_]*$",
+    )
+    rationale: str = Field(min_length=1, max_length=500)
+
+
+class HypothesisChallenge(StrictModel):
+    """确定性质疑节点生成的主根因假设与证据关系。"""
+
+    root_cause: RootCause
+    statement: str = Field(min_length=1, max_length=1000)
+    confidence: float = Field(ge=0, le=1)
+    status: HypothesisStatus
+    summary: str = Field(min_length=1, max_length=1000)
+    rule_version: str = Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+    )
+    evidence_assessments: tuple[HypothesisEvidenceAssessment, ...] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    @field_validator("evidence_assessments")
+    @classmethod
+    def ensure_unique_assessed_evidence(
+        cls,
+        value: tuple[HypothesisEvidenceAssessment, ...],
+    ) -> tuple[HypothesisEvidenceAssessment, ...]:
+        evidence_ids = [item.evidence_id for item in value]
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise ValueError("质疑结果不能重复评估同一证据")
+        return value
+
+
 class MultiAgentInvestigationResult(InvestigationArtifacts):
     """LangGraph 并行调查结果及各专业节点报告。"""
 
     specialist_reports: tuple[SpecialistReport, ...] = Field(min_length=1, max_length=10)
+    hypothesis_challenge: HypothesisChallenge
 
 
 class InvestigationComparison(StrictModel):

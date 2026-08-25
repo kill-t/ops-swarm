@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.incidents import IncidentAction, IncidentActor
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
+from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
     InvestigationRunNotFound,
@@ -22,12 +23,16 @@ from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
+    EvidenceRelation,
+    HypothesisChallenge,
+    HypothesisStatus,
     InvestigationArtifacts,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
     InvestigationRunResult,
     InvestigationRunStatus,
+    RootCause,
     SpecialistReport,
     WorkItemError,
     WorkItemKind,
@@ -38,12 +43,16 @@ from opsswarm.investigation.persistence.records import (
     StartedInvestigation,
     StoredEvidenceBoard,
     StoredEvidenceItem,
+    StoredHypothesis,
+    StoredHypothesisEvidence,
     StoredInvestigationRun,
     StoredSpecialistReport,
     StoredWorkItem,
 )
 from opsswarm.investigation.persistence.tables import (
     EvidenceItemRow,
+    HypothesisEvidenceRow,
+    HypothesisRow,
     InvestigationRunRow,
     SpecialistReportEvidenceRow,
     SpecialistReportRow,
@@ -178,11 +187,35 @@ class InvestigationStore:
                     )
                 )
             )
+            hypothesis_rows = list(
+                await session.scalars(
+                    select(HypothesisRow)
+                    .where(HypothesisRow.investigation_run_id == run_id)
+                    .order_by(HypothesisRow.created_at, HypothesisRow.id)
+                )
+            )
+            hypothesis_evidence_rows = list(
+                await session.scalars(
+                    select(HypothesisEvidenceRow).where(
+                        HypothesisEvidenceRow.investigation_run_id == run_id
+                    )
+                )
+            )
             evidence_key_by_id = {row.id: row.evidence_key for row in evidence_rows}
             evidence_ids_by_report: defaultdict[UUID, list[str]] = defaultdict(list)
             for link in link_rows:
                 evidence_ids_by_report[link.specialist_report_id].append(
                     evidence_key_by_id[link.evidence_item_id]
+                )
+            assessments_by_hypothesis: defaultdict[UUID, list[StoredHypothesisEvidence]] = (
+                defaultdict(list)
+            )
+            for relation in hypothesis_evidence_rows:
+                assessments_by_hypothesis[relation.hypothesis_id].append(
+                    _stored_hypothesis_evidence(
+                        relation,
+                        evidence_id=evidence_key_by_id[relation.evidence_item_id],
+                    )
                 )
 
             return StoredEvidenceBoard(
@@ -200,6 +233,18 @@ class InvestigationStore:
                         evidence_ids=tuple(sorted(evidence_ids_by_report[row.id])),
                     )
                     for row in report_rows
+                ),
+                hypotheses=tuple(
+                    _stored_hypothesis(
+                        row,
+                        evidence_assessments=tuple(
+                            sorted(
+                                assessments_by_hypothesis[row.id],
+                                key=lambda item: item.evidence_id,
+                            )
+                        ),
+                    )
+                    for row in hypothesis_rows
                 ),
             )
 
@@ -323,6 +368,7 @@ class InvestigationStore:
         result: InvestigationRunResult,
         evidence_items: tuple[EvidenceObservation, ...],
         specialist_reports: tuple[SpecialistReport, ...],
+        hypothesis_challenge: HypothesisChallenge,
         metrics: InvestigationMetrics,
         model_name: str,
     ) -> StoredInvestigationRun:
@@ -337,6 +383,7 @@ class InvestigationStore:
             evidence_items=evidence_items,
             specialist_reports=specialist_reports,
         )
+        validate_hypothesis_challenge(artifacts, hypothesis_challenge)
 
         async with self._session_factory() as session, session.begin():
             work_row = await _locked_work_item(session, work_item_id)
@@ -360,6 +407,7 @@ class InvestigationStore:
                 session,
                 run_id=run_row.id,
                 artifacts=artifacts,
+                hypothesis_challenge=hypothesis_challenge,
                 created_at=occurred_at,
             )
             await session.flush()
@@ -412,9 +460,10 @@ async def _persist_evidence_board(
     *,
     run_id: UUID,
     artifacts: InvestigationArtifacts,
+    hypothesis_challenge: HypothesisChallenge,
     created_at: datetime,
 ) -> None:
-    """在调查完成事务中写入规范化证据和专业报告。"""
+    """在调查完成事务中写入 Evidence Board、主假设和质疑关系。"""
 
     evidence_rows = {
         item.evidence_id: EvidenceItemRow(
@@ -455,6 +504,34 @@ async def _persist_evidence_board(
             )
             for report in artifacts.specialist_reports
             for evidence_id in report.evidence_ids
+        ]
+    )
+
+    hypothesis_row = HypothesisRow(
+        id=uuid5(run_id, "hypothesis:primary"),
+        investigation_run_id=run_id,
+        root_cause=hypothesis_challenge.root_cause.value,
+        statement=hypothesis_challenge.statement,
+        confidence=hypothesis_challenge.confidence,
+        status=hypothesis_challenge.status.value,
+        challenge_summary=hypothesis_challenge.summary,
+        rule_version=hypothesis_challenge.rule_version,
+        created_at=created_at,
+    )
+    session.add(hypothesis_row)
+    await session.flush()
+    session.add_all(
+        [
+            HypothesisEvidenceRow(
+                investigation_run_id=run_id,
+                hypothesis_id=hypothesis_row.id,
+                evidence_item_id=evidence_rows[item.evidence_id].id,
+                relation=item.relation.value,
+                rule_code=item.rule_code,
+                rationale=item.rationale,
+                created_at=created_at,
+            )
+            for item in hypothesis_challenge.evidence_assessments
         ]
     )
 
@@ -612,5 +689,39 @@ def _stored_specialist_report(
         findings=tuple(row.findings),
         evidence_ids=evidence_ids,
         confidence=row.confidence,
+        created_at=row.created_at,
+    )
+
+
+def _stored_hypothesis_evidence(
+    row: HypothesisEvidenceRow,
+    *,
+    evidence_id: str,
+) -> StoredHypothesisEvidence:
+    return StoredHypothesisEvidence(
+        evidence_item_id=row.evidence_item_id,
+        evidence_id=evidence_id,
+        relation=EvidenceRelation(row.relation),
+        rule_code=row.rule_code,
+        rationale=row.rationale,
+        created_at=row.created_at,
+    )
+
+
+def _stored_hypothesis(
+    row: HypothesisRow,
+    *,
+    evidence_assessments: tuple[StoredHypothesisEvidence, ...],
+) -> StoredHypothesis:
+    return StoredHypothesis(
+        id=row.id,
+        investigation_run_id=row.investigation_run_id,
+        root_cause=RootCause(row.root_cause),
+        statement=row.statement,
+        confidence=row.confidence,
+        status=HypothesisStatus(row.status),
+        challenge_summary=row.challenge_summary,
+        rule_version=row.rule_version,
+        evidence_assessments=evidence_assessments,
         created_at=row.created_at,
     )

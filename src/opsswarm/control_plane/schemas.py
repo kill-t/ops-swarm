@@ -17,11 +17,14 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import StoredIncident, StoredIncidentEvent
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceRelation,
+    HypothesisStatus,
     InvestigationConclusion,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
     InvestigationRunStatus,
+    RootCause,
     WorkItemError,
     WorkItemStatus,
 )
@@ -29,6 +32,8 @@ from opsswarm.investigation.persistence import (
     StartedInvestigation,
     StoredEvidenceBoard,
     StoredEvidenceItem,
+    StoredHypothesis,
+    StoredHypothesisEvidence,
     StoredInvestigationRun,
     StoredSpecialistReport,
 )
@@ -141,6 +146,51 @@ class SpecialistReportResponse(StrictApiModel):
         return cls.model_validate(stored.model_dump(exclude={"investigation_run_id"}))
 
 
+class HypothesisEvidenceResponse(StrictApiModel):
+    """确定性规则对一条证据的支持、反驳或上下文判断。"""
+
+    evidence_item_id: UUID
+    evidence_id: str
+    relation: EvidenceRelation
+    rule_code: str
+    rationale: str
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredHypothesisEvidence) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class HypothesisResponse(StrictApiModel):
+    """主根因假设及完整质疑结果。"""
+
+    id: UUID
+    root_cause: RootCause
+    statement: str
+    confidence: float
+    status: HypothesisStatus
+    challenge_summary: str
+    rule_version: str
+    evidence_assessments: tuple[HypothesisEvidenceResponse, ...]
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredHypothesis) -> Self:
+        return cls(
+            id=stored.id,
+            root_cause=stored.root_cause,
+            statement=stored.statement,
+            confidence=stored.confidence,
+            status=stored.status,
+            challenge_summary=stored.challenge_summary,
+            rule_version=stored.rule_version,
+            evidence_assessments=tuple(
+                HypothesisEvidenceResponse.from_stored(item) for item in stored.evidence_assessments
+            ),
+            created_at=stored.created_at,
+        )
+
+
 class EvidenceBoardResponse(StrictApiModel):
     """一次调查可供工程师审查的结论、证据和专业报告。"""
 
@@ -149,6 +199,7 @@ class EvidenceBoardResponse(StrictApiModel):
     conclusion: InvestigationConclusion | None
     evidence_items: tuple[EvidenceItemResponse, ...]
     specialist_reports: tuple[SpecialistReportResponse, ...]
+    hypotheses: tuple[HypothesisResponse, ...]
 
     @classmethod
     def from_stored(cls, stored: StoredEvidenceBoard) -> Self:
@@ -161,6 +212,9 @@ class EvidenceBoardResponse(StrictApiModel):
             ),
             specialist_reports=tuple(
                 SpecialistReportResponse.from_stored(report) for report in stored.specialist_reports
+            ),
+            hypotheses=tuple(
+                HypothesisResponse.from_stored(hypothesis) for hypothesis in stored.hypotheses
             ),
         )
 
