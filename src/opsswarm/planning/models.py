@@ -34,9 +34,10 @@ class RiskLevel(StrEnum):
 
 
 class ActionPlanStatus(StrEnum):
-    """当前切片只产生尚未提交审批的草案。"""
+    """计划草案及提交审批后的生命周期状态。"""
 
     DRAFT = "draft"
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 class VerificationOperator(StrEnum):

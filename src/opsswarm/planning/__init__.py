@@ -8,6 +8,7 @@ from opsswarm.planning.errors import (
     UnsafeRollbackTarget,
     UnsupportedPlanningRootCause,
 )
+from opsswarm.planning.integrity import action_plan_content_hash
 from opsswarm.planning.models import (
     ActionPlan,
     ActionPlanStatus,
@@ -43,4 +44,5 @@ __all__ = [
     "VerificationRule",
     "propose_action_plan",
     "validate_action_plan_policy",
+    "action_plan_content_hash",
 ]

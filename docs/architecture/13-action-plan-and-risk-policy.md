@@ -4,7 +4,7 @@
 
 本切片把已经通过质疑的根因转换为可持久化、可审查、可绑定审批版本的结构化处置计划。它解决“建议回滚”仍是一段文本、风险可以被模型随意填写、并发请求可能生成重复计划的问题。
 
-当前只为 `release_500_regression` 提供 `rollback_release` 确定性模板。计划状态始终是 `draft`：不迁移 Incident，不创建审批请求，不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限。
+当前只为 `release_500_regression` 提供 `rollback_release` 确定性模板。生成时计划为 `draft`；后续审批请求切片可以把它迁移到 `awaiting_approval`，但计划仍不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限。
 
 ## 2. 为什么计划生成独立于调查事务
 
@@ -18,7 +18,7 @@ flowchart LR
     hypothesis -->|其他| blocked[409 阻止生成]
     planner --> policy[风险策略重算]
     policy --> plan[(draft 计划版本)]
-    plan -. 本切片不实现 .-> approval[审批请求]
+    plan --> approval[绑定精确版本的审批请求]
 ```
 
 因此计划由独立 REST 命令触发并使用独立数据库事务。未来可以把命令放入持久任务或 LangGraph 分支，但仍必须先提交调查事实。
@@ -72,7 +72,7 @@ erDiagram
 - `(hypothesis_id, version)` 唯一；当前模板只生成版本 1。
 - 计划 ID 和步骤 ID 使用 UUID5 从假设、版本和步骤序号确定性生成。
 - 相同假设的并发 POST 使用 PostgreSQL `ON CONFLICT DO NOTHING`，一个请求返回 `201 created=true`，其余返回 `200 created=false` 和同一计划。
-- 计划不提供修改或删除 API。未来修订创建新版本，历史审批只能绑定原版本。
+- 计划不提供修改或删除 API。未来修订创建新版本，审批通过计划 ID、版本和内容哈希绑定原内容。
 
 ## 6. API
 
@@ -88,9 +88,9 @@ erDiagram
 - 只有 `release_500` 确定性模板，数据库连接池和 Redis 计划将在各自故障演练切片加入。
 - 当前没有模型生成候选计划，先以安全模板建立评测基线。
 - 只生成版本 1，尚无人工修改和新版本命令。
-- 没有审批身份、有效期、决定或执行权限。
+- 已有审批请求和固定有效期，但没有可信审批身份、批准/拒绝决定或执行权限。
 
-下一切片建立 `approval_requests`：审批必须绑定计划 ID 和版本，高风险草案只有在创建审批请求时才允许把 Incident 从 `investigating` 迁移到 `awaiting_approval`。批准动作和执行器仍留到后续切片。
+审批请求设计见 [精确版本审批请求与原子状态迁移](14-approval-request.md)。下一切片增加批准和拒绝决定：决定必须重验有效期、内容哈希和 Incident 版本；执行器仍留到后续切片。
 
 ## 8. 面试表达
 

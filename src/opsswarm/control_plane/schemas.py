@@ -6,6 +6,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
+from opsswarm.approval.models import ApprovalRequestStatus
+from opsswarm.approval.persistence import (
+    ApprovalRequestCreation,
+    StoredApprovalRequest,
+)
 from opsswarm.incidents import (
     ActorType,
     AlertIngestionResult,
@@ -296,6 +301,48 @@ class CreateActionPlanResponse(StrictApiModel):
         return cls(
             created=creation.created,
             action_plan=ActionPlanResponse.from_stored(creation.plan),
+        )
+
+
+class CreateApprovalRequest(StrictApiModel):
+    """提交计划审批时的乐观锁与人工审计信息。"""
+
+    expected_incident_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class ApprovalRequestResponse(StrictApiModel):
+    """绑定精确计划版本和内容摘要的审批请求。"""
+
+    id: UUID
+    incident_id: UUID
+    action_plan_id: UUID
+    action_plan_version: int
+    plan_content_hash: str
+    status: ApprovalRequestStatus
+    requested_by_type: ActorType
+    requested_by_id: str
+    request_reason: str
+    expires_at: datetime
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredApprovalRequest) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class CreateApprovalRequestResponse(StrictApiModel):
+    """审批请求首次创建或幂等读取结果。"""
+
+    created: bool
+    approval_request: ApprovalRequestResponse
+
+    @classmethod
+    def from_creation(cls, creation: ApprovalRequestCreation) -> Self:
+        return cls(
+            created=creation.created,
+            approval_request=ApprovalRequestResponse.from_stored(creation.request),
         )
 
 

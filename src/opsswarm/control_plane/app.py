@@ -11,6 +11,17 @@ from fastapi.responses import JSONResponse
 from pydantic import JsonValue
 
 from opsswarm import __version__
+from opsswarm.approval import (
+    ActionPlanDoesNotRequireApproval,
+    ActionPlanNotCurrent,
+    ActionPlanNotSubmittable,
+    ApprovalActionPlanNotFound,
+    ApprovalError,
+    ApprovalPlanIntegrityViolation,
+    ApprovalRequesterMustBeHuman,
+    ApprovalRequestNotFound,
+)
+from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
@@ -46,6 +57,7 @@ def create_app(
     incident_store: IncidentStore | None = None,
     investigation_store: InvestigationStore | None = None,
     action_plan_store: ActionPlanStore | None = None,
+    approval_request_store: ApprovalRequestStore | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -53,14 +65,19 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        if any(
-            store is not None for store in (incident_store, investigation_store, action_plan_store)
-        ):
-            if incident_store is None or investigation_store is None or action_plan_store is None:
-                raise RuntimeError("注入控制面仓储时必须同时提供三个仓储")
+        stores = (
+            incident_store,
+            investigation_store,
+            action_plan_store,
+            approval_request_store,
+        )
+        if any(store is not None for store in stores):
+            if any(store is None for store in stores):
+                raise RuntimeError("注入控制面仓储时必须同时提供四个仓储")
             application.state.incident_store = incident_store
             application.state.investigation_store = investigation_store
             application.state.action_plan_store = action_plan_store
+            application.state.approval_request_store = approval_request_store
             yield
             return
 
@@ -70,6 +87,7 @@ def create_app(
         application.state.incident_store = IncidentStore(database.session_factory)
         application.state.investigation_store = InvestigationStore(database.session_factory)
         application.state.action_plan_store = ActionPlanStore(database.session_factory)
+        application.state.approval_request_store = ApprovalRequestStore(database.session_factory)
         try:
             yield
         finally:
@@ -84,6 +102,7 @@ def create_app(
     app.state.incident_store = incident_store
     app.state.investigation_store = investigation_store
     app.state.action_plan_store = action_plan_store
+    app.state.approval_request_store = approval_request_store
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)
@@ -229,6 +248,64 @@ def create_app(
             response = ApiErrorResponse(error_code="planning_error", message=str(error))
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(ApprovalError)
+    async def handle_approval_error(
+        _: Request,
+        error: ApprovalError,
+    ) -> JSONResponse:
+        http_status = status.HTTP_409_CONFLICT
+        if isinstance(error, ApprovalActionPlanNotFound):
+            response = ApiErrorResponse(
+                error_code="approval_action_plan_not_found",
+                message=str(error),
+                details={"plan_id": str(error.plan_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, ApprovalRequestNotFound):
+            response = ApiErrorResponse(
+                error_code="approval_request_not_found",
+                message=str(error),
+                details={"request_id": str(error.request_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, ActionPlanNotCurrent):
+            response = ApiErrorResponse(
+                error_code="action_plan_not_current",
+                message=str(error),
+                details={
+                    "plan_id": str(error.plan_id),
+                    "current_plan_id": str(error.current_plan_id),
+                },
+            )
+        elif isinstance(error, ActionPlanNotSubmittable):
+            response = ApiErrorResponse(
+                error_code="action_plan_not_submittable",
+                message=str(error),
+                details={"plan_id": str(error.plan_id), "status": error.status},
+            )
+        elif isinstance(error, ActionPlanDoesNotRequireApproval):
+            response = ApiErrorResponse(
+                error_code="action_plan_does_not_require_approval",
+                message=str(error),
+            )
+        elif isinstance(error, ApprovalRequesterMustBeHuman):
+            response = ApiErrorResponse(
+                error_code="approval_requester_must_be_human",
+                message=str(error),
+            )
+        elif isinstance(error, ApprovalPlanIntegrityViolation):
+            response = ApiErrorResponse(
+                error_code="approval_plan_integrity_violation",
+                message=str(error),
+                details={"request_id": str(error.request_id)},
+            )
+        else:
+            response = ApiErrorResponse(error_code="approval_error", message=str(error))
+        return JSONResponse(
+            status_code=http_status,
             content=response.model_dump(mode="json"),
         )
 

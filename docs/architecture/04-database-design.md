@@ -78,7 +78,7 @@ erDiagram
 | --- | --- |
 | `action_plans` | 带版本的结构化处置计划 |
 | `action_steps` | 白名单动作、参数、风险和验证规则 |
-| `approval_requests` | 绑定计划版本的审批及决定 |
+| `approval_requests` | 绑定计划精确版本和内容哈希的限时审批请求 |
 | `operation_executions` | 幂等执行请求、结果和审计 |
 | `verification_runs` | 恢复判据、采样结果和结论 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
@@ -88,7 +88,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表，以及处置计划与步骤两表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表，以及审批请求表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -232,17 +232,29 @@ erDiagram
 | --- | --- |
 | 标识与来源 | UUID 主键、调查运行 ID、主假设 ID；复合外键保证假设属于同一次调查 |
 | 版本 | 正整数 `version`；`(hypothesis_id, version)` 唯一，当前生成版本 1 |
-| 状态 | 当前只允许尚未提交审批的 `draft` |
+| 状态 | 允许 `draft` 和已经提交请求的 `awaiting_approval` |
 | 风险 | 计划最高风险、是否需要人工审批和 `risk_policy_version` |
 | 内容与时间 | 中文摘要和 `TIMESTAMPTZ` 创建时间；不提供覆盖更新接口 |
 
-计划 ID 由主假设 ID 和版本推导 UUID5。同一假设的并发重复创建使用 `INSERT ... ON CONFLICT DO NOTHING`，一个请求创建，其他请求读取获胜记录。未来修改计划必须新增版本，审批绑定精确 ID 和版本，不能覆盖历史草案。
+计划 ID 由主假设 ID 和版本推导 UUID5。同一假设的并发重复创建使用 `INSERT ... ON CONFLICT DO NOTHING`，一个请求创建，其他请求读取获胜记录。`(id, version)` 唯一键供审批请求复合外键引用。未来修改计划必须新增版本，不能覆盖历史草案。
 
 ### 4.12 action_steps
 
 每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。当前动作只允许 `rollback_release`，参数只有当前版本和目标版本，验证要求 5xx 比例在观察窗口内持续低于阈值。
 
 数据库检查约束保证 JSONB 为对象、顺序大于零，并禁止 `high` 或 `critical` 步骤及计划把 `requires_human_approval` 设为假。风险仍由应用策略重算；数据库约束是最后一道完整性保护，不承担业务推理。
+
+### 4.13 approval_requests
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与对象 | UUID 主键；`action_plan_id` 与 `action_plan_version` 通过复合外键绑定精确计划版本 |
+| 内容完整性 | `plan_content_hash` 是 64 位小写 SHA-256，覆盖计划来源、版本、风险策略和有序步骤，不覆盖生命周期状态 |
+| 状态 | 当前只允许 `pending`；批准、拒绝和过期状态将在决定切片扩展 |
+| 请求审计 | 当前只允许 `human` 类型，保存请求人标识和 1～500 字原因；它们不是身份认证凭据 |
+| 有效期 | 保存 `created_at`、`expires_at`，并检查过期时间必须晚于创建时间；当前固定为 30 分钟 |
+
+每个计划 ID 最多一个请求，避免并发或网络重试重复迁移 Incident。创建仓储先锁定关联 Incident，随后在同一事务中执行乐观锁状态迁移、追加 `incident_events`、把计划改为 `awaiting_approval` 并插入请求。读取请求时重算风险策略和内容哈希；计划内容漂移会作为完整性冲突处理。
 
 ## 5. Incident 状态机
 

@@ -5,7 +5,9 @@ from datetime import datetime
 from uuid import UUID
 
 from opsswarm.planning.models import (
+    ActionPlan,
     ActionPlanStatus,
+    ActionStep,
     ActionType,
     RiskLevel,
     RollbackReleaseParameters,
@@ -46,6 +48,22 @@ class StoredActionPlan(StrictPlanningModel):
     risk_policy_version: str
     steps: tuple[StoredActionStep, ...]
     created_at: datetime
+
+    def to_domain(self) -> ActionPlan:
+        """去除数据库标识和时间，恢复可重算风险及摘要的领域计划。"""
+
+        return ActionPlan(
+            version=self.version,
+            status=self.status,
+            summary=self.summary,
+            risk_level=self.risk_level,
+            requires_human_approval=self.requires_human_approval,
+            risk_policy_version=self.risk_policy_version,
+            steps=tuple(
+                ActionStep.model_validate(step.model_dump(exclude={"id", "created_at"}))
+                for step in self.steps
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

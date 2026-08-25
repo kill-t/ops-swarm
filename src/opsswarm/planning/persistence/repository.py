@@ -85,7 +85,7 @@ class ActionPlanStore:
             existing = await _current_plan_row(session, run_id)
             if existing is not None:
                 return ActionPlanCreation(
-                    plan=await _stored_action_plan(session, existing),
+                    plan=await load_action_plan_in_session(session, existing),
                     created=False,
                 )
 
@@ -131,7 +131,7 @@ class ActionPlanStore:
                 if concurrent is None:
                     raise RuntimeError("并发计划已生成但无法读取")
                 return ActionPlanCreation(
-                    plan=await _stored_action_plan(session, concurrent),
+                    plan=await load_action_plan_in_session(session, concurrent),
                     created=False,
                 )
 
@@ -160,7 +160,7 @@ class ActionPlanStore:
             if created_row is None:
                 raise RuntimeError("处置计划写入后无法读取")
             return ActionPlanCreation(
-                plan=await _stored_action_plan(session, created_row),
+                plan=await load_action_plan_in_session(session, created_row),
                 created=True,
             )
 
@@ -174,7 +174,7 @@ class ActionPlanStore:
             plan_row = await _current_plan_row(session, run_id)
             if plan_row is None:
                 raise ActionPlanNotFound(run_id)
-            return await _stored_action_plan(session, plan_row)
+            return await load_action_plan_in_session(session, plan_row)
 
 
 async def _current_plan_row(session: AsyncSession, run_id: UUID) -> ActionPlanRow | None:
@@ -189,7 +189,11 @@ async def _current_plan_row(session: AsyncSession, run_id: UUID) -> ActionPlanRo
     )
 
 
-async def _stored_action_plan(session: AsyncSession, row: ActionPlanRow) -> StoredActionPlan:
+async def load_action_plan_in_session(
+    session: AsyncSession,
+    row: ActionPlanRow,
+) -> StoredActionPlan:
+    """在调用方事务中加载并重验一个完整计划版本。"""
     step_rows = list(
         await session.scalars(
             select(ActionStepRow)

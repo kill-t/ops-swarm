@@ -18,6 +18,8 @@ def test_openapi_exposes_current_incident_contract() -> None:
         "/api/v1/investigations/{run_id}/evidence-board",
         "/api/v1/investigations/{run_id}/action-plans",
         "/api/v1/investigations/{run_id}/action-plans/current",
+        "/api/v1/action-plans/{plan_id}/approval-requests",
+        "/api/v1/approval-requests/{request_id}",
     }
     assert set(paths["/api/v1/alerts"]["post"]["responses"]) >= {"200", "201", "422"}
     validation_schema = paths["/api/v1/incidents"]["get"]["responses"]["422"]["content"][

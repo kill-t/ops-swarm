@@ -31,7 +31,10 @@ class ActionPlanRow(Base):
     __tablename__ = "action_plans"
     __table_args__ = (
         CheckConstraint("version >= 1", name="ck_action_plans_version"),
-        CheckConstraint("status IN ('draft')", name="ck_action_plans_status"),
+        CheckConstraint(
+            "status IN ('draft', 'awaiting_approval')",
+            name="ck_action_plans_status",
+        ),
         CheckConstraint(
             f"risk_level IN ({RISK_LEVEL_SQL})",
             name="ck_action_plans_risk_level",
@@ -50,6 +53,11 @@ class ActionPlanRow(Base):
             "hypothesis_id",
             "version",
             name="uq_action_plans_hypothesis_version",
+        ),
+        UniqueConstraint(
+            "id",
+            "version",
+            name="uq_action_plans_id_version",
         ),
         Index(
             "ix_action_plans_run_version",

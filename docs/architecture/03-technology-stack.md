@@ -89,7 +89,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 根因质疑使用版本化纯 Python 规则，不增加第二个 LLM 裁判。LangGraph 负责把规则节点放入可恢复序列，Pydantic 校验输出结构，PostgreSQL 保存假设和逐证据关系；业务规则仍可在毫秒级纯单元测试中覆盖。
 
-处置计划当前使用确定性模板建立安全基线：Pydantic 只接受白名单动作和精确参数模型，纯 Python `action-risk-v1` 策略重算风险，PostgreSQL 保存不可变版本并用检查约束阻止高风险动作绕过审批。未来 LangChain 可以生成相同 `ActionPlan` 契约的候选计划，但不能替代风险策略或审批。
+处置计划当前使用确定性模板建立安全基线：Pydantic 只接受白名单动作和精确参数模型，纯 Python `action-risk-v1` 策略重算风险，PostgreSQL 保存不可变版本并用检查约束阻止高风险动作绕过审批。审批请求使用 SQLAlchemy 事务和 PostgreSQL 行锁同步计划、Incident 与时间线，并以 SHA-256 检测审批内容漂移；LangChain 和 LangGraph 都不参与审批有效性判断。未来 LangChain 可以生成相同 `ActionPlan` 契约的候选计划，但不能替代风险策略或审批。
 
 ## 5. 可观测性
 

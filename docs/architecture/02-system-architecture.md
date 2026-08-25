@@ -130,7 +130,7 @@ LangGraph 1.x 用于：
 
 单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
 
-多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域已能生成独立持久化的 `draft` 草案，但在审批请求切片完成前 Incident 仍停留在 `investigating`。
+多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域生成独立持久化的 `draft` 草案；审批域锁定 Incident，并在同一事务中把计划和 Incident 迁移到 `awaiting_approval`、追加事件并创建绑定内容哈希的请求。批准和拒绝仍未实现。
 
 ## 6. PostgreSQL 任务与 SSE
 

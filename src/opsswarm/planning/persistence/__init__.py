@@ -5,11 +5,15 @@ from opsswarm.planning.persistence.records import (
     StoredActionPlan,
     StoredActionStep,
 )
-from opsswarm.planning.persistence.repository import ActionPlanStore
+from opsswarm.planning.persistence.repository import (
+    ActionPlanStore,
+    load_action_plan_in_session,
+)
 
 __all__ = [
     "ActionPlanCreation",
     "ActionPlanStore",
     "StoredActionPlan",
     "StoredActionStep",
+    "load_action_plan_in_session",
 ]

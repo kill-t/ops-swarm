@@ -19,6 +19,8 @@
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
 | `POST /api/v1/investigations/{run_id}/action-plans` | 首次生成草案 `201`；幂等重复 `200` | 不存在 `404`；调查或假设未就绪 `409` |
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |
+| `POST /api/v1/action-plans/{plan_id}/approval-requests` | 首次提交 `201`；同计划幂等重复 `200` | 计划不存在 `404`；版本、状态或完整性冲突 `409` |
+| `GET /api/v1/approval-requests/{request_id}` | 重验计划内容后返回限时审批请求 | 不存在 `404`；内容漂移 `409` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -33,7 +35,13 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 计划 POST 没有可由客户端指定的动作参数；服务端只从已提交 Evidence Board 提取白名单参数。调查必须为 `succeeded`、主假设必须为 `supported`，且证据必须包含明确的发布前后版本。相同假设版本重复或并发调用返回同一计划，调用方通过 `created` 区分首次创建。
 
-计划响应是 `draft`，包含风险策略版本、逐步骤风险理由和恢复判据。创建或读取计划不会迁移 Incident，不创建审批，也不执行动作。当前 API 没有身份认证，只能在 localhost/Compose 私网演练。
+计划生成响应是 `draft`，包含风险策略版本、逐步骤风险理由和恢复判据。创建或读取计划本身不会迁移 Incident，也不执行动作。当前 API 没有身份认证，只能在 localhost/Compose 私网演练。
+
+### 2.3 审批请求语义
+
+审批 POST 携带 `expected_incident_version`、`actor_id` 和 `reason`。首次提交在同一事务中创建 `pending` 请求、把计划迁移到 `awaiting_approval`，并把 Incident 迁移到同名状态及追加时间线事件。同计划并发或网络重试返回原请求，不重复迁移。
+
+请求绑定计划 ID、版本和内容 SHA-256，固定 30 分钟有效。GET 会重新校验计划策略与内容哈希。当前接口不提供批准、拒绝或执行；`actor_id` 只供审计，不能证明调用者身份。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -95,6 +103,13 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `hypothesis_not_supported` | `409` | 根因假设尚未通过质疑 |
 | `unsupported_planning_root_cause` | `409` | 当前没有该根因的白名单计划模板 |
 | `unsafe_rollback_target` | `409` | 证据无法确定安全回滚目标 |
+| `approval_action_plan_not_found` | `404` | 要提交审批的计划不存在 |
+| `approval_request_not_found` | `404` | 审批请求不存在 |
+| `action_plan_not_current` | `409` | 目标计划已被更新版本替代 |
+| `action_plan_not_submittable` | `409` | 计划状态不允许新建审批请求 |
+| `action_plan_does_not_require_approval` | `409` | 目标计划不需要人工审批 |
+| `approval_requester_must_be_human` | `409` | 当前切片只接受人工类型请求人 |
+| `approval_plan_integrity_violation` | `409` | 计划当前内容与提交审批时的哈希不一致 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

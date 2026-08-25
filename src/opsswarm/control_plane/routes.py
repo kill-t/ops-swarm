@@ -7,12 +7,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
+from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.schemas import (
     ActionPlanResponse,
     AlertIngestionResponse,
     AlertRequest,
     ApiErrorResponse,
+    ApprovalRequestResponse,
     CreateActionPlanResponse,
+    CreateApprovalRequest,
+    CreateApprovalRequestResponse,
     EvidenceBoardResponse,
     HealthResponse,
     IncidentEventPageResponse,
@@ -65,6 +69,21 @@ def get_action_plan_store(request: Request) -> ActionPlanStore:
 
 
 ActionPlanStoreDependency = Annotated[ActionPlanStore, Depends(get_action_plan_store)]
+
+
+def get_approval_request_store(request: Request) -> ApprovalRequestStore:
+    """从应用生命周期状态获取审批请求仓储。"""
+
+    store = getattr(request.app.state, "approval_request_store", None)
+    if not isinstance(store, ApprovalRequestStore):
+        raise RuntimeError("ApprovalRequestStore 尚未初始化")
+    return store
+
+
+ApprovalRequestStoreDependency = Annotated[
+    ApprovalRequestStore,
+    Depends(get_approval_request_store),
+]
 
 
 def create_router(clock: Clock) -> APIRouter:
@@ -228,6 +247,54 @@ def create_router(clock: Clock) -> APIRouter:
         store: ActionPlanStoreDependency,
     ) -> ActionPlanResponse:
         return ActionPlanResponse.from_stored(await store.get_current(run_id))
+
+    @router.post(
+        "/api/v1/action-plans/{plan_id}/approval-requests",
+        response_model=CreateApprovalRequestResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": CreateApprovalRequestResponse,
+                "description": "计划已有审批请求，幂等返回原记录",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["审批"],
+    )
+    async def create_approval_request(
+        plan_id: UUID,
+        request: CreateApprovalRequest,
+        response: Response,
+        store: ApprovalRequestStoreDependency,
+    ) -> CreateApprovalRequestResponse:
+        """提交待审批请求；不接受批准、拒绝或执行决定。"""
+
+        creation = await store.create_for_action_plan(
+            plan_id,
+            expected_incident_version=request.expected_incident_version,
+            occurred_at=clock(),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            reason=request.reason,
+        )
+        if not creation.created:
+            response.status_code = status.HTTP_200_OK
+        return CreateApprovalRequestResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/approval-requests/{request_id}",
+        response_model=ApprovalRequestResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["审批"],
+    )
+    async def get_approval_request(
+        request_id: UUID,
+        store: ApprovalRequestStoreDependency,
+    ) -> ApprovalRequestResponse:
+        return ApprovalRequestResponse.from_stored(await store.get(request_id))
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",
