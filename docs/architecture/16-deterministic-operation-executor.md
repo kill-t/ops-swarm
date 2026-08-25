@@ -4,7 +4,7 @@
 
 本切片把“计划已获批准”推进为一次可审计、可恢复的本地操作。控制面只允许执行已批准计划中的具体步骤，当前唯一动作是把 `order-service` 的 `release_500` 故障开关确定性设置为关闭。
 
-LLM、LangChain 和 LangGraph 都不参与授权或执行。请求不能提供 Shell、SQL、URL、HTTP 方法或任意动作参数；执行器也不读取计划中的地址来拼接请求。恢复验证不属于本切片，操作成功只把 Incident 从 `mitigating` 推进到 `verifying`。
+LLM、LangChain 和 LangGraph 都不参与授权或执行。请求不能提供 Shell、SQL、URL、HTTP 方法或任意动作参数；执行器也不读取计划中的地址来拼接请求。操作成功只把 Incident 从 `mitigating` 推进到 `verifying`，随后由独立的[逐次恢复验证](17-persistent-recovery-verification.md)判断是否真正恢复。
 
 ## 2. 执行链路
 
@@ -74,7 +74,7 @@ sequenceDiagram
 - 执行失败后的新计划版本与重审批循环尚未打通。
 - `verifying` 只是状态，不代表系统已经恢复。
 
-下一切片实现 `verification_runs` 和确定性采样：根据计划中冻结的验证规则查询订单接口，保存每次样本与结论，成功进入 `resolved`，失败返回 `investigating`。
+后续已实现 `verification_runs` 和不可变样本：根据计划中冻结的验证规则查询订单接口，只有样本数量和观察窗口同时满足才进入 `resolved`，失败返回 `investigating`。下一阶段通过可重放 SSE 向作战室持续推送数据库时间线。
 
 ## 7. 面试表达
 

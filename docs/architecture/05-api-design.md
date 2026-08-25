@@ -25,6 +25,9 @@
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
 | `POST /api/v1/action-steps/{step_id}/executions` | 首次执行 `201`；幂等终态 `200`；同键运行中 `202` | 不存在 `404`；授权、版本、幂等或租约冲突 `409`；已审计适配器失败 `502` |
 | `GET /api/v1/operation-executions/{execution_id}` | 返回持久执行状态、有限结果或失败摘要 | 不存在 `404` |
+| `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同成功操作幂等读取 `200` | 不存在 `404`；执行、Incident 或规则不满足 `409` |
+| `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 | 不存在 `404` |
+| `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` | 不存在 `404`；运行已结束或 Incident 冲突 `409` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -56,6 +59,14 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 首次创建并成功完成返回 `201`、`created=true`、`execution_performed=true`。相同键的终态重试返回 `200` 且不重复调用适配器；有效租约内的并发同键请求返回 `202` 和同一 `running` 记录。进程中断后，相同键只能在租约过期后接管并增加 `attempt_count`。响应不暴露内部 `lease_token`。
 
 适配器失败会先保存 `failed`、错误摘要和 Incident 回调查，再返回 `502`。成功保存有限结果并把 Incident 推进到 `verifying`，但不代表业务已经恢复。调用方必须通过执行记录 GET 和后续恢复验证读取事实，不能把 HTTP 请求已返回等同于事故已解决。
+
+### 2.5 逐次恢复验证语义
+
+验证运行 POST 只接受 `expected_incident_version`。目标操作必须为 `succeeded`，Incident 必须处于 `verifying`；服务端从操作关联步骤读取并冻结验证规则。同操作重复请求返回原运行，即使调用方仍携带旧版本，也不会创建第二个验证。
+
+样本 POST 只接受 8～100 字符的 `idempotency_key`，不接受观测值、状态码、URL 或时间。服务端固定探针完成只读请求后，以服务器 UTC 时间追加样本。同键已存在时返回 `200`、`created=false`、`probe_performed=false`；并发竞争可能已经执行只读探针，但数据库仍只保存一个同键样本，响应通过 `probe_performed` 如实表达本次是否发起了探测。
+
+一个 5xx 数值样本或探针错误会形成 `failed` 运行并把 Incident 返回 `investigating`，这属于成功持久化的业务判定，因此样本接口仍返回 `201`，不会伪装成传输层失败。健康样本只有在数量和 60 秒窗口都满足时才使运行 `passed`、Incident `resolved`。GET 返回全部样本，当前计划最多要求 100 个成功样本；后续高流量场景再增加分页。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -136,6 +147,10 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `operation_step_already_succeeded` | `409` | 步骤已经使用其他幂等键成功执行 |
 | `execution_lease_lost` | `409` | 当前执行实例的租约已过期或被接管 |
 | `operation_execution_failed` | `502` | 受控适配器失败，失败事实和 Incident 回流已落库 |
+| `verification_run_not_found` | `404` | 恢复验证运行不存在 |
+| `operation_execution_not_verifiable` | `409` | 操作未成功、Incident 不在验证状态或目标不受支持 |
+| `verification_run_completed` | `409` | 已结束运行不能使用新的幂等键追加样本 |
+| `unsupported_verification_rule` | `409` | 当前验证器不支持步骤冻结的信号或比较符 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

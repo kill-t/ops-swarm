@@ -75,6 +75,12 @@ class OperationExecutionRow(Base):
             name="fk_operation_executions_step_plan",
         ),
         UniqueConstraint("idempotency_key", name="uq_operation_executions_idempotency_key"),
+        UniqueConstraint(
+            "id",
+            "incident_id",
+            "action_step_id",
+            name="uq_operation_executions_verification_binding",
+        ),
         Index(
             "uq_operation_executions_running_step",
             "action_step_id",

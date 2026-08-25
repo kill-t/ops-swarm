@@ -1,0 +1,74 @@
+# 逐次恢复验证与持久样本设计
+
+## 1. 目标与边界
+
+本切片让 `verifying` 成为可持久化、可恢复、可审计的业务过程。验证只消费成功操作及其步骤中已经冻结的规则，不允许模型或客户端在验证时降低阈值、减少样本数或伪造观测值。
+
+当前规则是 `http_5xx_ratio < 0.01`、观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；调用方逐次触发固定只读探针，运行进度和每个样本先写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
+
+## 2. 为什么采用逐次采样
+
+三次瞬时请求不能证明系统在 60 秒内持续健康，而让 API 请求睡眠 60 秒会占用连接、难以恢复，也违反控制面不承载长任务的边界。因此验证拆成“创建运行”和“追加样本”两个短命令：
+
+```mermaid
+sequenceDiagram
+    participant Caller as 调用方或后续调度器
+    participant API as 控制面
+    participant DB as PostgreSQL
+    participant Probe as 固定只读订单探针
+
+    Caller->>API: 为成功 operation 创建 verification_run
+    API->>DB: 校验 succeeded、verifying 和版本，冻结规则
+    loop 每个观察时点
+        Caller->>API: 使用幂等键请求一个样本
+        API->>DB: 检查运行与同键样本
+        API->>Probe: GET 固定订单端点
+        Probe-->>API: 200 或 5xx
+        API->>DB: 追加样本并重算数量与时间窗口
+    end
+    API->>DB: 通过则 resolved，失败则 investigating
+```
+
+测试通过可注入服务器时钟模拟观察间隔；生产规则仍为真实 60 秒，没有为了测试而缩短。
+
+## 3. 服务端探针与判定
+
+`local_order_http_5xx_ratio_v1` 只访问本机或 Compose 服务名下的固定路径 `/orders/opsswarm-verification-probe`，不接受客户端 URL、订单 ID、信号值或 HTTP 状态。地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
+
+- 合法 2xx 且响应符合 `OrderResponse`：样本值为 `0.0`。
+- 任意 5xx：样本值为 `1.0`。
+- 超时、网络失败、无效响应或其他状态：保存 `error` 样本。
+
+数值按计划冻结的 `less_than` 规则比较。任一 `failed` 或 `error` 样本立即终止运行并触发 `fail_verification`；健康样本达到 3 个后仍必须满足 `last_observed_at - first_success_at >= 60 秒`，才能触发 `confirm_recovery`。
+
+## 4. 幂等、并发和事务
+
+每次成功操作最多一个验证运行，重复创建返回原运行，不重复冻结规则。样本幂等键在运行内唯一；已保存同键样本直接返回，不重复调用探针。探针是只读请求，因此进程在读取后、落库前崩溃时可以安全重读，不需要把数据库锁跨越网络调用。
+
+不同采样请求可能并行读取，但最终追加时必须锁定同一验证运行。取得锁后再次检查同键样本和运行终态，数据库连续分配样本序号。若另一请求已经结束运行，后到请求不能追加新样本。
+
+运行进入 `passed` 或 `failed`、最后一个样本、Incident 乐观锁更新和 `incident_events` 在同一 PostgreSQL 事务提交。通过后 Incident 从 `verifying` 进入 `resolved`；阈值失败或探针错误从 `verifying` 返回 `investigating`。中间健康样本不改变 Incident 版本。
+
+## 5. 数据与 API
+
+`verification_runs` 唯一绑定成功执行记录，保存 Incident、步骤、执行前版本、冻结规则、成功样本计数、观察时间和终态摘要。`verification_samples` 是只追加明细，保存运行内幂等键、连续序号、判定、数值或错误、HTTP 状态和服务器观测时间。
+
+| 方法与路径 | 成功语义 |
+| --- | --- |
+| `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同操作幂等读取 `200` |
+| `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 |
+| `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` |
+
+## 6. 当前限制与下一步
+
+- 采样由调用方显式触发，没有定时调度 Worker；运行可以长期停留在 `running`，但进度不会丢失。
+- 当前只支持一个订单 HTTP 探针，没有 Prometheus 区间查询或多信号组合。
+- 单个请求代表一个 0 或 1 的 5xx 样本，不是生产流量的统计分位。
+- 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。
+- Incident 已能进入 `resolved`，但关闭、复发和 UI 仍未提供完整操作入口。
+
+下一切片实现基于 `incident_events.id` 与 `Last-Event-ID` 的可重放 SSE，让执行和验证进度能够断线续传到作战室界面。
+
+## 7. 面试表达
+
+我没有用三次瞬时请求冒充 60 秒持续恢复，也没有让 API 阻塞等待。验证规则从已执行步骤冻结到业务库，服务端固定探针逐次采样，客户端只能提供幂等键。每个样本包含服务器时间、阈值和原始 HTTP 状态；达到样本数且覆盖完整窗口才通过。失败样本、运行终态、Incident 状态和时间线原子提交。探针是只读操作，所以崩溃后允许安全重读；数据库行锁只用于最终追加和判定，不跨越网络调用。

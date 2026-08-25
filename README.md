@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十五个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛，以及确定性白名单执行器。高风险回滚计划只有在精确版本审批通过后，才能以幂等键关闭本地 `release_500` 故障；当前还没有恢复验证、SSE 或前端。
+项目已交付十六个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器，以及逐次恢复验证。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`；当前还没有 SSE 或前端。
 
 ## 为什么做 OpsSwarm
 
@@ -45,6 +45,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [精确版本审批请求与原子状态迁移](docs/architecture/14-approval-request.md)
 - [审批决定、过期收敛与审计](docs/architecture/15-approval-decision.md)
 - [确定性白名单执行器与幂等操作](docs/architecture/16-deterministic-operation-executor.md)
+- [逐次恢复验证与持久样本](docs/architecture/17-persistent-recovery-verification.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -60,7 +61,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定，以及带租约和幂等记录的本地白名单执行。下一阶段建立确定性恢复验证；执行范围仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行，以及覆盖观察窗口的持久恢复采样。下一阶段提供可重放 SSE 事故时间线；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -165,7 +166,15 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 执行记录先以 15 秒租约写入 PostgreSQL，再调用最长 3 秒的本地 HTTP 适配器，最后以有效租约提交成功或失败终态。同一幂等键重复请求不会重复执行；进程中断后只能用相同键在租约过期后接管。外部动作使用“设置为关闭”而非“切换”，因此物理重放仍保持相同效果。
 
-这是一种可恢复的至少一次执行设计，不宣称跨 PostgreSQL 和 HTTP 实现分布式事务或物理上的恰好一次。执行成功只表示动作已完成，Incident 会进入 `verifying`；是否真正恢复由下一切片独立判断。
+这是一种可恢复的至少一次执行设计，不宣称跨 PostgreSQL 和 HTTP 实现分布式事务或物理上的恰好一次。执行成功只表示动作已完成，Incident 会进入 `verifying`；恢复结论由独立验证运行判断。
+
+## 逐次恢复验证
+
+`POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行，并冻结步骤中的 `http_5xx_ratio < 0.01`、60 秒观察窗口和 3 个成功样本要求。它不会让一个 HTTP 请求阻塞 60 秒。
+
+调用方使用 `POST /api/v1/verification-runs/{run_id}/samples` 触发一次固定只读订单探针，只能提交幂等键，不能提交观测数值。每个样本都保存信号、阈值、HTTP 状态和服务器 UTC 时间；同键重试不重复探测。任一 5xx 样本或探针错误会使验证失败并把 Incident 返回 `investigating`。只有成功样本数量与观察窗口都满足时，验证才通过并原子迁移到 `resolved`。
+
+测试使用可注入服务器时钟推进 60 秒窗口，不降低业务规则，也不让测试真实等待。实际演练可在窗口内分三次触发采样；后续调度器可以自动触发相同接口和仓储语义。
 
 ## Incident 领域状态机
 

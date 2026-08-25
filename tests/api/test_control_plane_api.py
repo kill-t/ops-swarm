@@ -23,6 +23,7 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.planning.persistence import StoredActionStep
+from opsswarm.verification import VerificationObservation
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -39,6 +40,17 @@ class ApiOperationAdapter:
                 "enabled": False,
                 "service": step.target_name,
             }
+        )
+
+
+class ApiVerificationAdapter:
+    """API 集成测试用固定健康探针，不访问真实网络。"""
+
+    async def observe(self, step: StoredActionStep) -> VerificationObservation:
+        return VerificationObservation(
+            signal=step.verification.signal,
+            value=0.0,
+            http_status=200,
         )
 
 
@@ -75,6 +87,7 @@ async def control_client(
         database_settings=DatabaseSettings(database_url=migrated_database_url),
         clock=fixed_clock,
         operation_adapter=ApiOperationAdapter(),
+        verification_adapter=ApiVerificationAdapter(),
     )
     async with app.router.lifespan_context(app):
         transport = httpx2.ASGITransport(app=app)
@@ -490,6 +503,68 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["status"] == "verifying"
     assert incident.json()["version"] == 5
 
+    verification = await control_client.post(
+        f"/api/v1/operation-executions/{execution_id}/verification-runs",
+        json={"expected_incident_version": 5},
+    )
+    assert verification.status_code == 201
+    verification_body = verification.json()
+    assert verification_body["created"] is True
+    assert verification_body["verification_run"]["status"] == "running"
+    assert verification_body["verification_run"]["rule"] == {
+        "signal": "http_5xx_ratio",
+        "operator": "less_than",
+        "threshold": 0.01,
+        "observation_window_seconds": 60,
+        "required_successful_samples": 3,
+    }
+    verification_run_id = verification_body["verification_run"]["id"]
+
+    duplicate_verification = await control_client.post(
+        f"/api/v1/operation-executions/{execution_id}/verification-runs",
+        json={"expected_incident_version": 999},
+    )
+    assert duplicate_verification.status_code == 200
+    assert duplicate_verification.json() == {**verification_body, "created": False}
+
+    sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run_id}/samples",
+        json={"idempotency_key": "api-verification-sample-001"},
+    )
+    assert sample.status_code == 201
+    sample_body = sample.json()
+    assert sample_body["created"] is True
+    assert sample_body["probe_performed"] is True
+    assert sample_body["sample"]["status"] == "passed"
+    assert sample_body["sample"]["observed_value"] == 0.0
+    assert sample_body["verification_run"]["status"] == "running"
+    assert sample_body["verification_run"]["successful_sample_count"] == 1
+
+    duplicate_sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run_id}/samples",
+        json={"idempotency_key": "api-verification-sample-001"},
+    )
+    assert duplicate_sample.status_code == 200
+    assert duplicate_sample.json() == {
+        **sample_body,
+        "created": False,
+        "probe_performed": False,
+    }
+    forged_sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run_id}/samples",
+        json={
+            "idempotency_key": "api-verification-forged-001",
+            "observed_value": 0.0,
+        },
+    )
+    assert forged_sample.status_code == 422
+    assert forged_sample.json()["error_code"] == "request_validation_error"
+    stored_verification = await control_client.get(
+        f"/api/v1/verification-runs/{verification_run_id}"
+    )
+    assert stored_verification.status_code == 200
+    assert stored_verification.json() == sample_body["verification_run"]
+
 
 async def test_start_investigation_rejects_unknown_mode(
     control_client: httpx2.AsyncClient,
@@ -581,6 +656,24 @@ async def test_missing_investigation_run_returns_structured_404(
     )
     assert missing_execution_record.status_code == 404
     assert missing_execution_record.json()["error_code"] == "operation_execution_not_found"
+    missing_verification = await control_client.post(
+        f"/api/v1/operation-executions/{execution_id}/verification-runs",
+        json={"expected_incident_version": 1},
+    )
+    assert missing_verification.status_code == 404
+    assert missing_verification.json()["error_code"] == "operation_execution_not_found"
+    verification_run_id = uuid4()
+    missing_verification_record = await control_client.get(
+        f"/api/v1/verification-runs/{verification_run_id}"
+    )
+    assert missing_verification_record.status_code == 404
+    assert missing_verification_record.json()["error_code"] == "verification_run_not_found"
+    missing_sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run_id}/samples",
+        json={"idempotency_key": "missing-verification-sample-001"},
+    )
+    assert missing_sample.status_code == 404
+    assert missing_sample.json()["error_code"] == "verification_run_not_found"
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

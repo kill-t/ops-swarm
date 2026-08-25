@@ -16,6 +16,7 @@ from opsswarm.execution.persistence import tables as execution_tables  # noqa: F
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.planning.persistence import tables as planning_tables  # noqa: F401
+from opsswarm.verification.persistence import tables as verification_tables  # noqa: F401
 
 config = context.config
 

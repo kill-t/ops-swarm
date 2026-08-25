@@ -45,6 +45,7 @@ erDiagram
     ACTION_STEPS ||--o{ OPERATION_EXECUTIONS : executes
     APPROVAL_REQUESTS ||--o{ OPERATION_EXECUTIONS : authorizes
     OPERATION_EXECUTIONS ||--o{ VERIFICATION_RUNS : verifies
+    VERIFICATION_RUNS ||--o{ VERIFICATION_SAMPLES : records
     INVESTIGATION_RUNS ||--o{ WORK_ITEMS : schedules
     EVALUATION_CASES ||--o{ EVALUATION_RUNS : evaluates
     EVALUATION_RUNS ||--o{ EVALUATION_RESULTS : produces
@@ -81,7 +82,8 @@ erDiagram
 | `action_steps` | 白名单动作、参数、风险和验证规则 |
 | `approval_requests` | 绑定计划精确版本和内容哈希的限时审批请求 |
 | `operation_executions` | 幂等执行请求、结果和审计 |
-| `verification_runs` | 恢复判据、采样结果和结论 |
+| `verification_runs` | 冻结恢复判据、汇总采样进度和结论 |
+| `verification_samples` | 服务端探针取得的不可变数值或错误样本 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
 | `evaluation_cases` | 故障真值和期望行为 |
 | `evaluation_runs` | 模式、模型、提示版本和运行汇总 |
@@ -89,7 +91,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表，以及操作执行表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表，以及恢复验证运行和样本表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -275,6 +277,26 @@ erDiagram
 领取事务使用幂等键的 PostgreSQL 事务级咨询锁，并依次锁定步骤和 Incident。首次领取写入 15 秒租约；相同键在租约有效时只返回现有运行记录，租约过期后生成新令牌并增加尝试次数。完成事务要求令牌匹配且完成时刻仍早于租约到期，否则迟到实例不能写终态。
 
 生命周期检查约束保证：运行态必须有租约且没有结果；成功态必须清理租约并只保存 JSON 对象结果；失败态必须清理租约并只保存完整错误。执行成功或失败与 Incident 状态迁移、乐观锁版本和 `incident_events` 在同一事务提交。Alembic 降级会在存在任何执行审计时主动拒绝删除表，避免无声丢失操作历史。
+
+### 4.15 verification_runs
+
+| 字段组 | 说明 |
+| --- | --- |
+| 精确来源 | UUID 主键；`operation_execution_id` 唯一，并与 Incident、步骤通过复合外键绑定同一成功操作 |
+| 生命周期 | `running`、`passed`、`failed`，保存固定验证器名称与验证前 Incident 版本 |
+| 冻结规则 | 信号、比较符、阈值、观察窗口秒数和所需成功样本数 |
+| 进度 | 成功样本计数、首个成功时间、最后观察时间、创建与更新时间 |
+| 终态 | 完成时间，以及失败时的稳定错误码和最多 500 字摘要 |
+
+同一成功操作最多创建一个运行，网络重试返回原记录。当前数据库只允许 `http_5xx_ratio less_than` 与 `local_order_http_5xx_ratio_v1`；阈值限定 0～1，窗口 10～3600 秒，所需样本 1～100。
+
+`passed` 必须同时满足成功样本数和 `last_observed_at - first_success_at >= observation_window_seconds`，数据库检查约束阻止应用绕过时间窗口。`failed` 必须有完整错误，`running` 不得提前写终态。最终样本、运行终态、Incident 迁移和时间线事件在同一事务提交。
+
+### 4.16 verification_samples
+
+每个样本保存运行 ID、运行内幂等键、连续序号、`passed`、`failed` 或 `error` 判定、信号、冻结阈值、可空观测值、可空 HTTP 状态、有限错误和服务器 `observed_at`。`(verification_run_id, idempotency_key)` 与 `(verification_run_id, sequence)` 分别唯一。
+
+数值样本必须包含 0～1 的观测值和 HTTP 状态，且数据库直接校验 `passed` 必须小于阈值、`failed` 必须大于等于阈值。`error` 样本不得伪造数值，必须保存错误码和摘要。应用只提供插入和读取，不更新或删除历史样本。探针读取发生在事务外，因为它是可安全重试的只读操作；写入时锁定验证运行并重新检查终态和幂等键。
 
 ## 5. Incident 状态机
 

@@ -61,6 +61,13 @@ from opsswarm.planning.persistence import (
     StoredActionPlan,
     StoredActionStep,
 )
+from opsswarm.verification import VerificationSampleStatus, VerificationStatus
+from opsswarm.verification.persistence import (
+    StoredVerificationRun,
+    StoredVerificationSample,
+    VerificationRunCreation,
+    VerificationSampleOutcome,
+)
 
 
 class StrictApiModel(BaseModel):
@@ -448,6 +455,132 @@ class ExecuteOperationResponse(StrictApiModel):
             created=outcome.created,
             execution_performed=outcome.execution_performed,
             operation_execution=OperationExecutionResponse.from_stored(outcome.execution),
+        )
+
+
+class CreateVerificationRunRequest(StrictApiModel):
+    """开始恢复验证时使用的 Incident 乐观锁版本。"""
+
+    expected_incident_version: int = Field(ge=1)
+
+
+class VerificationSampleRequest(StrictApiModel):
+    """一次服务端探针采样的幂等标识。"""
+
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]+$",
+    )
+
+
+class VerificationSampleResponse(StrictApiModel):
+    """一个不可由客户端提交观测值的持久样本。"""
+
+    id: UUID
+    verification_run_id: UUID
+    idempotency_key: str
+    sequence: int
+    status: VerificationSampleStatus
+    signal: str
+    observed_value: float | None
+    threshold: float
+    http_status: int | None
+    error_code: str | None
+    error_message: str | None
+    observed_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredVerificationSample) -> Self:
+        return cls(
+            id=stored.id,
+            verification_run_id=stored.verification_run_id,
+            idempotency_key=stored.idempotency_key,
+            sequence=stored.sequence,
+            status=stored.status,
+            signal=stored.signal,
+            observed_value=stored.observed_value,
+            threshold=stored.threshold,
+            http_status=stored.http_status,
+            error_code=stored.failure.error_code if stored.failure is not None else None,
+            error_message=stored.failure.message if stored.failure is not None else None,
+            observed_at=stored.observed_at,
+        )
+
+
+class VerificationRunResponse(StrictApiModel):
+    """冻结规则、进度、终态和全部样本的恢复验证。"""
+
+    id: UUID
+    operation_execution_id: UUID
+    incident_id: UUID
+    action_step_id: UUID
+    status: VerificationStatus
+    verifier_name: str
+    incident_version_before: int
+    rule: VerificationRule
+    successful_sample_count: int
+    first_success_at: datetime | None
+    last_observed_at: datetime | None
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+    samples: tuple[VerificationSampleResponse, ...]
+
+    @classmethod
+    def from_stored(cls, stored: StoredVerificationRun) -> Self:
+        return cls(
+            id=stored.id,
+            operation_execution_id=stored.operation_execution_id,
+            incident_id=stored.incident_id,
+            action_step_id=stored.action_step_id,
+            status=stored.status,
+            verifier_name=stored.verifier_name,
+            incident_version_before=stored.incident_version_before,
+            rule=stored.rule,
+            successful_sample_count=stored.successful_sample_count,
+            first_success_at=stored.first_success_at,
+            last_observed_at=stored.last_observed_at,
+            error_code=stored.failure.error_code if stored.failure is not None else None,
+            error_message=stored.failure.message if stored.failure is not None else None,
+            created_at=stored.created_at,
+            updated_at=stored.updated_at,
+            completed_at=stored.completed_at,
+            samples=tuple(VerificationSampleResponse.from_stored(item) for item in stored.samples),
+        )
+
+
+class CreateVerificationRunResponse(StrictApiModel):
+    """区分首次创建和按成功操作幂等读取。"""
+
+    created: bool
+    verification_run: VerificationRunResponse
+
+    @classmethod
+    def from_creation(cls, creation: VerificationRunCreation) -> Self:
+        return cls(
+            created=creation.created,
+            verification_run=VerificationRunResponse.from_stored(creation.run),
+        )
+
+
+class RecordVerificationSampleResponse(StrictApiModel):
+    """一次采样的运行汇总与幂等结果。"""
+
+    created: bool
+    probe_performed: bool
+    verification_run: VerificationRunResponse
+    sample: VerificationSampleResponse
+
+    @classmethod
+    def from_outcome(cls, outcome: VerificationSampleOutcome) -> Self:
+        return cls(
+            created=outcome.created,
+            probe_performed=outcome.probe_performed,
+            verification_run=VerificationRunResponse.from_stored(outcome.run),
+            sample=VerificationSampleResponse.from_stored(outcome.sample),
         )
 
 

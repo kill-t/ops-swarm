@@ -97,9 +97,16 @@ sequenceDiagram
 2. 确定性规则引擎根据动作白名单重算风险和审批要求，不能采信模型自报等级。
 3. 工程师通过 REST 提交批准或拒绝，超时使用独立系统终态；决定与操作者、原因和时间永久留痕。
 4. 执行器重新校验当前计划版本、审批内容哈希、Incident 乐观锁版本、动作参数和幂等键，先持久化短租约再调用固定适配器。
-5. 执行成功与 Incident 进入验证、执行失败与 Incident 返回调查分别在同一事务落库；恢复是否成立由后续确定性验证独立判断。
+5. 执行成功与 Incident 进入验证、执行失败与 Incident 返回调查分别在同一事务落库；成功操作随后创建唯一验证运行，按冻结规则逐次采样。
+6. 健康样本数和观察窗口同时满足时，验证运行、最后样本、Incident `resolved` 与时间线原子提交；阈值或探针失败则原子返回调查。
 
 审批不是一句聊天文本，而是绑定计划版本、动作集合、操作者和有效期的业务对象。决定是不可变终态；批准只进入 `mitigating`，执行接口还必须经过独立授权校验。当前唯一适配器只会把 `order-service` 的 `release_500` 设置为关闭，不接受任意命令、URL 或客户端参数。
+
+### 4.4 逐次恢复验证
+
+恢复规则随 `action_step` 生成，并在验证运行创建时再次冻结到业务库。当前固定探针把合法订单 2xx 映射为 5xx 比例 `0.0`，把任意 5xx 映射为 `1.0`；客户端只能提交样本幂等键，不能提交观测值。
+
+验证不会让 API 请求等待完整观察窗口。调用方或后续调度器在不同观察时点触发短采样，PostgreSQL 保存进度。至少 3 个健康样本且首末跨度达到 60 秒才通过；瞬时连续请求即使样本数足够，也保持 `running`。
 
 ## 5. LangChain 与 LangGraph 边界
 
@@ -172,6 +179,9 @@ LangGraph 1.x 用于：
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 |
 | `POST /api/v1/action-steps/{step_id}/executions` | 使用幂等键执行已批准的固定本地白名单步骤 |
 | `GET /api/v1/operation-executions/{execution_id}` | 查询持久执行状态、有限结果或失败摘要 |
+| `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 为成功操作创建唯一的持久恢复验证 |
+| `GET /api/v1/verification-runs/{run_id}` | 查询冻结规则、验证进度、终态和样本 |
+| `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次固定只读订单探针 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 后续阶段提供可重放 SSE |
 | `GET /orders/{id}` | 演练订单查询 |
@@ -200,3 +210,5 @@ LangGraph 1.x 用于：
 | 迟到执行实例提交终态 | 租约令牌或到期时间不匹配时拒绝提交 |
 | 审批过期或计划变化 | 拒绝执行并重新进入审批 |
 | 恢复验证失败 | 保存验证证据并返回 `investigating` |
+| API 在观察窗口中重启 | 已有运行与样本保存在 PostgreSQL，按新幂等键继续采样 |
+| 相同样本命令重试 | 运行内幂等键返回原样本，不重复调用探针 |

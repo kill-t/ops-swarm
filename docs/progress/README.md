@@ -56,3 +56,4 @@
 - [13 - 精确版本审批请求与原子状态迁移](13-approval-request.md)
 - [14 - 审批决定、过期收敛与审计](14-approval-decision.md)
 - [15 - 确定性白名单执行器与幂等操作](15-deterministic-operation-executor.md)
+- [16 - 逐次恢复验证与持久样本](16-persistent-recovery-verification.md)

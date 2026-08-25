@@ -63,6 +63,17 @@ from opsswarm.planning import (
     UnsupportedPlanningRootCause,
 )
 from opsswarm.planning.persistence import ActionPlanStore
+from opsswarm.verification import (
+    FaultLabVerificationAdapter,
+    OperationExecutionNotVerifiable,
+    UnsupportedVerificationRule,
+    VerificationAdapter,
+    VerificationError,
+    VerificationRunCompleted,
+    VerificationRunNotFound,
+)
+from opsswarm.verification.persistence import VerificationStore
+from opsswarm.verification.service import VerificationService
 
 
 def utc_now() -> datetime:
@@ -79,6 +90,8 @@ def create_app(
     approval_request_store: ApprovalRequestStore | None = None,
     operation_execution_store: OperationExecutionStore | None = None,
     operation_adapter: OperationAdapter | None = None,
+    verification_store: VerificationStore | None = None,
+    verification_adapter: VerificationAdapter | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -92,10 +105,11 @@ def create_app(
             action_plan_store,
             approval_request_store,
             operation_execution_store,
+            verification_store,
         )
         if any(store is not None for store in stores):
             if any(store is None for store in stores):
-                raise RuntimeError("注入控制面仓储时必须同时提供五个仓储")
+                raise RuntimeError("注入控制面仓储时必须同时提供六个仓储")
             application.state.incident_store = incident_store
             application.state.investigation_store = investigation_store
             application.state.action_plan_store = action_plan_store
@@ -103,6 +117,15 @@ def create_app(
             application.state.operation_execution_service = OperationExecutionService(
                 cast(OperationExecutionStore, operation_execution_store),
                 operation_adapter if operation_adapter is not None else FaultLabOperationAdapter(),
+                clock=clock,
+            )
+            application.state.verification_service = VerificationService(
+                cast(VerificationStore, verification_store),
+                (
+                    verification_adapter
+                    if verification_adapter is not None
+                    else FaultLabVerificationAdapter()
+                ),
                 clock=clock,
             )
             yield
@@ -121,6 +144,15 @@ def create_app(
             operation_adapter if operation_adapter is not None else FaultLabOperationAdapter(),
             clock=clock,
         )
+        application.state.verification_service = VerificationService(
+            VerificationStore(database.session_factory),
+            (
+                verification_adapter
+                if verification_adapter is not None
+                else FaultLabVerificationAdapter()
+            ),
+            clock=clock,
+        )
         try:
             yield
         finally:
@@ -137,6 +169,7 @@ def create_app(
     app.state.action_plan_store = action_plan_store
     app.state.approval_request_store = approval_request_store
     app.state.operation_execution_service = None
+    app.state.verification_service = None
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)
@@ -444,6 +477,53 @@ def create_app(
             )
         else:
             response = ApiErrorResponse(error_code="execution_error", message=str(error))
+        return JSONResponse(
+            status_code=http_status,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(VerificationError)
+    async def handle_verification_error(
+        _: Request,
+        error: VerificationError,
+    ) -> JSONResponse:
+        http_status = status.HTTP_409_CONFLICT
+        if isinstance(error, VerificationRunNotFound):
+            response = ApiErrorResponse(
+                error_code="verification_run_not_found",
+                message=str(error),
+                details={"run_id": str(error.run_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, OperationExecutionNotVerifiable):
+            response = ApiErrorResponse(
+                error_code="operation_execution_not_verifiable",
+                message=str(error),
+                details={
+                    "execution_id": str(error.execution_id),
+                    "reason_code": error.reason_code,
+                },
+            )
+        elif isinstance(error, VerificationRunCompleted):
+            response = ApiErrorResponse(
+                error_code="verification_run_completed",
+                message=str(error),
+                details={
+                    "run_id": str(error.run_id),
+                    "status": error.status,
+                },
+            )
+        elif isinstance(error, UnsupportedVerificationRule):
+            response = ApiErrorResponse(
+                error_code="unsupported_verification_rule",
+                message=str(error),
+                details={
+                    "signal": error.signal,
+                    "operator": error.operator,
+                },
+            )
+        else:
+            response = ApiErrorResponse(error_code="verification_error", message=str(error))
         return JSONResponse(
             status_code=http_status,
             content=response.model_dump(mode="json"),

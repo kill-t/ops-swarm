@@ -18,6 +18,8 @@ from opsswarm.control_plane.schemas import (
     CreateActionPlanResponse,
     CreateApprovalRequest,
     CreateApprovalRequestResponse,
+    CreateVerificationRunRequest,
+    CreateVerificationRunResponse,
     DecideApprovalRequest,
     DecideApprovalRequestResponse,
     EvidenceBoardResponse,
@@ -30,8 +32,11 @@ from opsswarm.control_plane.schemas import (
     IncidentResponse,
     InvestigationRunResponse,
     OperationExecutionResponse,
+    RecordVerificationSampleResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
+    VerificationRunResponse,
+    VerificationSampleRequest,
 )
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
@@ -39,6 +44,7 @@ from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.planning.persistence import ActionPlanStore
+from opsswarm.verification.service import VerificationService
 
 Clock = Callable[[], datetime]
 
@@ -106,6 +112,21 @@ def get_operation_execution_service(request: Request) -> OperationExecutionServi
 OperationExecutionServiceDependency = Annotated[
     OperationExecutionService,
     Depends(get_operation_execution_service),
+]
+
+
+def get_verification_service(request: Request) -> VerificationService:
+    """从应用生命周期状态获取确定性恢复验证服务。"""
+
+    service = getattr(request.app.state, "verification_service", None)
+    if not isinstance(service, VerificationService):
+        raise RuntimeError("VerificationService 尚未初始化")
+    return service
+
+
+VerificationServiceDependency = Annotated[
+    VerificationService,
+    Depends(get_verification_service),
 ]
 
 
@@ -444,6 +465,78 @@ def create_router(clock: Clock) -> APIRouter:
         service: OperationExecutionServiceDependency,
     ) -> OperationExecutionResponse:
         return OperationExecutionResponse.from_stored(await service.get(execution_id))
+
+    @router.post(
+        "/api/v1/operation-executions/{execution_id}/verification-runs",
+        response_model=CreateVerificationRunResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": CreateVerificationRunResponse,
+                "description": "该成功操作已有验证运行，幂等返回原记录",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["恢复验证"],
+    )
+    async def create_verification_run(
+        execution_id: UUID,
+        request: CreateVerificationRunRequest,
+        response: Response,
+        service: VerificationServiceDependency,
+    ) -> CreateVerificationRunResponse:
+        """冻结已执行步骤的验证规则，不在请求中等待观察窗口。"""
+
+        creation = await service.create_run(
+            execution_id,
+            expected_incident_version=request.expected_incident_version,
+        )
+        if not creation.created:
+            response.status_code = status.HTTP_200_OK
+        return CreateVerificationRunResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/verification-runs/{run_id}",
+        response_model=VerificationRunResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["恢复验证"],
+    )
+    async def get_verification_run(
+        run_id: UUID,
+        service: VerificationServiceDependency,
+    ) -> VerificationRunResponse:
+        return VerificationRunResponse.from_stored(await service.get(run_id))
+
+    @router.post(
+        "/api/v1/verification-runs/{run_id}/samples",
+        response_model=RecordVerificationSampleResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": RecordVerificationSampleResponse,
+                "description": "同一采样幂等键已经持久化，不重复调用探针",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["恢复验证"],
+    )
+    async def record_verification_sample(
+        run_id: UUID,
+        request: VerificationSampleRequest,
+        response: Response,
+        service: VerificationServiceDependency,
+    ) -> RecordVerificationSampleResponse:
+        """由服务端固定探针取得一个样本，调用方不能提交观测值。"""
+
+        outcome = await service.sample(
+            run_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if not outcome.created:
+            response.status_code = status.HTTP_200_OK
+        return RecordVerificationSampleResponse.from_outcome(outcome)
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

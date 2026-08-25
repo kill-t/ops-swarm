@@ -94,6 +94,8 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 白名单执行使用 HTTPX2 访问固定本地管理路径，并以 Pydantic 校验有限响应。SQLAlchemy/PostgreSQL 在环境操作前保存全局幂等键与短租约，完成时用新读取的 UTC 时间重新校验租约，再原子提交执行终态、Incident 迁移和时间线。该设计承认数据库与 HTTP 之间没有分布式事务，通过幂等的目标状态设置实现安全重放，而不是错误宣称物理恰好一次。
 
+恢复验证复用 HTTPX2，但只发送固定只读订单请求。运行规则与每个样本由 Pydantic 校验并持久化，PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入的 UTC 时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。后续接入 Prometheus 时继续实现同一 `VerificationAdapter` 契约，不改变领域终态语义。
+
 ## 5. 可观测性
 
 | 技术 | 目标 |
