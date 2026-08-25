@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from opsswarm.approval import ApprovalDecision, ApprovalRequestExpired, ApprovalRequestStatus
 from opsswarm.approval.persistence import ApprovalRequestStore
@@ -38,6 +39,7 @@ from opsswarm.control_plane.schemas import (
     VerificationRunResponse,
     VerificationSampleRequest,
 )
+from opsswarm.control_plane.sse import IncidentEventStream
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
@@ -561,6 +563,45 @@ def create_router(clock: Clock) -> APIRouter:
         return IncidentEventPageResponse(
             items=[IncidentEventResponse.from_stored(record) for record in visible_records],
             next_after_cursor=next_cursor,
+        )
+
+    @router.get(
+        "/api/v1/incidents/{incident_id}/stream",
+        response_class=StreamingResponse,
+        responses={
+            status.HTTP_200_OK: {
+                "description": "支持 Last-Event-ID 断线重放的 SSE 时间线",
+                "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+        },
+        tags=["事故时间线"],
+    )
+    async def stream_incident_events(
+        incident_id: UUID,
+        request: Request,
+        store: IncidentStoreDependency,
+        last_event_id: Annotated[
+            int | None,
+            Header(alias="Last-Event-ID", ge=0),
+        ] = None,
+    ) -> StreamingResponse:
+        """连接前确认 Incident 存在，随后只推送已经落库的事件。"""
+
+        await store.get_incident(incident_id)
+        stream = IncidentEventStream(store)
+        return StreamingResponse(
+            stream.stream(
+                incident_id,
+                after_cursor=last_event_id if last_event_id is not None else 0,
+                is_disconnected=request.is_disconnected,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     return router

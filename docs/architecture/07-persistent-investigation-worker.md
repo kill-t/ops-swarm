@@ -89,7 +89,7 @@ Worker 提交结果必须同时匹配任务状态、租约令牌和租约有效�
 
 ```powershell
 uv run alembic upgrade head
-uv run uvicorn opsswarm.control_plane.main:app --host 127.0.0.1 --port 8000
+uv run python -m opsswarm.control_plane.main --host 127.0.0.1 --port 8000
 ```
 
 当前 Worker 每次启动至多处理一个任务，然后退出：

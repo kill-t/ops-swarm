@@ -674,6 +674,15 @@ async def test_missing_investigation_run_returns_structured_404(
     )
     assert missing_sample.status_code == 404
     assert missing_sample.json()["error_code"] == "verification_run_not_found"
+    missing_stream = await control_client.get(f"/api/v1/incidents/{uuid4()}/stream")
+    assert missing_stream.status_code == 404
+    assert missing_stream.json()["error_code"] == "incident_not_found"
+    invalid_cursor = await control_client.get(
+        f"/api/v1/incidents/{uuid4()}/stream",
+        headers={"Last-Event-ID": "not-a-number"},
+    )
+    assert invalid_cursor.status_code == 422
+    assert invalid_cursor.json()["error_code"] == "request_validation_error"
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

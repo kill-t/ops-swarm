@@ -29,8 +29,11 @@
 | `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 | 不存在 `404` |
 | `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` | 不存在 `404`；运行已结束或 Incident 冲突 `409` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
+| `GET /api/v1/incidents/{id}/stream` | 补发游标后的事件并持续保持 SSE 连接 | 不存在 `404`；非法 `Last-Event-ID` 为 `422` |
 
-`GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
+SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件类型，`data` 是对应 `IncidentEventResponse` 的单行 JSON。首次连接默认从游标 0 补发；客户端重连时通过 `Last-Event-ID` 请求严格大于该游标的事件。服务端空闲时发送不含 `id` 的注释心跳，因此不会推进恢复位置。事件至少一次投递，客户端应按 `id` 幂等处理。
+
+接口在发送流响应头前确认 Incident 存在。连接建立后数据库异常会终止连接，不伪造业务事件；客户端按 `retry` 提示重连并从原游标继续。每轮查询使用短生命周期数据库会话，轮询等待期间不占用连接。当前实现采用短轮询，PostgreSQL 是唯一事实来源，不维护进程内订阅队列。
 
 开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent` 以保持现有客户端兼容。非法模式返回结构化 `422`。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
 

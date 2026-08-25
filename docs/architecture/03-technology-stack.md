@@ -72,7 +72,7 @@ OpsSwarm 的单 Agent 基线需要模型选择工具、读取工具结果并返�
 
 SQLite 不用于替代 PostgreSQL 集成测试，因为部分唯一索引、JSONB、`TIMESTAMPTZ`、行锁和 `SKIP LOCKED` 都是关键行为。
 
-Psycopg 3 异步模式在 Windows 上不支持默认 Proactor 事件循环。Alembic 和 pytest 在 Windows 明确使用 Selector 事件循环，Linux 部署保持平台默认实现；这属于基础设施兼容策略，不进入领域代码。
+Psycopg 3 异步模式在 Windows 上不支持默认 Proactor 事件循环。控制面正式入口、Worker、Alembic 和 pytest 在 Windows 明确使用 Selector 事件循环，Linux 部署保持平台默认实现；这属于基础设施兼容策略，不进入领域代码。控制面应通过 `uv run python -m opsswarm.control_plane.main` 启动，避免绕过项目入口直接运行 Uvicorn CLI。
 
 Starlette 当前仍兼容旧版 HTTPX，但已将其标记为弃用；项目测试使用 HTTPX2，避免在新工程中引入已知迁移债务。
 

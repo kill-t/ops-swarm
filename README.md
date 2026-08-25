@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十六个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器，以及逐次恢复验证。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`；当前还没有 SSE 或前端。
+项目已交付十七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证，以及可重放 SSE 时间线。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`；作战室前端尚未实现。
 
 ## 为什么做 OpsSwarm
 
@@ -46,6 +46,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [审批决定、过期收敛与审计](docs/architecture/15-approval-decision.md)
 - [确定性白名单执行器与幂等操作](docs/architecture/16-deterministic-operation-executor.md)
 - [逐次恢复验证与持久样本](docs/architecture/17-persistent-recovery-verification.md)
+- [可重放事故时间线 SSE](docs/architecture/18-replayable-sse-timeline.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -61,7 +62,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行，以及覆盖观察窗口的持久恢复采样。下一阶段提供可重放 SSE 事故时间线；所有环境读写仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样，以及可断线续传的 SSE 时间线。下一阶段补齐 Incident 关闭与复发语义，再为作战室 UI 提供完整生命周期；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -201,7 +202,7 @@ uv run alembic current
 业务库迁移完成后启动只绑定本机的控制面：
 
 ```powershell
-uv run uvicorn opsswarm.control_plane.main:app --host 127.0.0.1 --port 8000
+uv run python -m opsswarm.control_plane.main --host 127.0.0.1 --port 8000
 ```
 
 接口文档位于 `http://127.0.0.1:8000/docs`。接收一条演练告警：
@@ -226,6 +227,23 @@ Invoke-RestMethod `
 ```
 
 当前控制面没有登录和权限系统，仅允许本地演练使用。请求中的 `actor_id` 只是审计声明，不是可信身份凭据。
+
+## 可重放事故时间线
+
+SSE 接口先补发 `incident_events` 中游标大于 `Last-Event-ID` 的事件，再以短轮询等待新事件。每个事件的 `id` 就是 PostgreSQL 全局事件号；心跳不带 `id`，不会误推进客户端游标。首次连接省略请求头即可读取完整事故时间线：
+
+```powershell
+curl.exe --no-buffer http://127.0.0.1:8000/api/v1/incidents/{incident_id}/stream
+```
+
+断线后使用浏览器自动携带的游标，或手工验证续传：
+
+```powershell
+curl.exe --no-buffer -H "Last-Event-ID: 12" `
+  http://127.0.0.1:8000/api/v1/incidents/{incident_id}/stream
+```
+
+轮询间隔、心跳间隔、批量大小和重试提示分别通过 `OPSSWARM_SSE_POLL_INTERVAL_SECONDS`、`OPSSWARM_SSE_HEARTBEAT_INTERVAL_SECONDS`、`OPSSWARM_SSE_BATCH_SIZE` 和 `OPSSWARM_SSE_RETRY_MILLISECONDS` 配置，并有安全范围校验。
 
 ## 运行故障模拟切片
 

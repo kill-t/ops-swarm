@@ -67,7 +67,7 @@ sequenceDiagram
 - 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。
 - Incident 已能进入 `resolved`，但关闭、复发和 UI 仍未提供完整操作入口。
 
-下一切片实现基于 `incident_events.id` 与 `Last-Event-ID` 的可重放 SSE，让执行和验证进度能够断线续传到作战室界面。
+基于 `incident_events.id` 与 `Last-Event-ID` 的可重放 SSE 已在 [可重放事故时间线 SSE](18-replayable-sse-timeline.md) 中实现，让执行和验证进度能够断线续传给后续作战室界面。
 
 ## 7. 面试表达
 
