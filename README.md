@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十一个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board，以及根因假设质疑。API 可以显式选择单 Agent 或多 Agent；多 Agent 任务失败后从同一 checkpoint 恢复，成功后原子保存证据、专业报告、主根因假设和支持/反驳关系。处置计划、SSE 和前端尚未接入。
+项目已交付十二个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑，以及版本化处置计划。通过质疑的版本回归根因可以生成高风险回滚草案，但尚未创建审批、执行动作、SSE 或前端。
 
 ## 为什么做 OpsSwarm
 
@@ -41,6 +41,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [多 Agent 持久 Worker 路由](docs/architecture/10-multi-agent-worker-routing.md)
 - [Evidence Board 持久化](docs/architecture/11-evidence-board.md)
 - [根因假设与确定性质疑](docs/architecture/12-hypothesis-challenge.md)
+- [版本化处置计划与风险分级](docs/architecture/13-action-plan-and-risk-policy.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -56,7 +57,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board 和确定性根因质疑。下一阶段只为通过质疑的假设生成版本化结构化处置计划和风险等级，不执行任何动作。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑和高风险回滚草案。下一阶段创建绑定精确计划版本的人工审批请求；仍不执行任何动作。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -140,6 +141,12 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 多 Agent 图在综合结论后运行 `challenge_hypothesis`，单 Agent 处理器复用相同纯领域函数。该节点不调用模型，而是把每条证据标记为 `supports`、`refutes` 或 `context`：只有至少两类独立证据支持且没有反驳时，主根因才进入 `supported`；否则保持 `contested` 或 `insufficient_evidence`。
 
 质疑规则使用 `hypothesis-challenge-v1` 版本并随结果持久化。Worker 和仓储都会重新计算质疑结果，模型不能自行把假设标记为通过。Evidence Board 查询响应中的 `hypotheses` 会返回状态、规则版本和逐条理由。
+
+## 版本化处置计划
+
+`POST /api/v1/investigations/{run_id}/action-plans` 只消费已经成功提交的调查、`supported` 主假设和规范化变更证据。当前确定性模板把版本回归转换为 `rollback_release` 草案，并从变更证据提取当前版本和目标版本；相同假设并发重复请求只会生成一个版本。
+
+回滚由 `action-risk-v1` 固定判为 `high` 且必须人工审批。Pydantic 限制动作和参数形状，风险策略在写入及读取时重算，PostgreSQL 还禁止高风险计划把审批要求设为假。计划保持 `draft`，不会迁移 Incident，也没有任何执行权限。
 
 ## Incident 领域状态机
 

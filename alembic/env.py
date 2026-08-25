@@ -13,6 +13,7 @@ from opsswarm.database.base import Base
 from opsswarm.database.settings import DatabaseSettings
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
+from opsswarm.planning.persistence import tables as planning_tables  # noqa: F401
 
 config = context.config
 

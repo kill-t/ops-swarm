@@ -52,3 +52,4 @@
 - [09 - 多 Agent 持久 Worker 路由](09-multi-agent-worker-routing.md)
 - [10 - Evidence Board 业务持久化](10-evidence-board.md)
 - [11 - 根因假设与确定性质疑](11-hypothesis-challenge.md)
+- [12 - 版本化处置计划与风险分级](12-action-plan-and-risk-policy.md)

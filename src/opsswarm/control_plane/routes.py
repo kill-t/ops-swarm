@@ -8,9 +8,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from opsswarm.control_plane.schemas import (
+    ActionPlanResponse,
     AlertIngestionResponse,
     AlertRequest,
     ApiErrorResponse,
+    CreateActionPlanResponse,
     EvidenceBoardResponse,
     HealthResponse,
     IncidentEventPageResponse,
@@ -24,6 +26,7 @@ from opsswarm.control_plane.schemas import (
 from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.planning.persistence import ActionPlanStore
 
 Clock = Callable[[], datetime]
 
@@ -50,6 +53,18 @@ def get_investigation_store(request: Request) -> InvestigationStore:
 
 
 InvestigationStoreDependency = Annotated[InvestigationStore, Depends(get_investigation_store)]
+
+
+def get_action_plan_store(request: Request) -> ActionPlanStore:
+    """从应用生命周期状态获取处置计划仓储。"""
+
+    store = getattr(request.app.state, "action_plan_store", None)
+    if not isinstance(store, ActionPlanStore):
+        raise RuntimeError("ActionPlanStore 尚未初始化")
+    return store
+
+
+ActionPlanStoreDependency = Annotated[ActionPlanStore, Depends(get_action_plan_store)]
 
 
 def create_router(clock: Clock) -> APIRouter:
@@ -175,6 +190,44 @@ def create_router(clock: Clock) -> APIRouter:
         """返回业务库中的证据事实，不直接读取 LangGraph checkpoint。"""
 
         return EvidenceBoardResponse.from_stored(await store.get_evidence_board(run_id))
+
+    @router.post(
+        "/api/v1/investigations/{run_id}/action-plans",
+        response_model=CreateActionPlanResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": CreateActionPlanResponse,
+                "description": "相同假设版本已有计划，幂等返回原记录",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["处置计划"],
+    )
+    async def create_action_plan(
+        run_id: UUID,
+        response: Response,
+        store: ActionPlanStoreDependency,
+    ) -> CreateActionPlanResponse:
+        """生成未授权草案；不创建审批、不执行动作、不迁移 Incident。"""
+
+        creation = await store.create_for_investigation(run_id, created_at=clock())
+        if not creation.created:
+            response.status_code = status.HTTP_200_OK
+        return CreateActionPlanResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/action-plans/current",
+        response_model=ActionPlanResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["处置计划"],
+    )
+    async def get_current_action_plan(
+        run_id: UUID,
+        store: ActionPlanStoreDependency,
+    ) -> ActionPlanResponse:
+        return ActionPlanResponse.from_stored(await store.get_current(run_id))
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

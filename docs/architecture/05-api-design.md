@@ -17,6 +17,8 @@
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
+| `POST /api/v1/investigations/{run_id}/action-plans` | 首次生成草案 `201`；幂等重复 `200` | 不存在 `404`；调查或假设未就绪 `409` |
+| `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -26,6 +28,12 @@
 ### 2.1 Evidence Board 读取语义
 
 Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint。`queued` 或重试中的运行返回当前状态、空结论和空集合；成功运行返回按稳定业务标识排序的证据、专业报告和 `hypotheses`。单 Agent 可以有证据但没有专业报告，多 Agent 同时返回报告及其 `evidence_ids`。主根因假设返回 `supported`、`contested` 或 `insufficient_evidence` 状态，并包含规则版本和逐证据关系。每条证据暴露 SHA-256 `content_hash`，用于调用方检测内容漂移，不把它宣传为外部来源签名。
+
+### 2.2 处置计划生成语义
+
+计划 POST 没有可由客户端指定的动作参数；服务端只从已提交 Evidence Board 提取白名单参数。调查必须为 `succeeded`、主假设必须为 `supported`，且证据必须包含明确的发布前后版本。相同假设版本重复或并发调用返回同一计划，调用方通过 `created` 区分首次创建。
+
+计划响应是 `draft`，包含风险策略版本、逐步骤风险理由和恢复判据。创建或读取计划不会迁移 Incident，不创建审批，也不执行动作。当前 API 没有身份认证，只能在 localhost/Compose 私网演练。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -82,6 +90,11 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `incident_version_conflict` | `409` | `expected_version` 已过期 |
 | `invalid_incident_transition` | `409` | 当前状态不允许执行指定动作 |
 | `investigation_run_not_found` | `404` | 调查运行不存在 |
+| `action_plan_not_found` | `404` | 调查存在但尚无计划 |
+| `action_plan_not_ready` | `409` | 调查未成功或缺少已提交假设 |
+| `hypothesis_not_supported` | `409` | 根因假设尚未通过质疑 |
+| `unsupported_planning_root_cause` | `409` | 当前没有该根因的白名单计划模板 |
+| `unsafe_rollback_target` | `409` | 证据无法确定安全回滚目标 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

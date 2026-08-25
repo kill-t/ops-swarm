@@ -88,7 +88,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表，以及根因假设与证据关系两表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表，以及处置计划与步骤两表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -226,6 +226,24 @@ erDiagram
 
 应用层要求关系集合与 Evidence Board 的全部证据完全一致，避免只挑选支持结论的证据。调查成功时，租约校验、运行与任务终态、Evidence Board、主假设和全部质疑关系必须在同一事务提交。
 
+### 4.11 action_plans
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与来源 | UUID 主键、调查运行 ID、主假设 ID；复合外键保证假设属于同一次调查 |
+| 版本 | 正整数 `version`；`(hypothesis_id, version)` 唯一，当前生成版本 1 |
+| 状态 | 当前只允许尚未提交审批的 `draft` |
+| 风险 | 计划最高风险、是否需要人工审批和 `risk_policy_version` |
+| 内容与时间 | 中文摘要和 `TIMESTAMPTZ` 创建时间；不提供覆盖更新接口 |
+
+计划 ID 由主假设 ID 和版本推导 UUID5。同一假设的并发重复创建使用 `INSERT ... ON CONFLICT DO NOTHING`，一个请求创建，其他请求读取获胜记录。未来修改计划必须新增版本，审批绑定精确 ID 和版本，不能覆盖历史草案。
+
+### 4.12 action_steps
+
+每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。当前动作只允许 `rollback_release`，参数只有当前版本和目标版本，验证要求 5xx 比例在观察窗口内持续低于阈值。
+
+数据库检查约束保证 JSONB 为对象、顺序大于零，并禁止 `high` 或 `critical` 步骤及计划把 `requires_human_approval` 设为假。风险仍由应用策略重算；数据库约束是最后一道完整性保护，不承担业务推理。
+
 ## 5. Incident 状态机
 
 ```mermaid
@@ -301,7 +319,7 @@ flowchart TD
 - `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`。
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
-- `action_plans` 必须版本化；审批绑定精确版本，计划变化后旧审批失效。
+- 审批必须绑定已实现的 `action_plans` 精确 ID 和版本；计划变化后旧审批失效。
 - `operation_executions.idempotency_key` 唯一，重复调用返回已有结果。
 - `tool_calls` 和评测表保存模型、提示、工具版本、延迟、Token 和错误分类，支持公平对比。
 - 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。

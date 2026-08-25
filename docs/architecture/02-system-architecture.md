@@ -89,10 +89,12 @@ sequenceDiagram
 
 调查成功提交时，Worker 必须仍持有有效租约。`investigation_runs`、`work_items`、`evidence_items`、`specialist_reports`、`hypotheses` 及两类证据关联在同一事务更新。checkpoint 中的中间节点输出不会被 API 当作业务 Evidence Board 返回。
 
+调查事实提交后，计划应用服务才允许读取 `supported` 假设和 Evidence Board。计划生成使用独立事务，因此缺少安全回滚目标不会撤销已确认的调查事实。相同假设版本的并发生成由 PostgreSQL 唯一约束收敛为同一份草案。
+
 ### 4.3 审批与执行
 
-1. Agent 只生成经过 Pydantic 校验的 `ActionPlan`，每个步骤声明动作类型、目标、参数、风险和验证方式。
-2. 规则引擎根据动作白名单和风险策略创建审批请求。
+1. 候选计划只能生成经过 Pydantic 校验的 `ActionPlan`，每个步骤声明动作类型、目标、参数和验证方式；当前冻结场景先使用确定性模板。
+2. 确定性规则引擎根据动作白名单重算风险和审批要求，不能采信模型自报等级。
 3. 工程师通过 REST 提交批准、拒绝或修改决定，决定与操作者身份永久留痕。
 4. 执行器重新校验计划版本、审批有效性、动作参数和幂等键。
 5. 执行结果落库后进入确定性恢复验证；失败或未恢复时返回调查阶段。
@@ -128,7 +130,7 @@ LangGraph 1.x 用于：
 
 单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
 
-多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。质疑状态不会自动推进 Incident，计划域完成前仍停留在 `investigating`。
+多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域已能生成独立持久化的 `draft` 草案，但在审批请求切片完成前 Incident 仍停留在 `investigating`。
 
 ## 6. PostgreSQL 任务与 SSE
 

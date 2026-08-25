@@ -37,6 +37,19 @@ from opsswarm.investigation.persistence import (
     StoredInvestigationRun,
     StoredSpecialistReport,
 )
+from opsswarm.planning.models import (
+    ActionPlanStatus,
+    ActionType,
+    RiskLevel,
+    RollbackReleaseParameters,
+    TargetType,
+    VerificationRule,
+)
+from opsswarm.planning.persistence import (
+    ActionPlanCreation,
+    StoredActionPlan,
+    StoredActionStep,
+)
 
 
 class StrictApiModel(BaseModel):
@@ -216,6 +229,73 @@ class EvidenceBoardResponse(StrictApiModel):
             hypotheses=tuple(
                 HypothesisResponse.from_stored(hypothesis) for hypothesis in stored.hypotheses
             ),
+        )
+
+
+class ActionStepResponse(StrictApiModel):
+    """计划中尚未授权执行的白名单动作。"""
+
+    id: UUID
+    step_order: int
+    action_type: ActionType
+    target_type: TargetType
+    target_name: str
+    parameters: RollbackReleaseParameters
+    risk_level: RiskLevel
+    requires_human_approval: bool
+    risk_rule_code: str
+    risk_rationale: str
+    verification: VerificationRule
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredActionStep) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class ActionPlanResponse(StrictApiModel):
+    """绑定根因假设版本的结构化处置计划草案。"""
+
+    id: UUID
+    investigation_run_id: UUID
+    hypothesis_id: UUID
+    version: int
+    status: ActionPlanStatus
+    summary: str
+    risk_level: RiskLevel
+    requires_human_approval: bool
+    risk_policy_version: str
+    steps: tuple[ActionStepResponse, ...]
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredActionPlan) -> Self:
+        return cls(
+            id=stored.id,
+            investigation_run_id=stored.investigation_run_id,
+            hypothesis_id=stored.hypothesis_id,
+            version=stored.version,
+            status=stored.status,
+            summary=stored.summary,
+            risk_level=stored.risk_level,
+            requires_human_approval=stored.requires_human_approval,
+            risk_policy_version=stored.risk_policy_version,
+            steps=tuple(ActionStepResponse.from_stored(step) for step in stored.steps),
+            created_at=stored.created_at,
+        )
+
+
+class CreateActionPlanResponse(StrictApiModel):
+    """计划首次创建或幂等读取结果。"""
+
+    created: bool
+    action_plan: ActionPlanResponse
+
+    @classmethod
+    def from_creation(cls, creation: ActionPlanCreation) -> Self:
+        return cls(
+            created=creation.created,
+            action_plan=ActionPlanResponse.from_stored(creation.plan),
         )
 
 

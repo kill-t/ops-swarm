@@ -202,6 +202,18 @@ async def test_start_investigation_and_status_filter(
     )
     assert [item["id"] for item in filtered.json()["items"]] == [incident_id]
 
+    plan_response = await control_client.post(
+        f"/api/v1/investigations/{started_body['investigation']['id']}/action-plans"
+    )
+    assert plan_response.status_code == 409
+    assert plan_response.json()["error_code"] == "action_plan_not_ready"
+
+    missing_plan = await control_client.get(
+        f"/api/v1/investigations/{started_body['investigation']['id']}/action-plans/current"
+    )
+    assert missing_plan.status_code == 404
+    assert missing_plan.json()["error_code"] == "action_plan_not_found"
+
 
 async def test_start_multi_agent_investigation_persists_graph_thread(
     control_client: httpx2.AsyncClient,
@@ -322,6 +334,33 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
         "supports"
     }
 
+    created_plan = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
+    assert created_plan.status_code == 201
+    plan_body = created_plan.json()
+    assert plan_body["created"] is True
+    assert plan_body["action_plan"]["version"] == 1
+    assert plan_body["action_plan"]["status"] == "draft"
+    assert plan_body["action_plan"]["risk_level"] == "high"
+    assert plan_body["action_plan"]["requires_human_approval"] is True
+    assert plan_body["action_plan"]["risk_policy_version"] == "action-risk-v1"
+    assert plan_body["action_plan"]["created_at"] == body["hypotheses"][0]["created_at"]
+    assert plan_body["action_plan"]["steps"][0]["action_type"] == "rollback_release"
+    assert plan_body["action_plan"]["steps"][0]["parameters"] == {
+        "current_version": "2026.01.01-rc1",
+        "target_version": "stable",
+    }
+
+    duplicate_plan = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
+    assert duplicate_plan.status_code == 200
+    assert duplicate_plan.json() == {**plan_body, "created": False}
+    current_plan = await control_client.get(f"/api/v1/investigations/{run_id}/action-plans/current")
+    assert current_plan.status_code == 200
+    assert current_plan.json() == plan_body["action_plan"]
+
+    incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
+    assert incident.json()["status"] == "investigating"
+    assert incident.json()["version"] == 2
+
 
 async def test_start_investigation_rejects_unknown_mode(
     control_client: httpx2.AsyncClient,
@@ -359,6 +398,14 @@ async def test_missing_investigation_run_returns_structured_404(
         "message": f"调查运行不存在：{run_id}",
         "details": {"run_id": str(run_id)},
     }
+
+    for method, path in (
+        ("POST", f"/api/v1/investigations/{run_id}/action-plans"),
+        ("GET", f"/api/v1/investigations/{run_id}/action-plans/current"),
+    ):
+        plan_response = await control_client.request(method, path)
+        assert plan_response.status_code == 404
+        assert plan_response.json()["error_code"] == "investigation_run_not_found"
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

@@ -3,8 +3,10 @@
 import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +23,7 @@ from opsswarm.investigation.errors import WorkItemLeaseLost
 from opsswarm.investigation.graph_thread import build_graph_thread_id
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceObservation,
     EvidenceRelation,
     HypothesisStatus,
     InvestigationArtifacts,
@@ -40,6 +43,9 @@ from opsswarm.investigation.persistence.tables import (
     SpecialistReportEvidenceRow,
 )
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.planning import ActionPlanNotFound, HypothesisNotSupported, RiskLevel
+from opsswarm.planning.persistence import ActionPlanStore
+from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
 from opsswarm.worker import InvestigationWorker, ProcessorContext, ProcessorOutcome
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -496,6 +502,109 @@ async def test_worker_processes_one_item_and_persists_structured_result(
     assert await idle_worker.run_once() is False
 
 
+async def test_concurrent_plan_generation_is_idempotent_and_keeps_incident_investigating(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    investigation_store, started = await start_investigation(database_session_factory)
+    claimed = await investigation_store.claim_next(
+        worker_id="worker-plan-source",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    outcome = make_outcome()
+    await investigation_store.complete(
+        claimed.work_item.id,
+        lease_token=claimed.work_item.lease_token,
+        occurred_at=BASE_TIME + timedelta(seconds=3),
+        result=outcome.result,
+        evidence_items=outcome.evidence_items,
+        specialist_reports=outcome.specialist_reports,
+        hypothesis_challenge=outcome.hypothesis_challenge,
+        metrics=outcome.metrics,
+        model_name=outcome.model_name,
+    )
+    plan_store = ActionPlanStore(database_session_factory)
+
+    first, second = await asyncio.gather(
+        plan_store.create_for_investigation(
+            started.run.id,
+            created_at=BASE_TIME + timedelta(seconds=4),
+        ),
+        plan_store.create_for_investigation(
+            started.run.id,
+            created_at=BASE_TIME + timedelta(seconds=4),
+        ),
+    )
+
+    assert {first.created, second.created} == {True, False}
+    assert first.plan.id == second.plan.id
+    assert first.plan.version == 1
+    assert first.plan.risk_level is RiskLevel.HIGH
+    assert first.plan.requires_human_approval is True
+    assert first.plan.steps[0].parameters.target_version == "stable"
+    current = await plan_store.get_current(started.run.id)
+    assert current == first.plan
+    incident = await IncidentStore(database_session_factory).get_incident(
+        started.incident.incident.id
+    )
+    assert incident.incident.status is IncidentStatus.INVESTIGATING
+    assert incident.incident.version == 2
+    async with database_session_factory() as session:
+        assert await session.scalar(select(func.count()).select_from(ActionPlanRow)) == 1
+        assert await session.scalar(select(func.count()).select_from(ActionStepRow)) == 1
+
+
+async def test_contested_hypothesis_cannot_create_action_plan(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    investigation_store, started = await start_investigation(
+        database_session_factory,
+        suffix="contested-plan",
+    )
+    baseline = make_outcome()
+    metric = next(item for item in baseline.evidence_items if item.kind is EvidenceKind.METRIC)
+    contested_metric = EvidenceObservation.model_validate(
+        {
+            **metric.model_dump(mode="json"),
+            "attributes": {**metric.attributes, "redis_healthy": False},
+        }
+    )
+    evidence = tuple(
+        contested_metric if item.kind is EvidenceKind.METRIC else item
+        for item in baseline.evidence_items
+    )
+    artifacts = InvestigationArtifacts(result=baseline.result, evidence_items=evidence)
+    challenge = challenge_investigation(artifacts)
+    assert challenge.status is HypothesisStatus.CONTESTED
+    claimed = await investigation_store.claim_next(
+        worker_id="worker-contested-plan",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    await investigation_store.complete(
+        claimed.work_item.id,
+        lease_token=claimed.work_item.lease_token,
+        occurred_at=BASE_TIME + timedelta(seconds=3),
+        result=baseline.result,
+        evidence_items=evidence,
+        specialist_reports=(),
+        hypothesis_challenge=challenge,
+        metrics=baseline.metrics,
+        model_name=baseline.model_name,
+    )
+    plan_store = ActionPlanStore(database_session_factory)
+
+    with pytest.raises(HypothesisNotSupported, match="contested"):
+        await plan_store.create_for_investigation(
+            started.run.id,
+            created_at=BASE_TIME + timedelta(seconds=4),
+        )
+    with pytest.raises(ActionPlanNotFound):
+        await plan_store.get_current(started.run.id)
+
+
 async def test_worker_failure_is_safely_summarized_and_requeued(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -591,6 +700,43 @@ async def test_database_rejects_cross_run_evidence_references(
                 rule_code="invalid_cross_run_test",
                 rationale="该关系应被复合外键拒绝。",
                 created_at=BASE_TIME + timedelta(seconds=6),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    second_hypothesis = second_board.hypotheses[0]
+    async with database_session_factory() as session:
+        session.add(
+            ActionPlanRow(
+                id=uuid4(),
+                investigation_run_id=first_started.run.id,
+                hypothesis_id=second_hypothesis.id,
+                version=1,
+                status="draft",
+                summary="该跨调查计划应被复合外键拒绝。",
+                risk_level="high",
+                requires_human_approval=True,
+                risk_policy_version="action-risk-v1",
+                created_at=BASE_TIME + timedelta(seconds=7),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    async with database_session_factory() as session:
+        session.add(
+            ActionPlanRow(
+                id=uuid4(),
+                investigation_run_id=first_started.run.id,
+                hypothesis_id=first_hypothesis.id,
+                version=1,
+                status="draft",
+                summary="高风险动作不能绕过审批。",
+                risk_level="high",
+                requires_human_approval=False,
+                risk_policy_version="action-risk-v1",
+                created_at=BASE_TIME + timedelta(seconds=8),
             )
         )
         with pytest.raises(IntegrityError):
