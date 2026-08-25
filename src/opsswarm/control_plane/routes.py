@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
+from opsswarm.approval import ApprovalDecision, ApprovalRequestExpired, ApprovalRequestStatus
 from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.schemas import (
     ActionPlanResponse,
@@ -17,6 +18,8 @@ from opsswarm.control_plane.schemas import (
     CreateActionPlanResponse,
     CreateApprovalRequest,
     CreateApprovalRequestResponse,
+    DecideApprovalRequest,
+    DecideApprovalRequestResponse,
     EvidenceBoardResponse,
     HealthResponse,
     IncidentEventPageResponse,
@@ -295,6 +298,73 @@ def create_router(clock: Clock) -> APIRouter:
         store: ApprovalRequestStoreDependency,
     ) -> ApprovalRequestResponse:
         return ApprovalRequestResponse.from_stored(await store.get(request_id))
+
+    async def decide_approval_request(
+        request_id: UUID,
+        request: DecideApprovalRequest,
+        store: ApprovalRequestStore,
+        decision: ApprovalDecision,
+    ) -> DecideApprovalRequestResponse:
+        outcome = await store.decide(
+            request_id,
+            decision=decision,
+            expected_incident_version=request.expected_incident_version,
+            occurred_at=clock(),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            reason=request.reason,
+        )
+        if outcome.request.status is ApprovalRequestStatus.EXPIRED:
+            raise ApprovalRequestExpired(
+                request_id,
+                expires_at=outcome.request.expires_at.isoformat(),
+            )
+        return DecideApprovalRequestResponse.from_outcome(outcome)
+
+    @router.post(
+        "/api/v1/approval-requests/{request_id}/actions/approve",
+        response_model=DecideApprovalRequestResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["审批"],
+    )
+    async def approve_request(
+        request_id: UUID,
+        request: DecideApprovalRequest,
+        store: ApprovalRequestStoreDependency,
+    ) -> DecideApprovalRequestResponse:
+        """批准精确计划版本，但不调用执行器。"""
+
+        return await decide_approval_request(
+            request_id,
+            request,
+            store,
+            ApprovalDecision.APPROVE,
+        )
+
+    @router.post(
+        "/api/v1/approval-requests/{request_id}/actions/reject",
+        response_model=DecideApprovalRequestResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["审批"],
+    )
+    async def reject_request(
+        request_id: UUID,
+        request: DecideApprovalRequest,
+        store: ApprovalRequestStoreDependency,
+    ) -> DecideApprovalRequestResponse:
+        """拒绝精确计划版本并返回调查状态。"""
+
+        return await decide_approval_request(
+            request_id,
+            request,
+            store,
+            ApprovalDecision.REJECT,
+        )
 
     @router.get(
         "/api/v1/incidents/{incident_id}/events",

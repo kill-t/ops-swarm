@@ -14,11 +14,15 @@ from opsswarm import __version__
 from opsswarm.approval import (
     ActionPlanDoesNotRequireApproval,
     ActionPlanNotCurrent,
+    ActionPlanNotDecidable,
     ActionPlanNotSubmittable,
     ApprovalActionPlanNotFound,
+    ApprovalDeciderMustBeHuman,
     ApprovalError,
     ApprovalPlanIntegrityViolation,
+    ApprovalRequestAlreadyDecided,
     ApprovalRequesterMustBeHuman,
+    ApprovalRequestExpired,
     ApprovalRequestNotFound,
 )
 from opsswarm.approval.persistence import ApprovalRequestStore
@@ -295,6 +299,36 @@ def create_app(
             response = ApiErrorResponse(
                 error_code="approval_requester_must_be_human",
                 message=str(error),
+            )
+        elif isinstance(error, ApprovalDeciderMustBeHuman):
+            response = ApiErrorResponse(
+                error_code="approval_decider_must_be_human",
+                message=str(error),
+            )
+        elif isinstance(error, ApprovalRequestAlreadyDecided):
+            response = ApiErrorResponse(
+                error_code="approval_request_already_decided",
+                message=str(error),
+                details={
+                    "request_id": str(error.request_id),
+                    "current_status": error.current_status,
+                    "requested_decision": error.requested_decision,
+                },
+            )
+        elif isinstance(error, ApprovalRequestExpired):
+            response = ApiErrorResponse(
+                error_code="approval_request_expired",
+                message=str(error),
+                details={
+                    "request_id": str(error.request_id),
+                    "expires_at": error.expires_at,
+                },
+            )
+        elif isinstance(error, ActionPlanNotDecidable):
+            response = ApiErrorResponse(
+                error_code="action_plan_not_decidable",
+                message=str(error),
+                details={"plan_id": str(error.plan_id), "status": error.status},
             )
         elif isinstance(error, ApprovalPlanIntegrityViolation):
             response = ApiErrorResponse(

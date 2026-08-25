@@ -21,6 +21,8 @@
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |
 | `POST /api/v1/action-plans/{plan_id}/approval-requests` | 首次提交 `201`；同计划幂等重复 `200` | 计划不存在 `404`；版本、状态或完整性冲突 `409` |
 | `GET /api/v1/approval-requests/{request_id}` | 重验计划内容后返回限时审批请求 | 不存在 `404`；内容漂移 `409` |
+| `POST /api/v1/approval-requests/{request_id}/actions/approve` | 首次批准 `decision_applied=true`；同向重试为 `false` | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
+| `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 
 `GET /api/v1/incidents/{id}/stream` 将在 SSE 切片实现，不提前维护进程内订阅状态。
@@ -41,7 +43,9 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 审批 POST 携带 `expected_incident_version`、`actor_id` 和 `reason`。首次提交在同一事务中创建 `pending` 请求、把计划迁移到 `awaiting_approval`，并把 Incident 迁移到同名状态及追加时间线事件。同计划并发或网络重试返回原请求，不重复迁移。
 
-请求绑定计划 ID、版本和内容 SHA-256，固定 30 分钟有效。GET 会重新校验计划策略与内容哈希。当前接口不提供批准、拒绝或执行；`actor_id` 只供审计，不能证明调用者身份。
+请求绑定计划 ID、版本和内容 SHA-256，固定 30 分钟有效。GET 会重新校验计划策略与内容哈希。批准和拒绝是不可变终态；同方向重试返回原决定，相反方向返回冲突。决定到达时已经过期会先持久化 `expired` 并把 Incident 返回调查，再响应 `409`。
+
+批准把 Incident 迁移到 `mitigating`，但接口不调用执行器或环境工具。`actor_id` 只供本地审计，不能证明调用者身份。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -110,6 +114,10 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `action_plan_does_not_require_approval` | `409` | 目标计划不需要人工审批 |
 | `approval_requester_must_be_human` | `409` | 当前切片只接受人工类型请求人 |
 | `approval_plan_integrity_violation` | `409` | 计划当前内容与提交审批时的哈希不一致 |
+| `approval_decider_must_be_human` | `409` | 批准或拒绝不是由人工类型提交 |
+| `approval_request_already_decided` | `409` | 请求已经进入与当前命令相反的终态 |
+| `approval_request_expired` | `409` | 请求已收敛为过期，人工决定未应用 |
+| `action_plan_not_decidable` | `409` | pending 请求关联的计划不在待审批状态 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。后续可观测性切片会增加请求追踪标识和结构化日志关联。
 

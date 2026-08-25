@@ -10,14 +10,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.approval.errors import (
     ActionPlanDoesNotRequireApproval,
     ActionPlanNotCurrent,
+    ActionPlanNotDecidable,
     ActionPlanNotSubmittable,
     ApprovalActionPlanNotFound,
+    ApprovalDeciderMustBeHuman,
     ApprovalPlanIntegrityViolation,
+    ApprovalRequestAlreadyDecided,
     ApprovalRequesterMustBeHuman,
     ApprovalRequestNotFound,
 )
-from opsswarm.approval.models import APPROVAL_REQUEST_TTL, ApprovalRequestStatus
+from opsswarm.approval.models import (
+    APPROVAL_REQUEST_TTL,
+    ApprovalDecision,
+    ApprovalRequestStatus,
+)
 from opsswarm.approval.persistence.records import (
+    ApprovalDecisionOutcome,
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
@@ -35,7 +43,7 @@ from opsswarm.planning.persistence.tables import ActionPlanRow
 
 
 class ApprovalRequestStore:
-    """创建和读取审批请求，不接受批准或拒绝决定。"""
+    """创建、读取并原子记录审批决定。"""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -137,6 +145,101 @@ class ApprovalRequestStore:
                 raise ApprovalRequestNotFound(request_id)
             return await _stored_request(session, row)
 
+    async def decide(
+        self,
+        request_id: UUID,
+        *,
+        decision: ApprovalDecision,
+        expected_incident_version: int,
+        occurred_at: datetime,
+        actor: IncidentActor,
+        reason: str,
+    ) -> ApprovalDecisionOutcome:
+        """记录人工决定；过期时改由系统收敛并拒绝批准或拒绝。"""
+
+        if not isinstance(decision, ApprovalDecision):
+            raise ValueError("decision 必须是 ApprovalDecision")
+        occurred_at = _normalize_time(occurred_at)
+        reason = _normalize_reason(reason)
+        if actor.actor_type is not ActorType.HUMAN or actor.actor_id is None:
+            raise ApprovalDeciderMustBeHuman("审批决定必须由人工操作者提交")
+
+        async with self._session_factory() as session, session.begin():
+            request_row = await session.get(ApprovalRequestRow, request_id)
+            if request_row is None:
+                raise ApprovalRequestNotFound(request_id)
+            plan_row = await session.get(ActionPlanRow, request_row.action_plan_id)
+            if plan_row is None:
+                raise RuntimeError("审批请求关联的处置计划不存在")
+            run_row = await session.get(InvestigationRunRow, plan_row.investigation_run_id)
+            if run_row is None:
+                raise RuntimeError("审批请求关联的调查运行不存在")
+            incident_row = cast(
+                IncidentRow | None,
+                await session.scalar(
+                    select(IncidentRow)
+                    .where(IncidentRow.id == run_row.incident_id)
+                    .with_for_update()
+                ),
+            )
+            if incident_row is None:
+                raise IncidentNotFound(str(run_row.incident_id))
+
+            # 请求可能在等待 Incident 行锁期间被另一决定更新，必须重新读取终态。
+            await session.refresh(request_row)
+            await session.refresh(plan_row)
+            stored_request = await _stored_request(session, request_row)
+            target_request_status = _decision_request_status(decision)
+            if stored_request.status is not ApprovalRequestStatus.PENDING:
+                if stored_request.status in {target_request_status, ApprovalRequestStatus.EXPIRED}:
+                    return ApprovalDecisionOutcome(
+                        request=stored_request,
+                        decision_applied=False,
+                    )
+                raise ApprovalRequestAlreadyDecided(
+                    request_id,
+                    current_status=stored_request.status.value,
+                    requested_decision=decision.value,
+                )
+            if plan_row.status != ActionPlanStatus.AWAITING_APPROVAL.value:
+                raise ActionPlanNotDecidable(plan_row.id, status=plan_row.status)
+
+            occurred_at = max(occurred_at, incident_row.updated_at, request_row.created_at)
+            if occurred_at >= request_row.expires_at:
+                await _expire_request(
+                    session,
+                    request_row=request_row,
+                    plan_row=plan_row,
+                    incident_id=run_row.incident_id,
+                    expected_incident_version=expected_incident_version,
+                    occurred_at=occurred_at,
+                )
+                return ApprovalDecisionOutcome(
+                    request=await _stored_request(session, request_row),
+                    decision_applied=False,
+                )
+
+            await transition_incident_in_session(
+                session,
+                run_row.incident_id,
+                action=_decision_incident_action(decision),
+                expected_version=expected_incident_version,
+                occurred_at=occurred_at,
+                actor=actor,
+                reason=reason,
+            )
+            request_row.status = target_request_status.value
+            request_row.decided_by_type = actor.actor_type.value
+            request_row.decided_by_id = actor.actor_id
+            request_row.decision_reason = reason
+            request_row.decided_at = occurred_at
+            plan_row.status = _decision_plan_status(decision).value
+            await session.flush()
+            return ApprovalDecisionOutcome(
+                request=await _stored_request(session, request_row),
+                decision_applied=True,
+            )
+
 
 async def _current_plan_row(session: AsyncSession, run_id: UUID) -> ActionPlanRow | None:
     return cast(
@@ -175,7 +278,59 @@ async def _stored_request(
         request_reason=row.request_reason,
         expires_at=row.expires_at,
         created_at=row.created_at,
+        decided_by_type=(
+            ActorType(row.decided_by_type) if row.decided_by_type is not None else None
+        ),
+        decided_by_id=row.decided_by_id,
+        decision_reason=row.decision_reason,
+        decided_at=row.decided_at,
     )
+
+
+async def _expire_request(
+    session: AsyncSession,
+    *,
+    request_row: ApprovalRequestRow,
+    plan_row: ActionPlanRow,
+    incident_id: UUID,
+    expected_incident_version: int,
+    occurred_at: datetime,
+) -> None:
+    reason = "审批请求超过 30 分钟有效期"
+    await transition_incident_in_session(
+        session,
+        incident_id,
+        action=IncidentAction.EXPIRE_APPROVAL,
+        expected_version=expected_incident_version,
+        occurred_at=occurred_at,
+        actor=IncidentActor(actor_type=ActorType.SYSTEM),
+        reason=reason,
+    )
+    request_row.status = ApprovalRequestStatus.EXPIRED.value
+    request_row.decided_by_type = ActorType.SYSTEM.value
+    request_row.decided_by_id = None
+    request_row.decision_reason = reason
+    request_row.decided_at = occurred_at
+    plan_row.status = ActionPlanStatus.EXPIRED.value
+    await session.flush()
+
+
+def _decision_request_status(decision: ApprovalDecision) -> ApprovalRequestStatus:
+    if decision is ApprovalDecision.APPROVE:
+        return ApprovalRequestStatus.APPROVED
+    return ApprovalRequestStatus.REJECTED
+
+
+def _decision_plan_status(decision: ApprovalDecision) -> ActionPlanStatus:
+    if decision is ApprovalDecision.APPROVE:
+        return ActionPlanStatus.APPROVED
+    return ActionPlanStatus.REJECTED
+
+
+def _decision_incident_action(decision: ApprovalDecision) -> IncidentAction:
+    if decision is ApprovalDecision.APPROVE:
+        return IncidentAction.APPROVE_PLAN
+    return IncidentAction.REJECT_PLAN
 
 
 def _content_hash(plan: StoredActionPlan) -> str:

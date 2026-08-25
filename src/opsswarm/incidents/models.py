@@ -37,6 +37,7 @@ class IncidentAction(StrEnum):
     START_VERIFICATION = "start_verification"
     APPROVE_PLAN = "approve_plan"
     REJECT_PLAN = "reject_plan"
+    EXPIRE_APPROVAL = "expire_approval"
     COMPLETE_MITIGATION = "complete_mitigation"
     FAIL_MITIGATION = "fail_mitigation"
     CONFIRM_RECOVERY = "confirm_recovery"

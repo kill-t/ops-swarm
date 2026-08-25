@@ -116,6 +116,11 @@ def test_record_alert_attached_keeps_current_status_and_version() -> None:
             IncidentStatus.INVESTIGATING,
         ),
         (
+            IncidentStatus.AWAITING_APPROVAL,
+            IncidentAction.EXPIRE_APPROVAL,
+            IncidentStatus.INVESTIGATING,
+        ),
+        (
             IncidentStatus.MITIGATING,
             IncidentAction.COMPLETE_MITIGATION,
             IncidentStatus.VERIFYING,

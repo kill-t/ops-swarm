@@ -23,7 +23,10 @@ class ApprovalRequestRow(Base):
 
     __tablename__ = "approval_requests"
     __table_args__ = (
-        CheckConstraint("status IN ('pending')", name="ck_approval_requests_status"),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'expired')",
+            name="ck_approval_requests_status",
+        ),
         CheckConstraint(
             "requested_by_type IN ('human')",
             name="ck_approval_requests_requester_type",
@@ -35,6 +38,21 @@ class ApprovalRequestRow(Base):
         CheckConstraint(
             "expires_at > created_at",
             name="ck_approval_requests_expiry",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND decided_by_type IS NULL "
+            "AND decided_by_id IS NULL AND decision_reason IS NULL AND decided_at IS NULL) "
+            "OR (status IN ('approved', 'rejected') AND decided_by_type = 'human' "
+            "AND decided_by_id IS NOT NULL AND decision_reason IS NOT NULL "
+            "AND decided_at IS NOT NULL) "
+            "OR (status = 'expired' AND decided_by_type = 'system' "
+            "AND decided_by_id IS NULL AND decision_reason IS NOT NULL "
+            "AND decided_at IS NOT NULL)",
+            name="ck_approval_requests_decision_audit",
+        ),
+        CheckConstraint(
+            "decided_at IS NULL OR decided_at >= created_at",
+            name="ck_approval_requests_decision_time",
         ),
         ForeignKeyConstraint(
             ["action_plan_id", "action_plan_version"],
@@ -63,3 +81,7 @@ class ApprovalRequestRow(Base):
     request_reason: Mapped[str] = mapped_column(String(500), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_by_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    decided_by_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

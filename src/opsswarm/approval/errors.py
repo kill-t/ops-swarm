@@ -49,6 +49,44 @@ class ApprovalRequesterMustBeHuman(ApprovalError):
     """当前切片只接受显式人工请求人。"""
 
 
+class ApprovalDeciderMustBeHuman(ApprovalError):
+    """批准和拒绝必须由显式人工操作者提交。"""
+
+
+class ApprovalRequestAlreadyDecided(ApprovalError):
+    """请求已经进入与本次命令不同的终态。"""
+
+    def __init__(
+        self,
+        request_id: UUID,
+        *,
+        current_status: str,
+        requested_decision: str,
+    ) -> None:
+        self.request_id = request_id
+        self.current_status = current_status
+        self.requested_decision = requested_decision
+        super().__init__(f"审批请求已经是 {current_status}，不能再执行 {requested_decision}")
+
+
+class ApprovalRequestExpired(ApprovalError):
+    """人工决定到达时请求已经过期。"""
+
+    def __init__(self, request_id: UUID, *, expires_at: str) -> None:
+        self.request_id = request_id
+        self.expires_at = expires_at
+        super().__init__(f"审批请求已过期：{request_id}")
+
+
+class ActionPlanNotDecidable(ApprovalError):
+    """请求仍在等待，但关联计划不处于待审批状态。"""
+
+    def __init__(self, plan_id: UUID, *, status: str) -> None:
+        self.plan_id = plan_id
+        self.status = status
+        super().__init__(f"处置计划状态为 {status}，不能记录审批决定")
+
+
 class ApprovalPlanIntegrityViolation(ApprovalError):
     """当前计划内容与审批请求保存的摘要不一致。"""
 

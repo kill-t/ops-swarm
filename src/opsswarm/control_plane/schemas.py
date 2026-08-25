@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from opsswarm.approval.models import ApprovalRequestStatus
 from opsswarm.approval.persistence import (
+    ApprovalDecisionOutcome,
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
@@ -326,6 +327,10 @@ class ApprovalRequestResponse(StrictApiModel):
     request_reason: str
     expires_at: datetime
     created_at: datetime
+    decided_by_type: ActorType | None
+    decided_by_id: str | None
+    decision_reason: str | None
+    decided_at: datetime | None
 
     @classmethod
     def from_stored(cls, stored: StoredApprovalRequest) -> Self:
@@ -343,6 +348,28 @@ class CreateApprovalRequestResponse(StrictApiModel):
         return cls(
             created=creation.created,
             approval_request=ApprovalRequestResponse.from_stored(creation.request),
+        )
+
+
+class DecideApprovalRequest(StrictApiModel):
+    """人工决定使用的 Incident 乐观锁和审计信息。"""
+
+    expected_incident_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class DecideApprovalRequestResponse(StrictApiModel):
+    """首次应用决定或同方向幂等重试的结果。"""
+
+    decision_applied: bool
+    approval_request: ApprovalRequestResponse
+
+    @classmethod
+    def from_outcome(cls, outcome: ApprovalDecisionOutcome) -> Self:
+        return cls(
+            decision_applied=outcome.decision_applied,
+            approval_request=ApprovalRequestResponse.from_stored(outcome.request),
         )
 
 

@@ -32,7 +32,7 @@ class ActionPlanRow(Base):
     __table_args__ = (
         CheckConstraint("version >= 1", name="ck_action_plans_version"),
         CheckConstraint(
-            "status IN ('draft', 'awaiting_approval')",
+            "status IN ('draft', 'awaiting_approval', 'approved', 'rejected', 'expired')",
             name="ck_action_plans_status",
         ),
         CheckConstraint(

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划，以及精确版本审批请求。高风险回滚草案可以进入限时待审批状态，但尚不能批准、拒绝、执行，也没有 SSE 或前端。
+项目已交付十四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求，以及审批决定与过期收敛。高风险回滚计划可以被批准或拒绝，但批准不会直接执行任何动作；当前也没有 SSE 或前端。
 
 ## 为什么做 OpsSwarm
 
@@ -43,6 +43,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [根因假设与确定性质疑](docs/architecture/12-hypothesis-challenge.md)
 - [版本化处置计划与风险分级](docs/architecture/13-action-plan-and-risk-policy.md)
 - [精确版本审批请求与原子状态迁移](docs/architecture/14-approval-request.md)
+- [审批决定、过期收敛与审计](docs/architecture/15-approval-decision.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -58,7 +59,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案和限时审批请求。下一阶段保存批准或拒绝决定；仍不执行任何动作。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求和不可变审批决定。下一阶段建立确定性白名单执行器；执行范围仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -153,7 +154,9 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 `POST /api/v1/action-plans/{plan_id}/approval-requests` 创建固定 30 分钟有效的 `pending` 请求。它绑定计划 ID、版本和内容 SHA-256，并在同一事务中把计划及 Incident 迁移为 `awaiting_approval`、追加时间线事件。同计划重试返回原请求，不重复迁移。
 
-当前只有“请求人工决定”，没有批准或拒绝接口，更没有执行器。`actor_id` 只是本地审计声明，不是可信登录身份；过期判断和决定状态将在下一切片实现。
+批准和拒绝使用独立语义化接口；终态不可覆盖，同方向重试幂等，相反决定返回冲突。到达时已过期的请求由系统收敛为 `expired`，计划和 Incident 返回调查语义。`actor_id` 仍只是本地审计声明，不是可信登录身份。
+
+批准后计划为 `approved`，Incident 为 `mitigating`，但系统没有执行器，也不会调用故障开关。批准表达的是后续白名单执行器的资格，不等于动作已经发生。
 
 ## Incident 领域状态机
 

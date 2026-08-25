@@ -11,10 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.approval import (
     APPROVAL_REQUEST_TTL,
+    ApprovalDecision,
     ApprovalPlanIntegrityViolation,
+    ApprovalRequestAlreadyDecided,
     ApprovalRequestStatus,
 )
-from opsswarm.approval.persistence import ApprovalRequestStore
+from opsswarm.approval.persistence import (
+    ApprovalDecisionOutcome,
+    ApprovalRequestStore,
+    StoredApprovalRequest,
+)
 from opsswarm.approval.persistence.tables import ApprovalRequestRow
 from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
 from opsswarm.incidents.errors import IncidentVersionConflict
@@ -69,6 +75,29 @@ async def prepare_draft_plan(
         created_at=BASE_TIME + timedelta(seconds=4),
     )
     return plan_store, started, creation.plan
+
+
+async def prepare_pending_request(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    suffix: str,
+) -> tuple[
+    ActionPlanStore,
+    StartedInvestigation,
+    StoredActionPlan,
+    ApprovalRequestStore,
+    StoredApprovalRequest,
+]:
+    plan_store, started, plan = await prepare_draft_plan(session_factory, suffix=suffix)
+    approval_store = ApprovalRequestStore(session_factory)
+    creation = await approval_store.create_for_action_plan(
+        plan.id,
+        expected_incident_version=2,
+        occurred_at=BASE_TIME + timedelta(seconds=5),
+        actor=HUMAN_ACTOR,
+        reason="请求审批回滚计划",
+    )
+    return plan_store, started, plan, approval_store, creation.request
 
 
 async def test_concurrent_submission_creates_one_request_and_one_state_transition(
@@ -192,3 +221,161 @@ async def test_read_detects_plan_content_changed_after_submission(
 
     with pytest.raises(ApprovalPlanIntegrityViolation):
         await approval_store.get(creation.request.id)
+
+
+async def test_approve_atomically_records_audit_and_is_idempotent(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    plan_store, started, _, approval_store, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="decision-approve",
+    )
+
+    first = await approval_store.decide(
+        request.id,
+        decision=ApprovalDecision.APPROVE,
+        expected_incident_version=3,
+        occurred_at=BASE_TIME + timedelta(seconds=6),
+        actor=HUMAN_ACTOR,
+        reason="确认回滚版本和恢复判据",
+    )
+    duplicate = await approval_store.decide(
+        request.id,
+        decision=ApprovalDecision.APPROVE,
+        expected_incident_version=3,
+        occurred_at=BASE_TIME + timedelta(seconds=7),
+        actor=HUMAN_ACTOR,
+        reason="网络重试不应覆盖原决定",
+    )
+
+    assert first.decision_applied is True
+    assert duplicate.decision_applied is False
+    assert duplicate.request == first.request
+    assert first.request.status is ApprovalRequestStatus.APPROVED
+    assert first.request.decided_by_type is ActorType.HUMAN
+    assert first.request.decided_by_id == "engineer-001"
+    assert first.request.decision_reason == "确认回滚版本和恢复判据"
+    assert first.request.decided_at == BASE_TIME + timedelta(seconds=6)
+    assert (await plan_store.get_current(started.run.id)).status is ActionPlanStatus.APPROVED
+
+    incident_store = IncidentStore(database_session_factory)
+    incident = await incident_store.get_incident(started.incident.incident.id)
+    assert incident.incident.status is IncidentStatus.MITIGATING
+    assert incident.incident.version == 4
+    events = await incident_store.list_events(started.incident.incident.id)
+    assert events[-1].event.to_status is IncidentStatus.MITIGATING
+    assert events[-1].event.actor == HUMAN_ACTOR
+
+
+async def test_reject_returns_incident_to_investigation(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    plan_store, started, _, approval_store, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="decision-reject",
+    )
+    reviewer = IncidentActor(actor_type=ActorType.HUMAN, actor_id="engineer-002")
+
+    outcome = await approval_store.decide(
+        request.id,
+        decision=ApprovalDecision.REJECT,
+        expected_incident_version=3,
+        occurred_at=BASE_TIME + timedelta(seconds=6),
+        actor=reviewer,
+        reason="证据不足，需要继续调查",
+    )
+
+    assert outcome.decision_applied is True
+    assert outcome.request.status is ApprovalRequestStatus.REJECTED
+    assert outcome.request.decided_by_id == "engineer-002"
+    assert (await plan_store.get_current(started.run.id)).status is ActionPlanStatus.REJECTED
+    incident = await IncidentStore(database_session_factory).get_incident(
+        started.incident.incident.id
+    )
+    assert incident.incident.status is IncidentStatus.INVESTIGATING
+    assert incident.incident.version == 4
+
+
+async def test_expired_request_is_system_terminal_and_cannot_be_approved(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    plan_store, started, _, approval_store, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="decision-expired",
+    )
+    expired_at = request.expires_at + timedelta(seconds=1)
+
+    outcome = await approval_store.decide(
+        request.id,
+        decision=ApprovalDecision.APPROVE,
+        expected_incident_version=3,
+        occurred_at=expired_at,
+        actor=HUMAN_ACTOR,
+        reason="到达时已经超过有效期",
+    )
+
+    assert outcome.decision_applied is False
+    assert outcome.request.status is ApprovalRequestStatus.EXPIRED
+    assert outcome.request.decided_by_type is ActorType.SYSTEM
+    assert outcome.request.decided_by_id is None
+    assert outcome.request.decided_at == expired_at
+    assert (await plan_store.get_current(started.run.id)).status is ActionPlanStatus.EXPIRED
+    incident_store = IncidentStore(database_session_factory)
+    incident = await incident_store.get_incident(started.incident.incident.id)
+    assert incident.incident.status is IncidentStatus.INVESTIGATING
+    assert incident.incident.version == 4
+    events = await incident_store.list_events(started.incident.incident.id)
+    assert events[-1].event.actor.actor_type is ActorType.SYSTEM
+
+
+async def test_opposite_concurrent_decisions_only_commit_one_terminal_state(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, started, _, approval_store, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="decision-race",
+    )
+
+    results = await asyncio.gather(
+        *(
+            approval_store.decide(
+                request.id,
+                decision=decision,
+                expected_incident_version=3,
+                occurred_at=BASE_TIME + timedelta(seconds=6),
+                actor=HUMAN_ACTOR,
+                reason=f"并发决定 {decision.value}",
+            )
+            for decision in (ApprovalDecision.APPROVE, ApprovalDecision.REJECT)
+        ),
+        return_exceptions=True,
+    )
+
+    outcomes = [result for result in results if isinstance(result, ApprovalDecisionOutcome)]
+    conflicts = [result for result in results if isinstance(result, ApprovalRequestAlreadyDecided)]
+    assert len(outcomes) == 1
+    assert len(conflicts) == 1
+    assert outcomes[0].decision_applied is True
+    stored = await approval_store.get(request.id)
+    assert stored.status in {ApprovalRequestStatus.APPROVED, ApprovalRequestStatus.REJECTED}
+    incident_store = IncidentStore(database_session_factory)
+    incident = await incident_store.get_incident(started.incident.incident.id)
+    assert incident.incident.version == 4
+    assert len(await incident_store.list_events(started.incident.incident.id)) == 4
+
+
+async def test_database_rejects_terminal_status_without_decision_audit(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, _, _, _, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="decision-constraint",
+    )
+
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(ApprovalRequestRow)
+                .where(ApprovalRequestRow.id == request.id)
+                .values(status=ApprovalRequestStatus.APPROVED.value)
+            )

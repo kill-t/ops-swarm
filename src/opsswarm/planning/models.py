@@ -34,10 +34,13 @@ class RiskLevel(StrEnum):
 
 
 class ActionPlanStatus(StrEnum):
-    """计划草案及提交审批后的生命周期状态。"""
+    """计划从草案到审批终态的生命周期状态。"""
 
     DRAFT = "draft"
     AWAITING_APPROVAL = "awaiting_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 class VerificationOperator(StrEnum):

@@ -378,6 +378,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert approval_body["approval_request"]["action_plan_version"] == 1
     assert approval_body["approval_request"]["status"] == "pending"
     assert approval_body["approval_request"]["requested_by_type"] == "human"
+    assert approval_body["approval_request"]["decided_at"] is None
     assert len(approval_body["approval_request"]["plan_content_hash"]) == 64
 
     duplicate_approval = await control_client.post(
@@ -396,6 +397,41 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
     assert incident.json()["status"] == "awaiting_approval"
     assert incident.json()["version"] == 3
+
+    decision_payload = {
+        "expected_incident_version": 3,
+        "actor_id": "engineer-002",
+        "reason": "确认回滚目标和恢复判据",
+    }
+    approved = await control_client.post(
+        f"/api/v1/approval-requests/{request_id}/actions/approve",
+        json=decision_payload,
+    )
+    assert approved.status_code == 200
+    approved_body = approved.json()
+    assert approved_body["decision_applied"] is True
+    assert approved_body["approval_request"]["status"] == "approved"
+    assert approved_body["approval_request"]["decided_by_type"] == "human"
+    assert approved_body["approval_request"]["decided_by_id"] == "engineer-002"
+
+    duplicate_decision = await control_client.post(
+        f"/api/v1/approval-requests/{request_id}/actions/approve",
+        json=decision_payload,
+    )
+    assert duplicate_decision.status_code == 200
+    assert duplicate_decision.json() == {**approved_body, "decision_applied": False}
+    conflicting_decision = await control_client.post(
+        f"/api/v1/approval-requests/{request_id}/actions/reject",
+        json=decision_payload,
+    )
+    assert conflicting_decision.status_code == 409
+    assert conflicting_decision.json()["error_code"] == "approval_request_already_decided"
+
+    current_plan = await control_client.get(f"/api/v1/investigations/{run_id}/action-plans/current")
+    assert current_plan.json()["status"] == "approved"
+    incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
+    assert incident.json()["status"] == "mitigating"
+    assert incident.json()["version"] == 4
 
 
 async def test_start_investigation_rejects_unknown_mode(
@@ -459,6 +495,18 @@ async def test_missing_investigation_run_returns_structured_404(
     missing_request = await control_client.get(f"/api/v1/approval-requests/{request_id}")
     assert missing_request.status_code == 404
     assert missing_request.json()["error_code"] == "approval_request_not_found"
+
+    for action in ("approve", "reject"):
+        missing_decision = await control_client.post(
+            f"/api/v1/approval-requests/{request_id}/actions/{action}",
+            json={
+                "expected_incident_version": 1,
+                "actor_id": "engineer-001",
+                "reason": "目标审批请求不存在",
+            },
+        )
+        assert missing_decision.status_code == 404
+        assert missing_decision.json()["error_code"] == "approval_request_not_found"
 
 
 async def test_stale_version_and_illegal_transition_return_distinct_409_errors(

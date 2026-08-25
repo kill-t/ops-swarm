@@ -40,6 +40,10 @@ _TRANSITIONS: dict[tuple[IncidentStatus, IncidentAction], IncidentStatus] = {
         IncidentAction.REJECT_PLAN,
     ): IncidentStatus.INVESTIGATING,
     (
+        IncidentStatus.AWAITING_APPROVAL,
+        IncidentAction.EXPIRE_APPROVAL,
+    ): IncidentStatus.INVESTIGATING,
+    (
         IncidentStatus.MITIGATING,
         IncidentAction.COMPLETE_MITIGATION,
     ): IncidentStatus.VERIFYING,

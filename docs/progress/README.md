@@ -54,3 +54,4 @@
 - [11 - 根因假设与确定性质疑](11-hypothesis-challenge.md)
 - [12 - 版本化处置计划与风险分级](12-action-plan-and-risk-policy.md)
 - [13 - 精确版本审批请求与原子状态迁移](13-approval-request.md)
+- [14 - 审批决定、过期收敛与审计](14-approval-decision.md)

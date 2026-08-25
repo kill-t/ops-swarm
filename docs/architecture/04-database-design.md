@@ -232,7 +232,7 @@ erDiagram
 | --- | --- |
 | 标识与来源 | UUID 主键、调查运行 ID、主假设 ID；复合外键保证假设属于同一次调查 |
 | 版本 | 正整数 `version`；`(hypothesis_id, version)` 唯一，当前生成版本 1 |
-| 状态 | 允许 `draft` 和已经提交请求的 `awaiting_approval` |
+| 状态 | `draft`、`awaiting_approval`，以及不可变审批终态 `approved`、`rejected`、`expired` |
 | 风险 | 计划最高风险、是否需要人工审批和 `risk_policy_version` |
 | 内容与时间 | 中文摘要和 `TIMESTAMPTZ` 创建时间；不提供覆盖更新接口 |
 
@@ -250,11 +250,14 @@ erDiagram
 | --- | --- |
 | 标识与对象 | UUID 主键；`action_plan_id` 与 `action_plan_version` 通过复合外键绑定精确计划版本 |
 | 内容完整性 | `plan_content_hash` 是 64 位小写 SHA-256，覆盖计划来源、版本、风险策略和有序步骤，不覆盖生命周期状态 |
-| 状态 | 当前只允许 `pending`；批准、拒绝和过期状态将在决定切片扩展 |
+| 状态 | `pending`、`approved`、`rejected`、`expired`；三个终态不可相互覆盖 |
 | 请求审计 | 当前只允许 `human` 类型，保存请求人标识和 1～500 字原因；它们不是身份认证凭据 |
 | 有效期 | 保存 `created_at`、`expires_at`，并检查过期时间必须晚于创建时间；当前固定为 30 分钟 |
+| 决定审计 | 可空的决定主体、主体 ID、原因和时间；终态组合由检查约束强制完整 |
 
-每个计划 ID 最多一个请求，避免并发或网络重试重复迁移 Incident。创建仓储先锁定关联 Incident，随后在同一事务中执行乐观锁状态迁移、追加 `incident_events`、把计划改为 `awaiting_approval` 并插入请求。读取请求时重算风险策略和内容哈希；计划内容漂移会作为完整性冲突处理。
+每个计划 ID 最多一个请求，避免并发或网络重试重复迁移 Incident。创建仓储先锁定关联 Incident，随后在同一事务中执行乐观锁状态迁移、追加 `incident_events`、把计划改为 `awaiting_approval` 并插入请求。决定仓储使用相同锁顺序，取得锁后刷新请求以发现并发获胜者，再原子写入请求终态、计划终态、Incident 和事件。读取及决定前都重算风险策略与内容哈希；计划内容漂移会作为完整性冲突处理。
+
+数据库约束要求：`pending` 的全部决定字段为空；`approved`、`rejected` 必须有 `human`、操作者 ID、原因和时间；`expired` 必须有无操作者 ID 的 `system`、原因和时间。决定时间不得早于请求创建时间。
 
 ## 5. Incident 状态机
 
@@ -266,6 +269,7 @@ stateDiagram-v2
     investigating --> verifying: 无需执行即可验证
     awaiting_approval --> mitigating: 审批通过
     awaiting_approval --> investigating: 拒绝或要求修改
+    awaiting_approval --> investigating: 审批过期
     mitigating --> verifying: 执行完成
     mitigating --> investigating: 执行失败
     verifying --> resolved: 恢复验证通过
@@ -284,6 +288,7 @@ stateDiagram-v2
 | `investigating` | `start_verification` | `verifying` | 无需执行变更，直接验证是否已恢复 |
 | `awaiting_approval` | `approve_plan` | `mitigating` | 工程师批准计划，允许进入受控执行 |
 | `awaiting_approval` | `reject_plan` | `investigating` | 拒绝计划或要求补充调查 |
+| `awaiting_approval` | `expire_approval` | `investigating` | 请求超过有效期，由系统继续调查 |
 | `mitigating` | `complete_mitigation` | `verifying` | 白名单执行器完成操作，开始验证 |
 | `mitigating` | `fail_mitigation` | `investigating` | 执行失败，带结果回到调查 |
 | `verifying` | `confirm_recovery` | `resolved` | 恢复条件持续满足 |
