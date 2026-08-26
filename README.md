@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线，以及工程师关闭与告警复发。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`，再由工程师确认关闭；作战室前端尚未实现。
+项目已交付十九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发，以及 Vue 3 Incident 作战室。当前作战室可以查看 Incident 列表、详情和实时可重放时间线，暂不提供状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -48,6 +48,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [逐次恢复验证与持久样本](docs/architecture/17-persistent-recovery-verification.md)
 - [可重放事故时间线 SSE](docs/architecture/18-replayable-sse-timeline.md)
 - [Incident 关闭与告警复发](docs/architecture/19-incident-closure-and-recurrence.md)
+- [Incident 作战室前端](docs/architecture/20-incident-workroom-ui.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -63,7 +64,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线，以及确认关闭和关闭前后复发分流。下一阶段开始最小作战室 UI，先实现 Incident 列表、详情和时间线；所有环境读写仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线、关闭前后复发分流，以及只读 Incident 作战室。下一切片让作战室读取完整调查和处置链路；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -229,6 +230,18 @@ Invoke-RestMethod `
 
 当前控制面没有登录和权限系统，仅允许本地演练使用。请求中的 `actor_id` 只是审计声明，不是可信身份凭据。
 
+## 运行 Incident 作战室
+
+先启动控制面 API，再在另一个 PowerShell 窗口启动前端开发服务：
+
+```powershell
+cd web
+npm ci
+npm run dev
+```
+
+访问 `http://127.0.0.1:5173/`。Vite 将同源 `/api` 请求转发到 `127.0.0.1:8000`，因此本地开发不需要放宽 FastAPI CORS。生产构建使用 `npm run build`；当前尚未制作前端静态资源容器。
+
 ## 可重放事故时间线
 
 SSE 接口先补发 `incident_events` 中游标大于 `Last-Event-ID` 的事件，再以短轮询等待新事件。每个事件的 `id` 就是 PostgreSQL 全局事件号；心跳不带 `id`，不会误推进客户端游标。首次连接省略请求头即可读取完整事故时间线：
@@ -306,6 +319,11 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 uv run pytest
+
+cd web
+npm run typecheck
+npm test
+npm run build
 ```
 
 集成测试会通过 Testcontainers 启动隔离的 PostgreSQL 17，运行前需要启动 Docker Desktop。测试容器结束后自动清理，不复用本地开发库。

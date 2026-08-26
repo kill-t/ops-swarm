@@ -59,3 +59,4 @@
 - [16 - 逐次恢复验证与持久样本](16-persistent-recovery-verification.md)
 - [17 - 可重放事故时间线 SSE](17-replayable-sse-timeline.md)
 - [18 - Incident 关闭与告警复发](18-incident-closure-and-recurrence.md)
+- [19 - Incident 作战室与实时事件展示](19-incident-workroom-ui.md)

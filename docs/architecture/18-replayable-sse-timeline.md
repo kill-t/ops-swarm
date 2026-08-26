@@ -66,10 +66,10 @@ data: {"cursor":13,"event_type":"incident.status_changed"}
 
 ## 6. 当前限制与下一步
 
-- 尚无作战室前端消费该事件流。
+- Vue 3 作战室已使用原生 EventSource 消费具名事件，并按数字游标去重、按 Incident 版本保护当前快照。
 - 短轮询没有连接数配额、每用户授权或跨租户隔离，因此不可用于生产。
 - 只发送 Incident 时间线事件；调查节点级 token 流或模型思考过程不属于业务事实，不进入该流。
-- Incident 关闭与关闭前后复发语义已在 [Incident 关闭与告警复发](19-incident-closure-and-recurrence.md) 中补齐；作战室前端可以直接消费这些持久事件。
+- Incident 关闭与关闭前后复发语义见 [Incident 关闭与告警复发](19-incident-closure-and-recurrence.md)，客户端实现见 [Incident 作战室前端](20-incident-workroom-ui.md)。
 
 ## 7. 面试表达
 

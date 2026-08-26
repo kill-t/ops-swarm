@@ -118,6 +118,9 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 遥测 | Prometheus、Loki | 先提供简化数据，再接真实服务 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
+| 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |
+
+首个 UI 切片已经使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4 和 Vue Router 5。开发服务器通过同源 `/api` 代理连接本机控制面，不因此扩大 FastAPI CORS。当前 `vue-tsc` 与 TypeScript 7 的编译器入口不兼容，因此锁定经过类型检查和生产构建验证的 TypeScript 6；升级必须再次通过相同验收。
 
 ## 7. 未选择的方案
 
@@ -136,5 +139,6 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 - Python 固定 3.12 小版本兼容范围。
 - FastAPI、Pydantic、SQLAlchemy、LangChain 和 LangGraph 使用当前稳定主版本，禁止无约束安装。
 - `pyproject.toml` 表达主版本兼容范围，`uv.lock` 固定精确解析结果。
+- 前端兼容范围写入 `package.json`，`package-lock.json` 固定实际解析结果，禁止只提交未锁定的依赖声明。
 - checkpoint 包与 LangGraph 版本一起升级，并运行暂停、恢复和旧 checkpoint 兼容测试。
 - Docker 镜像固定主次版本，不使用 `latest`。
