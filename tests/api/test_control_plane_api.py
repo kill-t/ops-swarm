@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx2
 import pytest
@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
 from opsswarm.execution import OperationResult
+from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
+from opsswarm.incidents.persistence import IncidentStore, StoredIncident
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.models import (
     InvestigationArtifacts,
@@ -56,6 +58,32 @@ class ApiVerificationAdapter:
 
 def fixed_clock() -> datetime:
     return BASE_TIME
+
+
+async def resolve_incident(
+    session_factory: async_sessionmaker[AsyncSession],
+    incident_id: str,
+) -> StoredIncident:
+    """通过正式仓储把 API 测试事故推进到可关闭状态。"""
+
+    store = IncidentStore(session_factory)
+    actor = IncidentActor(actor_type=ActorType.HUMAN, actor_id="engineer-001")
+    version = 1
+    for action in (
+        IncidentAction.START_INVESTIGATION,
+        IncidentAction.START_VERIFICATION,
+        IncidentAction.CONFIRM_RECOVERY,
+    ):
+        stored = await store.transition(
+            UUID(incident_id),
+            action=action,
+            expected_version=version,
+            occurred_at=BASE_TIME,
+            actor=actor,
+            reason="API 测试推进到已恢复状态",
+        )
+        version = stored.incident.version
+    return stored
 
 
 def alert_payload(
@@ -164,6 +192,97 @@ async def test_same_fingerprint_new_event_returns_201_and_attaches_timeline(
         "incident.created",
         "incident.alert_attached",
     ]
+
+
+async def test_new_alert_reopens_resolved_incident(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    first = await control_client.post("/api/v1/alerts", json=alert_payload("alert-001"))
+    incident_id = first.json()["incident"]["id"]
+    await resolve_incident(database_session_factory, incident_id)
+
+    recurrence = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-002"),
+    )
+    events = await control_client.get(f"/api/v1/incidents/{incident_id}/events")
+
+    assert recurrence.status_code == 201
+    assert recurrence.json()["created_incident"] is False
+    assert recurrence.json()["incident"]["id"] == incident_id
+    assert recurrence.json()["incident"]["status"] == "investigating"
+    assert recurrence.json()["incident"]["version"] == 5
+    assert recurrence.json()["incident"]["resolved_at"] is None
+    assert [item["event_type"] for item in events.json()["items"][-2:]] == [
+        "incident.alert_attached",
+        "incident.status_changed",
+    ]
+    assert events.json()["items"][-1]["payload"] == {"action": "reopen"}
+
+
+async def test_engineer_closes_resolved_incident_and_recurrence_creates_new_incident(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    first = await control_client.post("/api/v1/alerts", json=alert_payload("alert-001"))
+    incident_id = first.json()["incident"]["id"]
+    resolved = await resolve_incident(database_session_factory, incident_id)
+
+    closed = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/close",
+        json={
+            "expected_version": resolved.incident.version,
+            "actor_id": "engineer-001",
+            "reason": "恢复窗口已经通过，确认关闭",
+        },
+    )
+    recurrence = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-002"),
+    )
+    old_incident = await control_client.get(f"/api/v1/incidents/{incident_id}")
+    old_events = await control_client.get(f"/api/v1/incidents/{incident_id}/events")
+
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "closed"
+    assert closed.json()["version"] == 5
+    assert closed.json()["closed_at"] == "2026-01-01T08:00:00Z"
+    assert recurrence.status_code == 201
+    assert recurrence.json()["created_incident"] is True
+    assert recurrence.json()["incident"]["id"] != incident_id
+    assert recurrence.json()["incident"]["reference"] == "INC-000002"
+    assert old_incident.json() == closed.json()
+    assert old_events.json()["items"][-1]["actor_id"] == "engineer-001"
+    assert old_events.json()["items"][-1]["reason"] == "恢复窗口已经通过，确认关闭"
+    assert old_events.json()["items"][-1]["to_status"] == "closed"
+
+
+async def test_close_rejects_unresolved_incident_and_stale_version(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post("/api/v1/alerts", json=alert_payload("alert-001"))
+    incident_id = created.json()["incident"]["id"]
+    close_url = f"/api/v1/incidents/{incident_id}/actions/close"
+    body = {
+        "expected_version": 1,
+        "actor_id": "engineer-001",
+        "reason": "尝试关闭",
+    }
+
+    unresolved = await control_client.post(close_url, json=body)
+    resolved = await resolve_incident(database_session_factory, incident_id)
+    stale = await control_client.post(close_url, json=body)
+
+    assert unresolved.status_code == 409
+    assert unresolved.json()["error_code"] == "invalid_incident_transition"
+    assert stale.status_code == 409
+    assert stale.json()["error_code"] == "incident_version_conflict"
+    assert stale.json()["details"] == {
+        "expected_version": 1,
+        "actual_version": resolved.incident.version,
+    }
 
 
 async def test_incident_list_uses_stable_descending_cursor(

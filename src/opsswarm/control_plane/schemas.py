@@ -120,6 +120,14 @@ class StartInvestigationRequest(StrictApiModel):
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
 
 
+class CloseIncidentRequest(StrictApiModel):
+    """工程师确认关闭事故所需的乐观锁和审计信息。"""
+
+    expected_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class InvestigationRunResponse(StrictApiModel):
     """持久化调查运行的 HTTP 表示。"""
 

@@ -238,6 +238,83 @@ async def test_concurrent_transitions_allow_only_one_version_winner(
 
 
 @pytest.mark.asyncio
+async def test_new_alert_reopens_resolved_incident_in_same_transaction(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store = IncidentStore(database_session_factory)
+    first = await store.ingest_alert(make_submission("alert-001"))
+    version = 1
+    for action, second_offset in (
+        (IncidentAction.START_INVESTIGATION, 3),
+        (IncidentAction.START_VERIFICATION, 4),
+        (IncidentAction.CONFIRM_RECOVERY, 5),
+    ):
+        stored = await store.transition(
+            first.incident.id,
+            action=action,
+            expected_version=version,
+            occurred_at=BASE_TIME + timedelta(seconds=second_offset),
+            actor=HUMAN_ACTOR,
+            reason="推进到已恢复状态",
+        )
+        version = stored.incident.version
+
+    reopened = await store.ingest_alert(make_submission("alert-002", second_offset=10))
+    events = await store.list_events(first.incident.id)
+
+    assert reopened.incident.id == first.incident.id
+    assert reopened.created_incident is False
+    assert reopened.incident.status is IncidentStatus.INVESTIGATING
+    assert reopened.incident.version == 5
+    assert reopened.incident.resolved_at is None
+    assert events[-2].event.event_type is IncidentEventType.ALERT_ATTACHED
+    assert events[-2].event.to_status is IncidentStatus.RESOLVED
+    assert events[-1].event.from_status is IncidentStatus.RESOLVED
+    assert events[-1].event.to_status is IncidentStatus.INVESTIGATING
+    assert events[-1].payload == {"action": IncidentAction.REOPEN.value}
+    assert await table_counts(database_session_factory) == (1, 2, 6)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_recurrence_reopens_resolved_incident_only_once(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store = IncidentStore(database_session_factory)
+    first = await store.ingest_alert(make_submission("alert-001"))
+    version = 1
+    for action, second_offset in (
+        (IncidentAction.START_INVESTIGATION, 3),
+        (IncidentAction.START_VERIFICATION, 4),
+        (IncidentAction.CONFIRM_RECOVERY, 5),
+    ):
+        stored = await store.transition(
+            first.incident.id,
+            action=action,
+            expected_version=version,
+            occurred_at=BASE_TIME + timedelta(seconds=second_offset),
+            actor=HUMAN_ACTOR,
+            reason="推进到已恢复状态",
+        )
+        version = stored.incident.version
+
+    results = await asyncio.gather(
+        *(
+            store.ingest_alert(make_submission(f"alert-{number:03d}", second_offset=10 + number))
+            for number in range(2, 10)
+        )
+    )
+    persisted = await store.get_incident(first.incident.id)
+    events = await store.list_events(first.incident.id)
+
+    assert {result.incident.id for result in results} == {first.incident.id}
+    assert persisted.incident.status is IncidentStatus.INVESTIGATING
+    assert persisted.incident.version == 5
+    assert sum(event.payload == {"action": IncidentAction.REOPEN.value} for event in events) == 1
+    assert sum(event.event.event_type is IncidentEventType.ALERT_ATTACHED for event in events) == 8
+    assert await table_counts(database_session_factory) == (1, 9, 13)
+
+
+@pytest.mark.asyncio
 async def test_closed_incident_allows_new_incident_for_same_fingerprint(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

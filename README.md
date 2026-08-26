@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证，以及可重放 SSE 时间线。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`；作战室前端尚未实现。
+项目已交付十八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线，以及工程师关闭与告警复发。系统只有在至少 3 个健康样本覆盖完整 60 秒窗口后才把 Incident 标记为 `resolved`，再由工程师确认关闭；作战室前端尚未实现。
 
 ## 为什么做 OpsSwarm
 
@@ -47,6 +47,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [确定性白名单执行器与幂等操作](docs/architecture/16-deterministic-operation-executor.md)
 - [逐次恢复验证与持久样本](docs/architecture/17-persistent-recovery-verification.md)
 - [可重放事故时间线 SSE](docs/architecture/18-replayable-sse-timeline.md)
+- [Incident 关闭与告警复发](docs/architecture/19-incident-closure-and-recurrence.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -62,7 +63,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样，以及可断线续传的 SSE 时间线。下一阶段补齐 Incident 关闭与复发语义，再为作战室 UI 提供完整生命周期；所有环境读写仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线，以及确认关闭和关闭前后复发分流。下一阶段开始最小作战室 UI，先实现 Incident 列表、详情和时间线；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -244,6 +245,26 @@ curl.exe --no-buffer -H "Last-Event-ID: 12" `
 ```
 
 轮询间隔、心跳间隔、批量大小和重试提示分别通过 `OPSSWARM_SSE_POLL_INTERVAL_SECONDS`、`OPSSWARM_SSE_HEARTBEAT_INTERVAL_SECONDS`、`OPSSWARM_SSE_BATCH_SIZE` 和 `OPSSWARM_SSE_RETRY_MILLISECONDS` 配置，并有安全范围校验。
+
+## Incident 关闭与告警复发
+
+工程师只能关闭已经通过恢复验证的 `resolved` Incident，并必须携带当前乐观锁版本和审计原因：
+
+```powershell
+$closeBody = @{
+  expected_version = 12
+  actor_id = "engineer-001"
+  reason = "恢复窗口已经通过，确认关闭"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/incidents/{incident_id}/actions/close `
+  -ContentType "application/json" `
+  -Body $closeBody
+```
+
+正式关闭前收到同一指纹的新告警时，系统保存告警后自动把 `resolved` 事故迁回 `investigating`；多个并发告警最多产生一次状态迁移。正式关闭后，`closed` 历史事故保持终态，同一指纹的新外部事件创建新的 Incident。完全相同的来源事件号仍返回原接收结果，不受事故是否关闭影响。
 
 ## 运行故障模拟切片
 

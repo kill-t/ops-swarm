@@ -170,6 +170,7 @@ LangGraph 1.x 用于：
 | `POST /api/v1/alerts` | 幂等接收告警；新告警返回 `201`，完全重复返回 `200` |
 | `GET /api/v1/incidents` | 按状态筛选，使用展示序号倒序游标分页 |
 | `GET /api/v1/incidents/{id}` | 查询 Incident 详情和当前版本 |
+| `POST /api/v1/incidents/{id}/actions/close` | 工程师以当前版本关闭已恢复事故 |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单 Agent 或多 Agent |
 | `GET /api/v1/investigations/{run_id}` | 查询调查运行、结果、指标与错误 |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 查询已提交的结论、规范化证据、专业报告和引用 |

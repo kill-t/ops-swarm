@@ -69,7 +69,7 @@ data: {"cursor":13,"event_type":"incident.status_changed"}
 - 尚无作战室前端消费该事件流。
 - 短轮询没有连接数配额、每用户授权或跨租户隔离，因此不可用于生产。
 - 只发送 Incident 时间线事件；调查节点级 token 流或模型思考过程不属于业务事实，不进入该流。
-- Incident 尚未暴露关闭与关闭后复发接口，完整生命周期仍需下一切片补齐。
+- Incident 关闭与关闭前后复发语义已在 [Incident 关闭与告警复发](19-incident-closure-and-recurrence.md) 中补齐；作战室前端可以直接消费这些持久事件。
 
 ## 7. 面试表达
 

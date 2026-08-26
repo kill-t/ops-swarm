@@ -58,3 +58,4 @@
 - [15 - 确定性白名单执行器与幂等操作](15-deterministic-operation-executor.md)
 - [16 - 逐次恢复验证与持久样本](16-persistent-recovery-verification.md)
 - [17 - 可重放事故时间线 SSE](17-replayable-sse-timeline.md)
+- [18 - Incident 关闭与告警复发](18-incident-closure-and-recurrence.md)

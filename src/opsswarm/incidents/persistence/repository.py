@@ -171,6 +171,7 @@ class IncidentStore:
                     IncidentRow.status != IncidentStatus.CLOSED.value,
                 )
                 .limit(1)
+                .with_for_update()
             )
             alert_id = uuid4()
             system_actor = IncidentActor(actor_type=ActorType.SYSTEM)
@@ -193,6 +194,17 @@ class IncidentStore:
                     ]
                 )
                 await session.flush()
+                if incident.status is IncidentStatus.RESOLVED:
+                    reopened = await transition_incident_in_session(
+                        session,
+                        incident.id,
+                        action=IncidentAction.REOPEN,
+                        expected_version=incident.version,
+                        occurred_at=submission.ingested_at,
+                        actor=system_actor,
+                        reason="恢复后同一指纹告警触发重新调查",
+                    )
+                    incident = reopened.incident
                 return AlertIngestionResult(
                     incident=incident,
                     display_number=incident_row.display_number,

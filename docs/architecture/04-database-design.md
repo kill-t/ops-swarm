@@ -335,7 +335,7 @@ stateDiagram-v2
 | `resolved` | `close` | `closed` | 工程师正式关闭事故 |
 | `resolved` | `reopen` | `investigating` | 正式关闭前复发，重新调查 |
 
-`closed` 是终态。关闭后收到相同指纹的新告警时创建新 Incident，不重新打开历史事故。
+`closed` 是终态。`resolved` 尚未关闭时收到相同指纹的新告警，接收事务先追加告警事件，再自动执行一次 `reopen` 回到 `investigating`；并发接收通过活动 Incident 行锁保证最多迁移一次。关闭后收到相同指纹的新告警时创建新 Incident，不重新打开历史事故。
 
 状态迁移必须：
 

@@ -14,6 +14,7 @@
 | `POST /api/v1/alerts` | 新外部告警 `201`；完全重复 `200` | 请求或领域校验 `422` |
 | `GET /api/v1/incidents` | 状态筛选和倒序游标分页 | 查询参数错误 `422` |
 | `GET /api/v1/incidents/{id}` | 返回当前 Incident 快照 | 不存在 `404` |
+| `POST /api/v1/incidents/{id}/actions/close` | 使用当前版本关闭 `resolved` 事故 | 不存在 `404`；版本或状态冲突 `409` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
@@ -34,6 +35,10 @@
 SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件类型，`data` 是对应 `IncidentEventResponse` 的单行 JSON。首次连接默认从游标 0 补发；客户端重连时通过 `Last-Event-ID` 请求严格大于该游标的事件。服务端空闲时发送不含 `id` 的注释心跳，因此不会推进恢复位置。事件至少一次投递，客户端应按 `id` 幂等处理。
 
 接口在发送流响应头前确认 Incident 存在。连接建立后数据库异常会终止连接，不伪造业务事件；客户端按 `retry` 提示重连并从原游标继续。每轮查询使用短生命周期数据库会话，轮询等待期间不占用连接。当前实现采用短轮询，PostgreSQL 是唯一事实来源，不维护进程内订阅队列。
+
+关闭请求只接受 `expected_version`、`actor_id` 和 `reason`。服务端固定执行 `close` 领域动作，调用方不能指定目标状态；只有 `resolved` 可以进入 `closed`。重复或过期页面使用旧版本关闭时返回 `409`，不会覆盖其他操作者已经提交的状态。
+
+告警接收先按 `(source, external_event_id)` 判断完全重复，再锁定同指纹未关闭 Incident。命中 `resolved` 时，在同一事务内保存新告警与 `incident.alert_attached`，随后执行 `reopen` 并追加状态事件；响应返回更新后的 `investigating` 快照。命中 `closed` 不会重新打开历史事故，而是创建新 Incident。完全重复告警始终返回原 Incident，即使它后来已经关闭。
 
 开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent` 以保持现有客户端兼容。非法模式返回结构化 `422`。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
 

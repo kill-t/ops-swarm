@@ -16,6 +16,7 @@ from opsswarm.control_plane.schemas import (
     AlertRequest,
     ApiErrorResponse,
     ApprovalRequestResponse,
+    CloseIncidentRequest,
     CreateActionPlanResponse,
     CreateApprovalRequest,
     CreateApprovalRequestResponse,
@@ -42,7 +43,7 @@ from opsswarm.control_plane.schemas import (
 from opsswarm.control_plane.sse import IncidentEventStream
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
-from opsswarm.incidents import ActorType, IncidentActor, IncidentStatus
+from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.planning.persistence import ActionPlanStore
@@ -205,6 +206,32 @@ def create_router(clock: Clock) -> APIRouter:
         store: IncidentStoreDependency,
     ) -> IncidentResponse:
         return IncidentResponse.from_stored(await store.get_incident(incident_id))
+
+    @router.post(
+        "/api/v1/incidents/{incident_id}/actions/close",
+        response_model=IncidentResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["事故动作"],
+    )
+    async def close_incident(
+        incident_id: UUID,
+        request: CloseIncidentRequest,
+        store: IncidentStoreDependency,
+    ) -> IncidentResponse:
+        """仅允许工程师关闭已经确认恢复的 Incident。"""
+
+        stored = await store.transition(
+            incident_id,
+            action=IncidentAction.CLOSE,
+            expected_version=request.expected_version,
+            occurred_at=clock(),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            reason=request.reason,
+        )
+        return IncidentResponse.from_stored(stored)
 
     @router.post(
         "/api/v1/incidents/{incident_id}/actions/start-investigation",

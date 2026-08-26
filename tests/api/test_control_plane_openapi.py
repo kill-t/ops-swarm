@@ -12,6 +12,7 @@ def test_openapi_exposes_current_incident_contract() -> None:
         "/api/v1/alerts",
         "/api/v1/incidents",
         "/api/v1/incidents/{incident_id}",
+        "/api/v1/incidents/{incident_id}/actions/close",
         "/api/v1/incidents/{incident_id}/actions/start-investigation",
         "/api/v1/incidents/{incident_id}/events",
         "/api/v1/incidents/{incident_id}/stream",
