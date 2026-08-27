@@ -143,3 +143,124 @@ RELEASE_500_SCENARIO = InvestigationScenario(
         }
     ),
 )
+
+
+DATABASE_POOL_SCENARIO = InvestigationScenario(
+    scenario_id="database-pool-misconfiguration-v1",
+    request=InvestigationRequest(
+        incident_id=UUID("00000000-0000-0000-0000-000000000002"),
+        service_name="order-service",
+        title="订单接口在连接池配置变更后大量超时",
+        started_at=datetime(2026, 1, 2, 9, 5, tzinfo=UTC),
+    ),
+    evidence=(
+        EvidenceObservation(
+            evidence_id="log-order-database-pool-timeout",
+            kind=EvidenceKind.LOG,
+            source="frozen-log-store",
+            summary="order-service 持续出现 database connection pool acquire timeout。",
+            observed_at=datetime(2026, 1, 2, 9, 6, tzinfo=UTC),
+            attributes={
+                "route": "/orders/{id}",
+                "status_code": 500,
+                "error_type": "database_pool_timeout",
+                "timeout_seconds": 2,
+            },
+        ),
+        EvidenceObservation(
+            evidence_id="metric-order-database-pool-saturation",
+            kind=EvidenceKind.METRIC,
+            source="frozen-metric-store",
+            summary="连接池持续满载且等待请求增加，但 PostgreSQL 健康检查正常。",
+            observed_at=datetime(2026, 1, 2, 9, 6, tzinfo=UTC),
+            attributes={
+                "database_pool_saturation": 1.0,
+                "database_pool_waiters": 47,
+                "postgres_healthy": True,
+                "redis_healthy": True,
+            },
+        ),
+        EvidenceObservation(
+            evidence_id="change-order-database-pool-size",
+            kind=EvidenceKind.CHANGE,
+            source="frozen-change-store",
+            summary="事故前一分钟把 order-service 的数据库连接池上限从 50 调整为 5。",
+            observed_at=datetime(2026, 1, 2, 9, 4, tzinfo=UTC),
+            attributes={
+                "change_type": "configuration",
+                "key": "database_pool_size",
+                "from_value": 50,
+                "to_value": 5,
+                "completed": True,
+            },
+        ),
+    ),
+    expected_root_cause=RootCause.DATABASE_POOL_MISCONFIGURATION,
+    expected_recommendation=Recommendation.CONTINUE_INVESTIGATION,
+    required_evidence_ids=frozenset(
+        {
+            "log-order-database-pool-timeout",
+            "metric-order-database-pool-saturation",
+        }
+    ),
+)
+
+
+REDIS_UNAVAILABLE_SCENARIO = InvestigationScenario(
+    scenario_id="redis-unavailable-v1",
+    request=InvestigationRequest(
+        incident_id=UUID("00000000-0000-0000-0000-000000000003"),
+        service_name="order-service",
+        title="Redis 不可用导致订单接口失败",
+        started_at=datetime(2026, 1, 3, 10, 5, tzinfo=UTC),
+    ),
+    evidence=(
+        EvidenceObservation(
+            evidence_id="log-order-redis-connection-failed",
+            kind=EvidenceKind.LOG,
+            source="frozen-log-store",
+            summary="order-service 访问 Redis 时持续出现 connection unavailable。",
+            observed_at=datetime(2026, 1, 3, 10, 6, tzinfo=UTC),
+            attributes={
+                "route": "/orders/{id}",
+                "status_code": 500,
+                "error_type": "redis_connection_unavailable",
+                "dependency": "redis",
+            },
+        ),
+        EvidenceObservation(
+            evidence_id="metric-order-redis-health-failed",
+            kind=EvidenceKind.METRIC,
+            source="frozen-metric-store",
+            summary="Redis 健康探针失败，PostgreSQL 和订单服务进程仍然存活。",
+            observed_at=datetime(2026, 1, 3, 10, 6, tzinfo=UTC),
+            attributes={
+                "redis_healthy": False,
+                "postgres_healthy": True,
+                "order_process_healthy": True,
+                "http_5xx_ratio": 0.88,
+            },
+        ),
+        EvidenceObservation(
+            evidence_id="change-redis-maintenance-restart",
+            kind=EvidenceKind.CHANGE,
+            source="frozen-change-store",
+            summary="Redis 节点在事故前两分钟进入维护重启，order-service 没有新版本发布。",
+            observed_at=datetime(2026, 1, 3, 10, 3, tzinfo=UTC),
+            attributes={
+                "change_type": "dependency_maintenance",
+                "dependency": "redis",
+                "operation": "restart",
+                "order_release_changed": False,
+            },
+        ),
+    ),
+    expected_root_cause=RootCause.REDIS_UNAVAILABLE,
+    expected_recommendation=Recommendation.CONTINUE_INVESTIGATION,
+    required_evidence_ids=frozenset(
+        {
+            "log-order-redis-connection-failed",
+            "metric-order-redis-health-failed",
+        }
+    ),
+)

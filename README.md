@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付二十个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室，以及作战室处置链路聚合展示。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，暂不提供状态变更命令。
+项目已交付二十一个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示，以及三故障版本化调查评测集。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要；离线评测可以公平比较单 Agent 与多 Agent，暂不提供状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -50,6 +50,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Incident 关闭与告警复发](docs/architecture/19-incident-closure-and-recurrence.md)
 - [Incident 作战室前端](docs/architecture/20-incident-workroom-ui.md)
 - [Incident 作战室只读聚合投影](docs/architecture/21-incident-workroom-projection.md)
+- [版本化调查评测集与公平对照](docs/architecture/22-versioned-investigation-evaluation.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -65,7 +66,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线、关闭前后复发分流，以及带完整处置摘要的只读 Incident 作战室。下一切片进入评测集与单 Agent、多 Agent 公平对照；所有环境读写仍只允许本地故障演练环境。
+阶段 1 已使用“新版本触发大量 500”场景打通完整处置链路，并把数据库连接池配置错误、Redis 不可用加入 `opsswarm-mvp-investigation-v1` 评测集。下一切片把评测运行和结果持久化到 PostgreSQL，并提供只读查询接口，为评测面板准备稳定数据源；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -99,11 +100,23 @@ uv run python -m opsswarm.checkpoints.setup
 
 `LangGraphParallelInvestigator` 使用显式状态图协调三个并行专业节点，并在全部完成后运行综合 Agent。专业报告只能引用本分支证据，最终结论只能引用全图已收集证据。
 
-当前单一冻结场景中，单 Agent 和并行图的 Top-1、证据召回、安全违规率和工具调用数相同，尚不能证明多 Agent 更优。定向运行：
+当前三故障冻结契约中，单 Agent 和并行图的 Top-1、证据召回、安全违规率和工具调用数相同，尚不能证明多 Agent 更优。定向运行：
 
 ```powershell
 uv run pytest tests/unit/investigation/test_parallel_graph.py -q
 ```
+
+## 版本化调查评测集
+
+`opsswarm-mvp-investigation-v1` 固定了版本回归、数据库连接池配置错误和 Redis 不可用三个场景。数据集版本、评分规则版本和完整内容 SHA-256 会写入报告；场景执行顺序交替，避免一种模式永远占用冷启动或热缓存位置。
+
+运行不访问网络的契约评测：
+
+```powershell
+uv run python -m opsswarm.evaluation.main
+```
+
+该命令使用冻结假模型真实经过 LangChain 工具循环和 LangGraph 并行图，用于验证数据、证据护栏、评分和 JSON 报告契约。输出的满分与本地耗时不能代表真实模型质量；真实模型评测必须记录模型、提示、Token、成本、失败和多次重复运行。
 
 ## 单 Agent 调查基线
 
