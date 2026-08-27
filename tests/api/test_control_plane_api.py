@@ -154,6 +154,19 @@ async def test_new_alert_returns_201_and_persisted_incident(
     assert detail.status_code == 200
     assert detail.json() == body["incident"]
 
+    workroom = await control_client.get(f"/api/v1/incidents/{body['incident']['id']}/workroom")
+    assert workroom.status_code == 200
+    assert workroom.json() == {
+        "incident_id": body["incident"]["id"],
+        "incident_version": 1,
+        "investigation": None,
+        "evidence_board": None,
+        "action_plan": None,
+        "approval_request": None,
+        "operation_execution": None,
+        "verification_run": None,
+    }
+
 
 async def test_duplicate_alert_returns_200_and_original_identifiers(
     control_client: httpx2.AsyncClient,
@@ -684,6 +697,36 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert stored_verification.status_code == 200
     assert stored_verification.json() == sample_body["verification_run"]
 
+    workroom = await control_client.get(
+        f"/api/v1/incidents/{created.json()['incident']['id']}/workroom"
+    )
+    assert workroom.status_code == 200
+    workroom_body = workroom.json()
+    assert workroom_body["incident_version"] == 5
+    assert workroom_body["investigation"]["id"] == run_id
+    assert workroom_body["investigation"]["status"] == "succeeded"
+    assert workroom_body["evidence_board"]["evidence_count"] == 3
+    assert workroom_body["evidence_board"]["specialist_report_count"] == 3
+    assert workroom_body["evidence_board"]["primary_hypothesis"]["status"] == "supported"
+    assert workroom_body["action_plan"] == {
+        "id": plan_id,
+        "version": 1,
+        "status": "approved",
+        "summary": plan_body["action_plan"]["summary"],
+        "risk_level": "high",
+        "requires_human_approval": True,
+        "step_count": 1,
+        "created_at": plan_body["action_plan"]["created_at"],
+    }
+    assert workroom_body["approval_request"]["id"] == request_id
+    assert workroom_body["approval_request"]["status"] == "approved"
+    assert workroom_body["operation_execution"]["id"] == execution_id
+    assert workroom_body["operation_execution"]["status"] == "succeeded"
+    assert workroom_body["verification_run"]["id"] == verification_run_id
+    assert workroom_body["verification_run"]["status"] == "running"
+    assert workroom_body["verification_run"]["successful_sample_count"] == 1
+    assert workroom_body["verification_run"]["sample_count"] == 1
+
 
 async def test_start_investigation_rejects_unknown_mode(
     control_client: httpx2.AsyncClient,
@@ -875,13 +918,17 @@ async def test_missing_incident_returns_structured_404(
     incident_id = uuid4()
 
     response = await control_client.get(f"/api/v1/incidents/{incident_id}")
+    workroom = await control_client.get(f"/api/v1/incidents/{incident_id}/workroom")
 
     assert response.status_code == 404
-    assert response.json() == {
+    expected_error = {
         "error_code": "incident_not_found",
         "message": f"Incident 不存在：{incident_id}",
         "details": {"incident_id": str(incident_id)},
     }
+    assert response.json() == expected_error
+    assert workroom.status_code == 404
+    assert workroom.json() == expected_error
 
 
 async def test_request_validation_rejects_unknown_fields_and_naive_time(

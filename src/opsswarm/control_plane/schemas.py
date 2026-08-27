@@ -68,6 +68,15 @@ from opsswarm.verification.persistence import (
     VerificationRunCreation,
     VerificationSampleOutcome,
 )
+from opsswarm.workroom import (
+    WorkroomActionPlanSummary,
+    WorkroomApprovalSummary,
+    WorkroomEvidenceBoardSummary,
+    WorkroomExecutionSummary,
+    WorkroomInvestigationSummary,
+    WorkroomSnapshot,
+    WorkroomVerificationSummary,
+)
 
 
 class StrictApiModel(BaseModel):
@@ -629,6 +638,23 @@ class IncidentResponse(StrictApiModel):
             created_at=incident.created_at,
             updated_at=incident.updated_at,
         )
+
+
+class IncidentWorkroomResponse(StrictApiModel):
+    """同一数据库快照中的事故调查与处置链路。"""
+
+    incident_id: UUID
+    incident_version: int
+    investigation: WorkroomInvestigationSummary | None
+    evidence_board: WorkroomEvidenceBoardSummary | None
+    action_plan: WorkroomActionPlanSummary | None
+    approval_request: WorkroomApprovalSummary | None
+    operation_execution: WorkroomExecutionSummary | None
+    verification_run: WorkroomVerificationSummary | None
+
+    @classmethod
+    def from_snapshot(cls, snapshot: WorkroomSnapshot) -> Self:
+        return cls.model_validate(snapshot.model_dump())
 
 
 class StartInvestigationResponse(StrictApiModel):

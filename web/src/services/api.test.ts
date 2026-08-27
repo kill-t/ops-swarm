@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { listIncidents } from "./api";
+import { getIncidentWorkroom, listIncidents } from "./api";
 
 describe("控制面 API 客户端", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -39,5 +39,31 @@ describe("控制面 API 客户端", () => {
       errorCode: "incident_not_found",
       message: "Incident 不存在",
     });
+  });
+
+  it("使用编码后的 Incident ID 读取作战室聚合快照", async () => {
+    const body = {
+      incident_id: "incident/001",
+      incident_version: 1,
+      investigation: null,
+      evidence_board: null,
+      action_plan: null,
+      approval_request: null,
+      operation_execution: null,
+      verification_run: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getIncidentWorkroom("incident/001")).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/incidents/incident%2F001/workroom",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
   });
 });

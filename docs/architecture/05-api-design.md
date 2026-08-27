@@ -14,6 +14,7 @@
 | `POST /api/v1/alerts` | 新外部告警 `201`；完全重复 `200` | 请求或领域校验 `422` |
 | `GET /api/v1/incidents` | 状态筛选和倒序游标分页 | 查询参数错误 `422` |
 | `GET /api/v1/incidents/{id}` | 返回当前 Incident 快照 | 不存在 `404` |
+| `GET /api/v1/incidents/{id}/workroom` | 返回最近调查到恢复验证的同语句只读摘要 | 不存在 `404` |
 | `POST /api/v1/incidents/{id}/actions/close` | 使用当前版本关闭 `resolved` 事故 | 不存在 `404`；版本或状态冲突 `409` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
@@ -45,6 +46,8 @@ SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件�
 ### 2.1 Evidence Board 读取语义
 
 Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint。`queued` 或重试中的运行返回当前状态、空结论和空集合；成功运行返回按稳定业务标识排序的证据、专业报告和 `hypotheses`。单 Agent 可以有证据但没有专业报告，多 Agent 同时返回报告及其 `evidence_ids`。主根因假设返回 `supported`、`contested` 或 `insufficient_evidence` 状态，并包含规则版本和逐证据关系。每条证据暴露 SHA-256 `content_hash`，用于调用方检测内容漂移，不把它宣传为外部来源签名。
+
+作战室聚合接口只返回值班工程师需要快速浏览的摘要，不替代上述明细接口。它使用一条 PostgreSQL 查询选择 Incident 最近调查、该调查最高版本计划、计划唯一审批、计划最近执行及其唯一验证运行，并同时计算证据、报告、步骤和样本数量。不存在的后续阶段返回 `null`，原始日志、原始证据和动作参数不会进入聚合响应。具体一致性与选择规则见 [Incident 作战室只读聚合投影](21-incident-workroom-projection.md)。
 
 ### 2.2 处置计划生成语义
 

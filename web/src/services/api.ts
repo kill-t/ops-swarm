@@ -1,4 +1,5 @@
 import type { Incident, IncidentPage } from "../types/incidents";
+import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 interface ApiErrorBody {
   error_code?: string;
@@ -51,4 +52,14 @@ export function listIncidents(signal?: AbortSignal): Promise<IncidentPage> {
 
 export function getIncident(incidentId: string, signal?: AbortSignal): Promise<Incident> {
   return requestJson<Incident>(`/api/v1/incidents/${encodeURIComponent(incidentId)}`, signal);
+}
+
+export function getIncidentWorkroom(
+  incidentId: string,
+  signal?: AbortSignal,
+): Promise<IncidentWorkroomSnapshot> {
+  return requestJson<IncidentWorkroomSnapshot>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/workroom`,
+    signal,
+  );
 }

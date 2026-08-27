@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import IncidentTimeline from "./IncidentTimeline.vue";
+import IncidentLifecycle from "./IncidentLifecycle.vue";
 import type { Incident, IncidentEvent, StreamStatus } from "../types/incidents";
+import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 defineProps<{
   incident: Incident | null;
@@ -9,6 +11,13 @@ defineProps<{
   error: string | null;
   streamStatus: StreamStatus;
   streamError: string | null;
+  workroom: IncidentWorkroomSnapshot | null;
+  workroomLoading: boolean;
+  workroomError: string | null;
+}>();
+
+const emit = defineEmits<{
+  refreshWorkroom: [];
 }>();
 
 function formatDateTime(value: string | null): string {
@@ -69,6 +78,13 @@ function formatDateTime(value: string | null): string {
           <strong>{{ formatDateTime(incident.closed_at) }}</strong>
         </div>
       </section>
+
+      <IncidentLifecycle
+        :snapshot="workroom"
+        :loading="workroomLoading"
+        :error="workroomError"
+        @refresh="emit('refreshWorkroom')"
+      />
 
       <IncidentTimeline
         :events="events"

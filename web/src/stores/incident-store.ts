@@ -1,12 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { getIncident, listIncidents } from "../services/api";
+import { getIncident, getIncidentWorkroom, listIncidents } from "../services/api";
 import {
   connectIncidentEvents,
   type IncidentStreamConnection,
 } from "../services/incident-stream";
 import type { Incident, IncidentEvent, IncidentStatus, StreamStatus } from "../types/incidents";
+import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "发生未知错误";
@@ -55,8 +56,12 @@ export const useIncidentStore = defineStore("incidents", () => {
   const detailError = ref<string | null>(null);
   const streamStatus = ref<StreamStatus>("idle");
   const streamError = ref<string | null>(null);
+  const workroom = ref<IncidentWorkroomSnapshot | null>(null);
+  const workroomLoading = ref(false);
+  const workroomError = ref<string | null>(null);
   let streamConnection: IncidentStreamConnection | null = null;
   let selectionGeneration = 0;
+  let workroomRequestGeneration = 0;
 
   const selectedIncidentId = computed(() => selectedIncident.value?.id ?? null);
 
@@ -75,17 +80,61 @@ export const useIncidentStore = defineStore("incidents", () => {
     }
   }
 
+  async function refreshWorkroom(incidentId: string, selection: number): Promise<void> {
+    const requestGeneration = ++workroomRequestGeneration;
+    workroomLoading.value = true;
+    workroomError.value = null;
+    try {
+      const snapshot = await getIncidentWorkroom(incidentId);
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== workroomRequestGeneration ||
+        selectedIncident.value?.id !== incidentId
+      ) {
+        return;
+      }
+      if (snapshot.incident_version < selectedIncident.value.version) {
+        return;
+      }
+      workroom.value = snapshot;
+    } catch (error) {
+      if (selection === selectionGeneration && requestGeneration === workroomRequestGeneration) {
+        workroomError.value = errorMessage(error);
+      }
+    } finally {
+      if (selection === selectionGeneration && requestGeneration === workroomRequestGeneration) {
+        workroomLoading.value = false;
+      }
+    }
+  }
+
+  async function refreshSelectedWorkroom(): Promise<void> {
+    const incidentId = selectedIncident.value?.id;
+    if (incidentId !== undefined) {
+      await refreshWorkroom(incidentId, selectionGeneration);
+    }
+  }
+
   function receiveEvent(event: IncidentEvent): void {
     if (event.incident_id !== selectedIncident.value?.id) {
       return;
     }
-    if (!events.value.some((item) => item.cursor === event.cursor)) {
+    const previousVersion = selectedIncident.value.version;
+    const isNewEvent = !events.value.some((item) => item.cursor === event.cursor);
+    if (isNewEvent) {
       events.value = [...events.value, event].sort((left, right) => left.cursor - right.cursor);
     }
     selectedIncident.value = applyEventSnapshot(selectedIncident.value, event);
     incidents.value = incidents.value.map((incident) =>
       incident.id === event.incident_id ? applyEventSnapshot(incident, event) : incident,
     );
+    if (
+      isNewEvent &&
+      event.event_type === "incident.status_changed" &&
+      event.incident_version >= previousVersion
+    ) {
+      void refreshWorkroom(event.incident_id, selectionGeneration);
+    }
   }
 
   async function selectIncident(incidentId: string): Promise<void> {
@@ -95,6 +144,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     events.value = [];
     detailError.value = null;
     streamError.value = null;
+    workroom.value = null;
+    workroomError.value = null;
+    workroomRequestGeneration += 1;
     streamStatus.value = "connecting";
     detailLoading.value = true;
     try {
@@ -116,6 +168,7 @@ export const useIncidentStore = defineStore("incidents", () => {
           }
         },
       });
+      await refreshWorkroom(incidentId, generation);
     } catch (error) {
       if (generation === selectionGeneration) {
         selectedIncident.value = null;
@@ -137,6 +190,10 @@ export const useIncidentStore = defineStore("incidents", () => {
     events.value = [];
     detailError.value = null;
     streamError.value = null;
+    workroomRequestGeneration += 1;
+    workroom.value = null;
+    workroomLoading.value = false;
+    workroomError.value = null;
     streamStatus.value = "idle";
   }
 
@@ -151,8 +208,12 @@ export const useIncidentStore = defineStore("incidents", () => {
     detailError,
     streamStatus,
     streamError,
+    workroom,
+    workroomLoading,
+    workroomError,
     loadIncidents,
     selectIncident,
+    refreshSelectedWorkroom,
     clearSelection,
   };
 });

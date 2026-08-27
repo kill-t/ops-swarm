@@ -74,6 +74,7 @@ from opsswarm.verification import (
 )
 from opsswarm.verification.persistence import VerificationStore
 from opsswarm.verification.service import VerificationService
+from opsswarm.workroom import WorkroomStore
 
 
 def utc_now() -> datetime:
@@ -92,6 +93,7 @@ def create_app(
     operation_adapter: OperationAdapter | None = None,
     verification_store: VerificationStore | None = None,
     verification_adapter: VerificationAdapter | None = None,
+    workroom_store: WorkroomStore | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -106,10 +108,11 @@ def create_app(
             approval_request_store,
             operation_execution_store,
             verification_store,
+            workroom_store,
         )
         if any(store is not None for store in stores):
             if any(store is None for store in stores):
-                raise RuntimeError("注入控制面仓储时必须同时提供六个仓储")
+                raise RuntimeError("注入控制面仓储时必须同时提供七个仓储")
             application.state.incident_store = incident_store
             application.state.investigation_store = investigation_store
             application.state.action_plan_store = action_plan_store
@@ -128,6 +131,7 @@ def create_app(
                 ),
                 clock=clock,
             )
+            application.state.workroom_store = workroom_store
             yield
             return
 
@@ -153,6 +157,7 @@ def create_app(
             ),
             clock=clock,
         )
+        application.state.workroom_store = WorkroomStore(database.session_factory)
         try:
             yield
         finally:
@@ -170,6 +175,7 @@ def create_app(
     app.state.approval_request_store = approval_request_store
     app.state.operation_execution_service = None
     app.state.verification_service = None
+    app.state.workroom_store = workroom_store
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)

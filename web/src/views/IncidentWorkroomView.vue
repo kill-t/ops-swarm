@@ -77,6 +77,10 @@ onUnmounted(() => store.clearSelection());
         :error="store.detailError"
         :stream-status="store.streamStatus"
         :stream-error="store.streamError"
+        :workroom="store.workroom"
+        :workroom-loading="store.workroomLoading"
+        :workroom-error="store.workroomError"
+        @refresh-workroom="store.refreshSelectedWorkroom"
       />
     </div>
   </div>

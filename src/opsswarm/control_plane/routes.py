@@ -32,6 +32,7 @@ from opsswarm.control_plane.schemas import (
     IncidentEventResponse,
     IncidentPageResponse,
     IncidentResponse,
+    IncidentWorkroomResponse,
     InvestigationRunResponse,
     OperationExecutionResponse,
     RecordVerificationSampleResponse,
@@ -48,6 +49,7 @@ from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.verification.service import VerificationService
+from opsswarm.workroom import WorkroomStore
 
 Clock = Callable[[], datetime]
 
@@ -133,6 +135,18 @@ VerificationServiceDependency = Annotated[
 ]
 
 
+def get_workroom_store(request: Request) -> WorkroomStore:
+    """从应用生命周期状态获取只读作战室投影仓储。"""
+
+    store = getattr(request.app.state, "workroom_store", None)
+    if not isinstance(store, WorkroomStore):
+        raise RuntimeError("WorkroomStore 尚未初始化")
+    return store
+
+
+WorkroomStoreDependency = Annotated[WorkroomStore, Depends(get_workroom_store)]
+
+
 def create_router(clock: Clock) -> APIRouter:
     """创建使用可注入 UTC 时钟的控制面路由。"""
 
@@ -206,6 +220,20 @@ def create_router(clock: Clock) -> APIRouter:
         store: IncidentStoreDependency,
     ) -> IncidentResponse:
         return IncidentResponse.from_stored(await store.get_incident(incident_id))
+
+    @router.get(
+        "/api/v1/incidents/{incident_id}/workroom",
+        response_model=IncidentWorkroomResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["事故"],
+    )
+    async def get_incident_workroom(
+        incident_id: UUID,
+        store: WorkroomStoreDependency,
+    ) -> IncidentWorkroomResponse:
+        """一次读取最近调查及其后续处置链路，不触发任何状态变化。"""
+
+        return IncidentWorkroomResponse.from_snapshot(await store.get_snapshot(incident_id))
 
     @router.post(
         "/api/v1/incidents/{incident_id}/actions/close",

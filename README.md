@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付十九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发，以及 Vue 3 Incident 作战室。当前作战室可以查看 Incident 列表、详情和实时可重放时间线，暂不提供状态变更命令。
+项目已交付二十个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室，以及作战室处置链路聚合展示。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，暂不提供状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -49,6 +49,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [可重放事故时间线 SSE](docs/architecture/18-replayable-sse-timeline.md)
 - [Incident 关闭与告警复发](docs/architecture/19-incident-closure-and-recurrence.md)
 - [Incident 作战室前端](docs/architecture/20-incident-workroom-ui.md)
+- [Incident 作战室只读聚合投影](docs/architecture/21-incident-workroom-projection.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -64,7 +65,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线、关闭前后复发分流，以及只读 Incident 作战室。下一切片让作战室读取完整调查和处置链路；所有环境读写仍只允许本地故障演练环境。
+阶段 1 使用“新版本触发大量 500”场景逐步打通完整链路：当前已完成确定性故障注入、Incident 领域状态机、告警幂等、不可变时间线、FastAPI 控制面、单 Agent 基线、可恢复任务、LangGraph 并行调查、PostgreSQL checkpoint、多模式 Worker、Evidence Board、确定性根因质疑、高风险回滚草案、限时审批请求、不可变审批决定、带租约和幂等记录的本地白名单执行、覆盖观察窗口的持久恢复采样、可断线续传的 SSE 时间线、关闭前后复发分流，以及带完整处置摘要的只读 Incident 作战室。下一切片进入评测集与单 Agent、多 Agent 公平对照；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 

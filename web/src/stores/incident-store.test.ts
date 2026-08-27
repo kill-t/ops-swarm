@@ -3,17 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IncidentStreamHandlers } from "../services/incident-stream";
 import type { Incident, IncidentEvent } from "../types/incidents";
+import type { IncidentWorkroomSnapshot } from "../types/workroom";
 import { useIncidentStore } from "./incident-store";
 
 const mocks = vi.hoisted(() => ({
   listIncidents: vi.fn(),
   getIncident: vi.fn(),
+  getIncidentWorkroom: vi.fn(),
   connectIncidentEvents: vi.fn(),
 }));
 
 vi.mock("../services/api", () => ({
   listIncidents: mocks.listIncidents,
   getIncident: mocks.getIncident,
+  getIncidentWorkroom: mocks.getIncidentWorkroom,
 }));
 
 vi.mock("../services/incident-stream", () => ({
@@ -37,6 +40,17 @@ const INCIDENT: Incident = {
   updated_at: "2026-01-01T08:02:00Z",
 };
 
+const WORKROOM: IncidentWorkroomSnapshot = {
+  incident_id: INCIDENT.id,
+  incident_version: INCIDENT.version,
+  investigation: null,
+  evidence_board: null,
+  action_plan: null,
+  approval_request: null,
+  operation_execution: null,
+  verification_run: null,
+};
+
 function event(cursor: number, version: number): IncidentEvent {
   return {
     cursor,
@@ -58,7 +72,9 @@ describe("Incident 状态仓库", () => {
     setActivePinia(createPinia());
     mocks.listIncidents.mockReset();
     mocks.getIncident.mockReset();
+    mocks.getIncidentWorkroom.mockReset();
     mocks.connectIncidentEvents.mockReset();
+    mocks.getIncidentWorkroom.mockResolvedValue(WORKROOM);
   });
 
   it("按游标去重，并阻止历史事件或迟到列表覆盖更新版本", async () => {
@@ -87,5 +103,7 @@ describe("Incident 状态仓库", () => {
     expect(store.selectedIncident?.status).toBe("resolved");
     expect(store.selectedIncident?.version).toBe(4);
     expect(store.incidents[0]?.version).toBe(4);
+    expect(store.workroom?.incident_id).toBe(INCIDENT.id);
+    await vi.waitFor(() => expect(mocks.getIncidentWorkroom).toHaveBeenCalledTimes(2));
   });
 });
