@@ -12,9 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.evaluation.errors import (
     EvaluationDatasetVersionConflict,
+    EvaluationExperimentConflict,
     EvaluationIdempotencyConflict,
+    EvaluationRepetitionConflict,
     EvaluationReportMismatch,
     EvaluationRunNotFound,
+)
+from opsswarm.evaluation.metadata import (
+    EvaluationExperimentSpec,
+    EvaluationModeTelemetry,
+    EvaluationRunTelemetry,
 )
 from opsswarm.evaluation.models import (
     InvestigationAggregateDelta,
@@ -32,6 +39,7 @@ from opsswarm.evaluation.persistence.records import (
 )
 from opsswarm.evaluation.persistence.tables import (
     EvaluationCaseSetRow,
+    EvaluationExperimentRow,
     EvaluationResultRow,
     EvaluationRunRow,
 )
@@ -49,6 +57,7 @@ class EvaluationStore:
         report_hash = _report_content_hash(submission.report)
         async with self._session_factory() as session, session.begin():
             case_set = await _ensure_case_set(session, submission)
+            experiment = await _ensure_experiment(session, case_set, submission)
             run_id = uuid4()
             created_at = max(submission.created_at, submission.report.generated_at)
             inserted_id = await session.scalar(
@@ -56,6 +65,8 @@ class EvaluationStore:
                 .values(
                     id=run_id,
                     evaluation_case_set_id=case_set.id,
+                    experiment_id=experiment.id,
+                    repetition_index=submission.repetition_index,
                     idempotency_key=submission.idempotency_key,
                     report_content_hash=report_hash,
                     runner_name=submission.runner_name,
@@ -63,6 +74,10 @@ class EvaluationStore:
                     single_agent_aggregate=submission.report.single_agent.model_dump(mode="json"),
                     multi_agent_aggregate=submission.report.multi_agent.model_dump(mode="json"),
                     aggregate_delta=submission.report.delta.model_dump(mode="json"),
+                    single_agent_telemetry=submission.telemetry.single_agent.model_dump(
+                        mode="json"
+                    ),
+                    multi_agent_telemetry=submission.telemetry.multi_agent.model_dump(mode="json"),
                     created_at=created_at,
                 )
                 .on_conflict_do_nothing()
@@ -74,12 +89,31 @@ class EvaluationStore:
                         EvaluationRunRow.idempotency_key == submission.idempotency_key
                     )
                 )
-                if existing is None or existing.report_content_hash != report_hash:
-                    raise EvaluationIdempotencyConflict(submission.idempotency_key)
-                return EvaluationRunCreation(
-                    run=await _load_run(session, existing.id),
-                    created=False,
+                if existing is not None:
+                    if not _run_matches_submission(
+                        existing,
+                        case_set,
+                        experiment,
+                        report_hash,
+                        submission,
+                    ):
+                        raise EvaluationIdempotencyConflict(submission.idempotency_key)
+                    return EvaluationRunCreation(
+                        run=await _load_run(session, existing.id),
+                        created=False,
+                    )
+                occupied = await session.scalar(
+                    select(EvaluationRunRow).where(
+                        EvaluationRunRow.experiment_id == experiment.id,
+                        EvaluationRunRow.repetition_index == submission.repetition_index,
+                    )
                 )
+                if occupied is not None:
+                    raise EvaluationRepetitionConflict(
+                        submission.experiment.experiment_key,
+                        submission.repetition_index,
+                    )
+                raise RuntimeError("评测运行插入冲突无法由幂等键或重复序号定位")
 
             session.add_all(
                 [
@@ -123,10 +157,14 @@ class EvaluationStore:
             raise ValueError("before_sequence 必须大于等于 1")
 
         statement = (
-            select(EvaluationRunRow, EvaluationCaseSetRow)
+            select(EvaluationRunRow, EvaluationCaseSetRow, EvaluationExperimentRow)
             .join(
                 EvaluationCaseSetRow,
                 EvaluationCaseSetRow.id == EvaluationRunRow.evaluation_case_set_id,
+            )
+            .join(
+                EvaluationExperimentRow,
+                EvaluationExperimentRow.id == EvaluationRunRow.experiment_id,
             )
             .order_by(EvaluationRunRow.sequence.desc())
             .limit(limit + 1)
@@ -138,7 +176,9 @@ class EvaluationStore:
             rows = (await session.execute(statement)).all()
 
         visible_rows = rows[:limit]
-        items = tuple(_stored_summary(run, case_set) for run, case_set in visible_rows)
+        items = tuple(
+            _stored_summary(run, case_set, experiment) for run, case_set, experiment in visible_rows
+        )
         next_cursor = items[-1].sequence if len(rows) > limit else None
         return EvaluationRunPage(items=items, next_before_sequence=next_cursor)
 
@@ -191,20 +231,70 @@ async def _ensure_case_set(
     return row
 
 
+async def _ensure_experiment(
+    session: AsyncSession,
+    case_set: EvaluationCaseSetRow,
+    submission: EvaluationRunSubmission,
+) -> EvaluationExperimentRow:
+    """并发创建或校验一组不可静默改写的重复实验配置。"""
+
+    spec = submission.experiment
+    experiment_id = uuid4()
+    inserted_id = await session.scalar(
+        insert(EvaluationExperimentRow)
+        .values(
+            id=experiment_id,
+            experiment_key=spec.experiment_key,
+            evaluation_case_set_id=case_set.id,
+            evaluation_kind=spec.evaluation_kind.value,
+            runner_name=submission.runner_name,
+            model_provider=spec.model_provider,
+            model_name=spec.model_name,
+            model_parameters_hash=spec.model_parameters_hash,
+            single_agent_prompt_version=spec.single_agent_prompt_version,
+            multi_agent_prompt_version=spec.multi_agent_prompt_version,
+            created_at=max(submission.created_at, submission.report.generated_at),
+        )
+        .on_conflict_do_nothing()
+        .returning(EvaluationExperimentRow.id)
+    )
+    if inserted_id is not None:
+        row = await session.get(EvaluationExperimentRow, inserted_id)
+        if row is None:
+            raise RuntimeError("新建评测实验后无法读取")
+        return row
+
+    row = cast(
+        EvaluationExperimentRow | None,
+        await session.scalar(
+            select(EvaluationExperimentRow).where(
+                EvaluationExperimentRow.experiment_key == spec.experiment_key
+            )
+        ),
+    )
+    if row is None or not _experiment_matches_submission(row, case_set, submission):
+        raise EvaluationExperimentConflict(spec.experiment_key)
+    return row
+
+
 async def _load_run(session: AsyncSession, run_id: UUID) -> StoredEvaluationRun:
     joined = (
         await session.execute(
-            select(EvaluationRunRow, EvaluationCaseSetRow)
+            select(EvaluationRunRow, EvaluationCaseSetRow, EvaluationExperimentRow)
             .join(
                 EvaluationCaseSetRow,
                 EvaluationCaseSetRow.id == EvaluationRunRow.evaluation_case_set_id,
+            )
+            .join(
+                EvaluationExperimentRow,
+                EvaluationExperimentRow.id == EvaluationRunRow.experiment_id,
             )
             .where(EvaluationRunRow.id == run_id)
         )
     ).one_or_none()
     if joined is None:
         raise EvaluationRunNotFound(run_id)
-    run_row, case_set = joined
+    run_row, case_set, experiment_row = joined
     result_rows = (
         await session.scalars(
             select(EvaluationResultRow)
@@ -238,6 +328,9 @@ async def _load_run(session: AsyncSession, run_id: UUID) -> StoredEvaluationRun:
             report=report,
             idempotency_key=run_row.idempotency_key,
             runner_name=run_row.runner_name,
+            experiment=_validated_experiment(experiment_row, case_set, run_row),
+            repetition_index=run_row.repetition_index,
+            telemetry=_validated_telemetry(run_row),
             created_at=run_row.created_at,
         )
     except (ValidationError, EvaluationReportMismatch) as error:
@@ -250,7 +343,7 @@ async def _load_run(session: AsyncSession, run_id: UUID) -> StoredEvaluationRun:
     if _report_content_hash(report) != run_row.report_content_hash:
         raise EvaluationReportMismatch("持久评测报告内容哈希不一致")
 
-    summary = _stored_summary(run_row, case_set)
+    summary = _stored_summary(run_row, case_set, experiment_row)
     return StoredEvaluationRun(
         **summary.model_dump(),
         idempotency_key=run_row.idempotency_key,
@@ -262,6 +355,7 @@ async def _load_run(session: AsyncSession, run_id: UUID) -> StoredEvaluationRun:
 def _stored_summary(
     run_row: EvaluationRunRow,
     case_set: EvaluationCaseSetRow,
+    experiment_row: EvaluationExperimentRow,
 ) -> StoredEvaluationRunSummary:
     try:
         _validated_dataset(case_set)
@@ -273,6 +367,9 @@ def _stored_summary(
             scoring_policy_version=case_set.scoring_policy_version,
             scenario_count=case_set.scenario_count,
             runner_name=run_row.runner_name,
+            experiment=_validated_experiment(experiment_row, case_set, run_row),
+            repetition_index=run_row.repetition_index,
+            telemetry=_validated_telemetry(run_row),
             generated_at=run_row.generated_at,
             created_at=run_row.created_at,
             single_agent=InvestigationAggregateMetrics.model_validate(
@@ -283,6 +380,70 @@ def _stored_summary(
         )
     except ValidationError as error:
         raise EvaluationReportMismatch("评测运行聚合指标无法通过完整性校验") from error
+
+
+def _validated_experiment(
+    row: EvaluationExperimentRow,
+    case_set: EvaluationCaseSetRow,
+    run_row: EvaluationRunRow,
+) -> EvaluationExperimentSpec:
+    if row.evaluation_case_set_id != case_set.id or run_row.experiment_id != row.id:
+        raise EvaluationReportMismatch("评测运行、实验与数据集关联不一致")
+    if row.runner_name != run_row.runner_name:
+        raise EvaluationReportMismatch("评测实验与运行器版本不一致")
+    return EvaluationExperimentSpec.model_validate(
+        {
+            "experiment_key": row.experiment_key,
+            "evaluation_kind": row.evaluation_kind,
+            "model_provider": row.model_provider,
+            "model_name": row.model_name,
+            "model_parameters_hash": row.model_parameters_hash,
+            "single_agent_prompt_version": row.single_agent_prompt_version,
+            "multi_agent_prompt_version": row.multi_agent_prompt_version,
+        }
+    )
+
+
+def _validated_telemetry(run_row: EvaluationRunRow) -> EvaluationRunTelemetry:
+    return EvaluationRunTelemetry(
+        single_agent=EvaluationModeTelemetry.model_validate(run_row.single_agent_telemetry),
+        multi_agent=EvaluationModeTelemetry.model_validate(run_row.multi_agent_telemetry),
+    )
+
+
+def _experiment_matches_submission(
+    row: EvaluationExperimentRow,
+    case_set: EvaluationCaseSetRow,
+    submission: EvaluationRunSubmission,
+) -> bool:
+    spec = submission.experiment
+    return (
+        row.evaluation_case_set_id == case_set.id
+        and row.evaluation_kind == spec.evaluation_kind.value
+        and row.runner_name == submission.runner_name
+        and row.model_provider == spec.model_provider
+        and row.model_name == spec.model_name
+        and row.model_parameters_hash == spec.model_parameters_hash
+        and row.single_agent_prompt_version == spec.single_agent_prompt_version
+        and row.multi_agent_prompt_version == spec.multi_agent_prompt_version
+    )
+
+
+def _run_matches_submission(
+    row: EvaluationRunRow,
+    case_set: EvaluationCaseSetRow,
+    experiment: EvaluationExperimentRow,
+    report_hash: str,
+    submission: EvaluationRunSubmission,
+) -> bool:
+    return (
+        row.evaluation_case_set_id == case_set.id
+        and row.experiment_id == experiment.id
+        and row.repetition_index == submission.repetition_index
+        and row.report_content_hash == report_hash
+        and row.runner_name == submission.runner_name
+        and _validated_telemetry(row) == submission.telemetry
+    )
 
 
 def _validated_dataset(case_set: EvaluationCaseSetRow) -> InvestigationEvaluationDataset:

@@ -491,6 +491,39 @@ p {
   white-space: nowrap;
 }
 
+.evaluation-context {
+  margin-bottom: 22px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(14 25 35 / 82%);
+}
+
+.evaluation-context dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin: 0;
+}
+
+.evaluation-context dl > div {
+  min-width: 0;
+}
+
+.evaluation-context dt,
+.telemetry-card dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.evaluation-context dd,
+.telemetry-card dd {
+  margin: 6px 0 0;
+  color: #d5e2ed;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .evaluation-caveat {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -510,11 +543,49 @@ p {
 }
 
 .metric-panel,
+.telemetry-panel,
 .scenario-panel {
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgb(16 25 35 / 88%);
+}
+
+.telemetry-panel {
+  margin-bottom: 22px;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.telemetry-card {
+  padding: 16px;
+  border: 1px solid #2a4050;
+  border-radius: 10px;
+  background: #101b26;
+}
+
+.telemetry-card > strong {
+  color: #b8e7e3;
+  font-size: 13px;
+}
+
+.telemetry-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 15px 0 0;
+}
+
+.telemetry-card dl > div {
+  min-width: 0;
+}
+
+.telemetry-card dd {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
 
 .scenario-panel {
@@ -1066,8 +1137,14 @@ p {
   }
 
   .evaluation-integrity,
+  .evaluation-context dl,
+  .telemetry-grid,
   .mode-comparison-grid {
     grid-template-columns: 1fr;
+  }
+
+  .telemetry-card dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .metric-table {

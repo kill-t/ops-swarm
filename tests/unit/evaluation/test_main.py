@@ -8,6 +8,7 @@ from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
 from opsswarm.evaluation.errors import EvaluationReportMismatch
 from opsswarm.evaluation.fixtures import run_fixture_benchmark
 from opsswarm.evaluation.main import EvaluationCommandOptions, async_main, parse_arguments
+from opsswarm.evaluation.metadata import empty_evaluation_telemetry, fixture_experiment_spec
 from opsswarm.evaluation.persistence import EvaluationRunSubmission
 
 
@@ -17,6 +18,8 @@ def test_default_command_does_not_enable_persistence() -> None:
     assert options == EvaluationCommandOptions(
         persist=False,
         idempotency_key=None,
+        experiment_key=None,
+        repetition_index=1,
         runner_name="fixture-contract-v1",
     )
 
@@ -31,12 +34,26 @@ def test_idempotency_key_cannot_be_used_without_persist() -> None:
         parse_arguments(["--idempotency-key", "evaluation-cli-001"])
 
 
+def test_persist_requires_explicit_experiment_key() -> None:
+    with pytest.raises(SystemExit):
+        parse_arguments(["--persist", "--idempotency-key", "evaluation-cli-001"])
+
+
+def test_repetition_index_cannot_change_without_persist() -> None:
+    with pytest.raises(SystemExit):
+        parse_arguments(["--repetition-index", "2"])
+
+
 def test_persist_options_are_parsed_together() -> None:
     options = parse_arguments(
         [
             "--persist",
             "--idempotency-key",
             "evaluation-cli-001",
+            "--experiment-key",
+            "evaluation-cli-group",
+            "--repetition-index",
+            "2",
             "--runner-name",
             "fixture-contract-v2",
         ]
@@ -44,6 +61,8 @@ def test_persist_options_are_parsed_together() -> None:
 
     assert options.persist is True
     assert options.idempotency_key == "evaluation-cli-001"
+    assert options.experiment_key == "evaluation-cli-group"
+    assert options.repetition_index == 2
     assert options.runner_name == "fixture-contract-v2"
 
 
@@ -55,6 +74,8 @@ async def test_default_execution_prints_report_without_database_write(
         EvaluationCommandOptions(
             persist=False,
             idempotency_key=None,
+            experiment_key=None,
+            repetition_index=1,
             runner_name="fixture-contract-v1",
         )
     )
@@ -78,6 +99,9 @@ async def test_submission_rejects_aggregate_not_derived_from_scenarios() -> None
             report=changed_report,
             idempotency_key="evaluation-metrics-001",
             runner_name="fixture-contract-v1",
+            experiment=fixture_experiment_spec("evaluation-metrics-group"),
+            repetition_index=1,
+            telemetry=empty_evaluation_telemetry(),
             created_at=changed_report.generated_at,
         )
 
@@ -98,5 +122,8 @@ async def test_submission_rejects_metrics_not_derived_from_frozen_truth() -> Non
             report=changed_report,
             idempotency_key="evaluation-truth-001",
             runner_name="fixture-contract-v1",
+            experiment=fixture_experiment_spec("evaluation-truth-group"),
+            repetition_index=1,
+            telemetry=empty_evaluation_telemetry(),
             created_at=changed_report.generated_at,
         )

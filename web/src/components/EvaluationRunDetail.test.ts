@@ -11,6 +11,10 @@ describe("评测运行详情", () => {
     });
 
     expect(wrapper.text()).toContain("冻结假模型契约评测");
+    expect(wrapper.text()).toContain("fixture-ui-group · 第 1 次");
+    expect(wrapper.text()).toContain("single-agent-v1 / multi-agent-parallel-v1");
+    expect(wrapper.text()).toContain("资源与失败对照");
+    expect(wrapper.text()).toContain("$0.000000");
     expect(wrapper.text()).toContain("根因 Top-1");
     expect(wrapper.text()).toContain("差值 = 多 Agent − 单 Agent");
     expect(wrapper.text()).toContain("release-500-baseline-v1");
@@ -19,5 +23,6 @@ describe("评测运行详情", () => {
     expect(wrapper.findAll(".metric-row")).toHaveLength(7);
     expect(wrapper.findAll(".scenario-card")).toHaveLength(1);
     expect(wrapper.findAll(".mode-result-card")).toHaveLength(2);
+    expect(wrapper.findAll(".telemetry-card")).toHaveLength(2);
   });
 });

@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from opsswarm.evaluation.errors import EvaluationReportMismatch
+from opsswarm.evaluation.metadata import EvaluationExperimentSpec, EvaluationRunTelemetry
 from opsswarm.evaluation.models import (
     InvestigationAggregateDelta,
     InvestigationAggregateMetrics,
@@ -33,6 +34,9 @@ class EvaluationRunSubmission(StrictEvaluationModel):
         max_length=100,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
+    experiment: EvaluationExperimentSpec
+    repetition_index: int = Field(ge=1, le=1000)
+    telemetry: EvaluationRunTelemetry
     created_at: datetime
 
     @field_validator("created_at")
@@ -81,6 +85,9 @@ class StoredEvaluationRunSummary(StrictEvaluationModel):
     scoring_policy_version: str
     scenario_count: int = Field(ge=1, le=100)
     runner_name: str
+    experiment: EvaluationExperimentSpec
+    repetition_index: int = Field(ge=1, le=1000)
+    telemetry: EvaluationRunTelemetry
     generated_at: datetime
     created_at: datetime
     single_agent: InvestigationAggregateMetrics

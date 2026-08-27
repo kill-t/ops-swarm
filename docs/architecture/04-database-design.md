@@ -47,6 +47,8 @@ erDiagram
     OPERATION_EXECUTIONS ||--o{ VERIFICATION_RUNS : verifies
     VERIFICATION_RUNS ||--o{ VERIFICATION_SAMPLES : records
     INVESTIGATION_RUNS ||--o{ WORK_ITEMS : schedules
+    EVALUATION_CASES ||--o{ EVALUATION_EXPERIMENTS : configures
+    EVALUATION_EXPERIMENTS ||--o{ EVALUATION_RUNS : repeats
     EVALUATION_CASES ||--o{ EVALUATION_RUNS : evaluates
     EVALUATION_RUNS ||--o{ EVALUATION_RESULTS : produces
 ```
@@ -86,12 +88,13 @@ erDiagram
 | `verification_samples` | 服务端探针取得的不可变数值或错误样本 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
 | `evaluation_cases` | 故障真值和期望行为 |
-| `evaluation_runs` | 模式、模型、提示版本和运行汇总 |
-| `evaluation_results` | 准确率、耗时、成本和安全等指标 |
+| `evaluation_experiments` | 数据集、模型、参数哈希、运行器和提示版本组成的可比配置 |
+| `evaluation_runs` | 完成报告、重复序号、聚合指标和模式级遥测 |
+| `evaluation_results` | 逐场景准确率、耗时、证据和安全指标 |
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行和样本表，以及评测集、运行和结果三表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行和样本表，以及评测集、实验、运行和结果四表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -304,13 +307,17 @@ erDiagram
 
 每行保存一个版本化数据集的规范化 JSONB 快照、稳定键、内容 SHA-256、评分规则版本和场景数。数据集键与哈希均唯一；仓储遇到同键不同内容时拒绝写入，防止历史真值被静默改写。
 
-### 4.18 evaluation_runs
+### 4.18 evaluation_experiments
 
-每行保存一次完成的公平对照运行，使用 `BIGINT GENERATED ALWAYS AS IDENTITY` 的 `sequence` 提供稳定倒序分页。唯一幂等键绑定完整报告 SHA-256，并保存运行器名称、生成时间、落库时间、单 Agent 与多 Agent 聚合指标及差值。`generated_at` 不得晚于 `created_at`。
+每行保存一组重复运行共享的不可变配置：数据集、`fixture_contract` 或 `real_model` 类型、运行器、模型提供方与名称、参数 SHA-256 和两套提示版本。冻结契约不得声明模型身份，真实模型必须完整声明；同一 `experiment_key` 不允许静默改变配置。
 
-### 4.19 evaluation_results
+### 4.19 evaluation_runs
 
-每行保存一个场景的完整对照 JSONB。`scenario_id` 和从 1 开始的 `position` 在同一运行内分别唯一，外键使用 `ON DELETE RESTRICT`。运行、结果与数据集快照在同一事务中创建或复用，不会提交缺少场景明细的半份报告。完整字段、幂等与读取校验见 [评测结果持久化与只读查询](23-evaluation-persistence-and-query.md)。
+每行保存一次完成的公平对照运行，使用 `BIGINT GENERATED ALWAYS AS IDENTITY` 的 `sequence` 提供稳定倒序分页。唯一幂等键绑定完整报告和业务元数据，`(experiment_id, repetition_index)` 唯一。运行还保存单 Agent、多 Agent 聚合指标、Token、美元估算成本和五类失败计数；`generated_at` 不得晚于 `created_at`。
+
+### 4.20 evaluation_results
+
+每行保存一个场景的完整对照 JSONB。`scenario_id` 和从 1 开始的 `position` 在同一运行内分别唯一，外键使用 `ON DELETE RESTRICT`。实验、运行、结果与数据集快照在同一事务中创建或复用，不会提交缺少场景明细的半份报告。完整字段、幂等与读取校验见 [评测结果持久化与只读查询](23-evaluation-persistence-and-query.md) 和 [评测实验身份、重复运行与遥测](25-evaluation-experiments-and-telemetry.md)。
 
 ## 5. Incident 状态机
 
@@ -390,7 +397,7 @@ flowchart TD
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
 - 审批必须绑定已实现的 `action_plans` 精确 ID 和版本；计划变化后旧审批失效。
-- `tool_calls` 和后续评测扩展字段保存模型、提示、工具版本、Token、成本和错误分类；当前评测表已保存运行器、耗时与质量指标。
+- `tool_calls` 后续保存工具版本和模型调用明细；当前评测实验与运行已经保存模型身份、参数哈希、提示版本、Token、成本和稳定失败分类。
 - 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。
 
 ## 8. 数据保留与安全

@@ -13,6 +13,7 @@ from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
 from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
 from opsswarm.evaluation.fixtures import run_fixture_benchmark
+from opsswarm.evaluation.metadata import empty_evaluation_telemetry, fixture_experiment_spec
 from opsswarm.evaluation.persistence import EvaluationRunSubmission, EvaluationStore
 from opsswarm.execution import OperationResult
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
@@ -150,6 +151,9 @@ async def test_evaluation_runs_are_read_only_and_cursor_paginated(
             report=report,
             idempotency_key="evaluation-api-001",
             runner_name="fixture-contract-v1",
+            experiment=fixture_experiment_spec("evaluation-api-group"),
+            repetition_index=1,
+            telemetry=empty_evaluation_telemetry(),
             created_at=report.generated_at,
         )
     )
@@ -161,6 +165,9 @@ async def test_evaluation_runs_are_read_only_and_cursor_paginated(
     assert len(page.json()["items"]) == 1
     assert page.json()["items"][0]["id"] == str(creation.run.id)
     assert page.json()["items"][0]["dataset_key"] == MVP_INVESTIGATION_DATASET_V1.dataset_key
+    assert page.json()["items"][0]["experiment"]["experiment_key"] == "evaluation-api-group"
+    assert page.json()["items"][0]["repetition_index"] == 1
+    assert page.json()["items"][0]["telemetry"]["single_agent"]["total_tokens"] == 0
     assert page.json()["next_before_sequence"] is None
     assert detail.status_code == 200
     assert detail.json()["idempotency_key"] == "evaluation-api-001"

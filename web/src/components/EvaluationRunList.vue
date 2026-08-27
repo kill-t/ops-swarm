@@ -63,7 +63,8 @@ function formatPercent(value: number): string {
         </span>
         <strong>{{ run.dataset_key }}</strong>
         <span class="evaluation-run-meta">
-          <span>{{ run.runner_name }}</span>
+          <span>{{ run.experiment.experiment_key }}</span>
+          <span>第 {{ run.repetition_index }} 次</span>
           <span>{{ run.scenario_count }} 个场景</span>
         </span>
         <span class="evaluation-scoreline">

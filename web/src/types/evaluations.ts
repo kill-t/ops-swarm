@@ -1,4 +1,5 @@
 export type InvestigationMode = "single_agent" | "multi_agent";
+export type EvaluationKind = "fixture_contract" | "real_model";
 
 export type RootCause =
   | "release_500_regression"
@@ -73,6 +74,37 @@ export interface InvestigationBenchmarkReport {
   delta: InvestigationAggregateDelta;
 }
 
+export interface EvaluationExperimentSpec {
+  experiment_key: string;
+  evaluation_kind: EvaluationKind;
+  model_provider: string | null;
+  model_name: string | null;
+  model_parameters_hash: string | null;
+  single_agent_prompt_version: string;
+  multi_agent_prompt_version: string;
+}
+
+export interface EvaluationFailureCounts {
+  model_request_error: number;
+  tool_error: number;
+  timeout: number;
+  structured_output_error: number;
+  safety_rejection: number;
+}
+
+export interface EvaluationModeTelemetry {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: string;
+  failures: EvaluationFailureCounts;
+}
+
+export interface EvaluationRunTelemetry {
+  single_agent: EvaluationModeTelemetry;
+  multi_agent: EvaluationModeTelemetry;
+}
+
 export interface EvaluationRunSummary {
   id: string;
   sequence: number;
@@ -81,6 +113,9 @@ export interface EvaluationRunSummary {
   scoring_policy_version: string;
   scenario_count: number;
   runner_name: string;
+  experiment: EvaluationExperimentSpec;
+  repetition_index: number;
+  telemetry: EvaluationRunTelemetry;
   generated_at: string;
   created_at: string;
   single_agent: InvestigationAggregateMetrics;

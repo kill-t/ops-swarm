@@ -64,3 +64,4 @@
 - [21 - 三故障版本化调查评测集](21-versioned-investigation-evaluation.md)
 - [22 - 评测结果持久化与只读查询](22-evaluation-persistence-and-query.md)
 - [23 - 只读评测面板](23-evaluation-dashboard-ui.md)
+- [24 - 评测实验身份、重复运行与遥测](24-evaluation-experiments-and-telemetry.md)

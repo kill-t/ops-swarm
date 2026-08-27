@@ -12,6 +12,7 @@ from opsswarm.approval.persistence import (
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
+from opsswarm.evaluation.metadata import EvaluationExperimentSpec, EvaluationRunTelemetry
 from opsswarm.evaluation.models import (
     InvestigationAggregateDelta,
     InvestigationAggregateMetrics,
@@ -725,6 +726,9 @@ class EvaluationRunSummaryResponse(StrictApiModel):
     scoring_policy_version: str
     scenario_count: int
     runner_name: str
+    experiment: EvaluationExperimentSpec
+    repetition_index: int
+    telemetry: EvaluationRunTelemetry
     generated_at: datetime
     created_at: datetime
     single_agent: InvestigationAggregateMetrics

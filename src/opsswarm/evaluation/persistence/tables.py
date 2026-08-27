@@ -50,6 +50,43 @@ class EvaluationCaseSetRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class EvaluationExperimentRow(Base):
+    """一组重复运行共享且不可静默改写的可比配置。"""
+
+    __tablename__ = "evaluation_experiments"
+    __table_args__ = (
+        CheckConstraint(
+            "evaluation_kind IN ('fixture_contract', 'real_model')",
+            name="ck_evaluation_experiments_kind",
+        ),
+        CheckConstraint(
+            "(evaluation_kind = 'fixture_contract' "
+            "AND model_provider IS NULL AND model_name IS NULL "
+            "AND model_parameters_hash IS NULL) OR "
+            "(evaluation_kind = 'real_model' "
+            "AND model_provider IS NOT NULL AND model_name IS NOT NULL "
+            "AND model_parameters_hash ~ '^[0-9a-f]{64}$')",
+            name="ck_evaluation_experiments_model_identity",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    experiment_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    evaluation_case_set_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("evaluation_cases.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    evaluation_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    runner_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    model_parameters_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    single_agent_prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    multi_agent_prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class EvaluationRunRow(Base):
     """一次已完成的公平对照运行及其聚合指标。"""
 
@@ -75,6 +112,23 @@ class EvaluationRunRow(Base):
             "generated_at <= created_at",
             name="ck_evaluation_runs_time_order",
         ),
+        CheckConstraint(
+            "repetition_index BETWEEN 1 AND 1000",
+            name="ck_evaluation_runs_repetition_index",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(single_agent_telemetry) = 'object'",
+            name="ck_evaluation_runs_single_telemetry_object",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(multi_agent_telemetry) = 'object'",
+            name="ck_evaluation_runs_multi_telemetry_object",
+        ),
+        UniqueConstraint(
+            "experiment_id",
+            "repetition_index",
+            name="uq_evaluation_runs_experiment_repetition",
+        ),
         Index("ix_evaluation_runs_sequence", "sequence"),
     )
 
@@ -90,6 +144,12 @@ class EvaluationRunRow(Base):
         ForeignKey("evaluation_cases.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    experiment_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("evaluation_experiments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    repetition_index: Mapped[int] = mapped_column(Integer, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     report_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     runner_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -97,6 +157,8 @@ class EvaluationRunRow(Base):
     single_agent_aggregate: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     multi_agent_aggregate: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     aggregate_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    single_agent_telemetry: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    multi_agent_telemetry: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

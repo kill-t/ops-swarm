@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付二十三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询，以及只读评测面板。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到单 Agent、多 Agent 聚合指标和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付二十四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板，以及评测实验身份与运行遥测。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -53,6 +53,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [版本化调查评测集与公平对照](docs/architecture/22-versioned-investigation-evaluation.md)
 - [评测结果持久化与只读查询](docs/architecture/23-evaluation-persistence-and-query.md)
 - [只读评测面板](docs/architecture/24-evaluation-dashboard-ui.md)
+- [评测实验身份、重复运行与遥测](docs/architecture/25-evaluation-experiments-and-telemetry.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -126,10 +127,12 @@ uv run python -m opsswarm.evaluation.main
 uv run alembic upgrade head
 uv run python -m opsswarm.evaluation.main `
   --persist `
-  --idempotency-key fixture-contract-20260827-001
+  --idempotency-key fixture-contract-exp01-r01 `
+  --experiment-key fixture-contract-exp01 `
+  --repetition-index 1
 ```
 
-不带 `--persist` 时不会连接数据库。评测历史只能通过 `GET /api/v1/evaluation-runs` 和 `GET /api/v1/evaluation-runs/{run_id}` 读取；控制面不提供启动评测或改写报告的 HTTP 接口。
+相同实验的后续重复使用同一 `--experiment-key`、新的幂等键和递增的 `--repetition-index`。不带 `--persist` 时不会连接数据库。评测历史只能通过 `GET /api/v1/evaluation-runs` 和 `GET /api/v1/evaluation-runs/{run_id}` 读取；控制面不提供启动评测或改写报告的 HTTP 接口。
 
 ## 单 Agent 调查基线
 

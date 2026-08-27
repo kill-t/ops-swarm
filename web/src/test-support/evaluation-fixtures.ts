@@ -16,6 +16,20 @@ const AGGREGATE: InvestigationAggregateMetrics = {
   mean_duration_ms: 25,
 };
 
+const EMPTY_MODE_TELEMETRY = {
+  input_tokens: 0,
+  output_tokens: 0,
+  total_tokens: 0,
+  estimated_cost_usd: "0",
+  failures: {
+    model_request_error: 0,
+    tool_error: 0,
+    timeout: 0,
+    structured_output_error: 0,
+    safety_rejection: 0,
+  },
+};
+
 const SINGLE_RESULT: InvestigationModeBenchmark = {
   mode: "single_agent",
   root_cause: "release_500_regression",
@@ -47,6 +61,20 @@ export const EVALUATION_RUN_SUMMARY: EvaluationRunSummary = {
   scoring_policy_version: "investigation-scoring-v1",
   scenario_count: 1,
   runner_name: "fixture-contract-v1",
+  experiment: {
+    experiment_key: "fixture-ui-group",
+    evaluation_kind: "fixture_contract",
+    model_provider: null,
+    model_name: null,
+    model_parameters_hash: null,
+    single_agent_prompt_version: "single-agent-v1",
+    multi_agent_prompt_version: "multi-agent-parallel-v1",
+  },
+  repetition_index: 1,
+  telemetry: {
+    single_agent: EMPTY_MODE_TELEMETRY,
+    multi_agent: EMPTY_MODE_TELEMETRY,
+  },
   generated_at: "2026-08-27T04:00:00Z",
   created_at: "2026-08-27T04:00:01Z",
   single_agent: { ...AGGREGATE, mean_duration_ms: 30 },

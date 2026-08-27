@@ -15,6 +15,7 @@ flowchart LR
     runner[LangChain 与 LangGraph 公平对照]
     store[EvaluationStore 原子事务]
     cases[(evaluation_cases)]
+    experiments[(evaluation_experiments)]
     runs[(evaluation_runs)]
     results[(evaluation_results)]
     api[FastAPI 只读接口]
@@ -24,6 +25,7 @@ flowchart LR
     dataset --> runner
     runner --> store
     store --> cases
+    store --> experiments
     store --> runs
     store --> results
     cases --> api
@@ -32,7 +34,7 @@ flowchart LR
     api --> panel
 ```
 
-- `EvaluationRunSubmission` 在写库前绑定数据集、报告、幂等键、运行器版本和 UTC 时间。
+- `EvaluationRunSubmission` 在写库前绑定数据集、报告、幂等键、实验配置、重复序号、模式级遥测、运行器版本和 UTC 时间。
 - 仓储在一个事务内创建或复用数据集快照、创建运行并追加全部场景结果；不会留下只有聚合指标的半份报告。
 - API 只有 `GET`，不能启动 Agent、改写报告或删除审计数据。
 - 报告仍是业务库事实；LangGraph checkpoint 不参与评测查询。
@@ -43,20 +45,26 @@ flowchart LR
 
 一行保存一个数据集版本的完整规范化 JSONB 快照，同时保存 `dataset_key`、SHA-256、评分规则版本和场景数。数据集键与内容哈希均唯一；同一键内容变化会被拒绝，内容没有变化也不应伪造新版本。
 
-### 3.2 `evaluation_runs`
+### 3.2 `evaluation_experiments`
+
+一行固定一组重复运行共享的数据集、评测类型、模型身份、参数哈希、运行器和两套提示版本。同一实验键内容变化会被拒绝；完整设计见 [评测实验身份、重复运行与遥测](25-evaluation-experiments-and-telemetry.md)。
+
+### 3.3 `evaluation_runs`
 
 一行表示一轮完成的公平对照，保存：
 
 - 全局递增 `sequence`，作为倒序分页游标；
 - 数据集快照外键和唯一 `idempotency_key`；
+- 实验外键、1～1000 的重复序号及二者唯一约束；
 - 完整报告 SHA-256、运行器名称、生成与落库时间；
 - 单 Agent、多 Agent 聚合指标及二者差值。
+- 单 Agent、多 Agent 的 Token、成本和稳定失败分类。
 
 `generated_at <= created_at` 由数据库约束保证。表不保存“运行中”状态，因为当前命令只有报告全部生成后才进入持久化事务；未来真实模型批量运行若需要进度恢复，应单独设计显式生命周期，不能把完成表兼作任务队列。
 
-### 3.3 `evaluation_results`
+### 3.4 `evaluation_results`
 
-每个场景保存一行完整模式对照 JSONB，并冗余 `scenario_id` 与从 1 开始的 `position`。`(evaluation_run_id, scenario_id)` 和 `(evaluation_run_id, position)` 均唯一，防止重复计分或顺序漂移。三个表的外键都使用 `ON DELETE RESTRICT`，迁移降级在存在评测审计时主动拒绝。
+每个场景保存一行完整模式对照 JSONB，并冗余 `scenario_id` 与从 1 开始的 `position`。`(evaluation_run_id, scenario_id)` 和 `(evaluation_run_id, position)` 均唯一，防止重复计分或顺序漂移。评测四表的外键都使用 `ON DELETE RESTRICT`，迁移降级在存在评测审计时主动拒绝。
 
 ## 4. 幂等与完整性
 
@@ -103,10 +111,12 @@ uv run alembic upgrade head
 uv run python -m opsswarm.evaluation.main `
   --persist `
   --idempotency-key fixture-contract-20260827-001 `
+  --experiment-key fixture-contract-exp01 `
+  --repetition-index 1 `
   --runner-name fixture-contract-v1
 ```
 
-`--persist` 必须和 `--idempotency-key` 同时使用；没有开关时命令绝不创建数据库连接。读取接口为：
+`--persist` 必须同时提供 `--idempotency-key` 和 `--experiment-key`；重复序号默认 1。没有开关时命令绝不创建数据库连接。读取接口为：
 
 - `GET /api/v1/evaluation-runs?limit=50&before_sequence=...`：按 `sequence DESC` 返回聚合历史。
 - `GET /api/v1/evaluation-runs/{run_id}`：返回完整逐场景报告；不存在时返回 `evaluation_run_not_found`。
@@ -116,10 +126,10 @@ uv run python -m opsswarm.evaluation.main `
 ## 6. 当前限制与下一步
 
 - 当前只保存完成报告，没有运行中、失败和取消状态。
-- 运行器名称已保存，但冻结报告尚无模型名、提示版本、Token、成本和安全拒绝分类。
+- 已保存模型身份、提示版本、Token、成本和稳定失败分类，但冻结运行器只会生成显式零遥测。
 - 评测集只有三个确定性主路径场景，不能证明真实模型泛化能力。
 - 控制面尚无可信身份，因此只读评测接口也只允许 localhost 和 Compose 内网。
-- 只读评测面板已经落地；下一阶段扩展真实模型重复运行、失败分类和成本统计时，必须先持久化对应事实，不能由页面虚构不存在的数据。
+- 下一阶段需要真实模型最小运行器和失败 attempt 生命周期；不能把完成运行内的失败计数伪装成整体失败记录。
 
 ## 7. 面试表达
 

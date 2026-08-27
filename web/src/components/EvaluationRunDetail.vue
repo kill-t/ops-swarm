@@ -2,6 +2,8 @@
 import { computed } from "vue";
 
 import type {
+  EvaluationFailureCounts,
+  EvaluationModeTelemetry,
   EvaluationRun,
   InvestigationMode,
   InvestigationModeBenchmark,
@@ -21,6 +23,11 @@ interface MetricRow {
   multi: string;
   delta: string;
   hint: string;
+}
+
+interface TelemetryDisplay {
+  mode: InvestigationMode;
+  telemetry: EvaluationModeTelemetry;
 }
 
 const rootCauseLabels: Record<RootCause, string> = {
@@ -83,6 +90,20 @@ function modeEvidence(mode: InvestigationModeBenchmark): string {
     : mode.referenced_evidence_ids.join(" · ");
 }
 
+function failureTotal(failures: EvaluationFailureCounts): number {
+  return (
+    failures.model_request_error +
+    failures.tool_error +
+    failures.timeout +
+    failures.structured_output_error +
+    failures.safety_rejection
+  );
+}
+
+function cost(value: string): string {
+  return `$${Number(value).toFixed(6)}`;
+}
+
 const metricRows = computed<MetricRow[]>(() => {
   const run = props.run;
   if (run === null) return [];
@@ -131,6 +152,14 @@ const metricRows = computed<MetricRow[]>(() => {
     },
   ];
 });
+
+const telemetryModes = computed<TelemetryDisplay[]>(() => {
+  if (props.run === null) return [];
+  return [
+    { mode: "single_agent", telemetry: props.run.telemetry.single_agent },
+    { mode: "multi_agent", telemetry: props.run.telemetry.multi_agent },
+  ];
+});
 </script>
 
 <template>
@@ -166,12 +195,92 @@ const metricRows = computed<MetricRow[]>(() => {
         </div>
       </section>
 
+      <section class="evaluation-context" aria-label="评测实验上下文">
+        <dl>
+          <div>
+            <dt>实验与重复</dt>
+            <dd>{{ run.experiment.experiment_key }} · 第 {{ run.repetition_index }} 次</dd>
+          </div>
+          <div>
+            <dt>评测类型</dt>
+            <dd>
+              {{
+                run.experiment.evaluation_kind === "fixture_contract"
+                  ? "冻结契约评测"
+                  : "真实模型评测"
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>模型身份</dt>
+            <dd>
+              {{
+                run.experiment.model_name === null
+                  ? "冻结假模型"
+                  : `${run.experiment.model_provider} / ${run.experiment.model_name}`
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>提示版本</dt>
+            <dd>
+              {{ run.experiment.single_agent_prompt_version }} /
+              {{ run.experiment.multi_agent_prompt_version }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       <aside class="evaluation-caveat" role="note">
         <strong>结果解释边界</strong>
-        <span>
+        <span v-if="run.experiment.evaluation_kind === 'fixture_contract'">
           当前是冻结假模型契约评测。满分只证明数据、LangChain、LangGraph、证据护栏和评分链路可复现，不证明多 Agent 在真实模型上更强。
         </span>
+        <span v-else>
+          真实模型的单次结果仍可能受随机性、限流和缓存影响，必须结合相同实验下的多次重复、失败分类和成本共同判断。
+        </span>
       </aside>
+
+      <section class="telemetry-panel" aria-labelledby="telemetry-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">RESOURCE &amp; FAILURE</p>
+            <h2 id="telemetry-title">资源与失败对照</h2>
+          </div>
+          <span>完成运行中的累计值</span>
+        </div>
+        <div class="telemetry-grid">
+          <article
+            v-for="item in telemetryModes"
+            :key="item.mode"
+            class="telemetry-card"
+          >
+            <strong>{{ modeLabel(item.mode) }}</strong>
+            <dl>
+              <div>
+                <dt>输入 Token</dt>
+                <dd>{{ item.telemetry.input_tokens }}</dd>
+              </div>
+              <div>
+                <dt>输出 Token</dt>
+                <dd>{{ item.telemetry.output_tokens }}</dd>
+              </div>
+              <div>
+                <dt>总 Token</dt>
+                <dd>{{ item.telemetry.total_tokens }}</dd>
+              </div>
+              <div>
+                <dt>估算成本</dt>
+                <dd>{{ cost(item.telemetry.estimated_cost_usd) }}</dd>
+              </div>
+              <div>
+                <dt>已分类失败</dt>
+                <dd>{{ failureTotal(item.telemetry.failures) }}</dd>
+              </div>
+            </dl>
+          </article>
+        </div>
+      </section>
 
       <section class="metric-panel" aria-labelledby="metric-comparison-title">
         <div class="section-heading">
