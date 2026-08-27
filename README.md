@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付二十二个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集，以及评测结果 PostgreSQL 持久化与只读查询。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要；离线评测可以公平比较单 Agent 与多 Agent，并把完整报告持久化为评测面板的稳定数据源，暂不提供状态变更命令。
+项目已交付二十三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询，以及只读评测面板。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到单 Agent、多 Agent 聚合指标和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -52,6 +52,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Incident 作战室只读聚合投影](docs/architecture/21-incident-workroom-projection.md)
 - [版本化调查评测集与公平对照](docs/architecture/22-versioned-investigation-evaluation.md)
 - [评测结果持久化与只读查询](docs/architecture/23-evaluation-persistence-and-query.md)
+- [只读评测面板](docs/architecture/24-evaluation-dashboard-ui.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -266,7 +267,7 @@ npm ci
 npm run dev
 ```
 
-访问 `http://127.0.0.1:5173/`。Vite 将同源 `/api` 请求转发到 `127.0.0.1:8000`，因此本地开发不需要放宽 FastAPI CORS。生产构建使用 `npm run build`；当前尚未制作前端静态资源容器。
+访问 `http://127.0.0.1:5173/` 查看 Incident 作战室，访问 `http://127.0.0.1:5173/evaluations` 查看只读评测面板。Vite 将同源 `/api` 请求转发到 `127.0.0.1:8000`，因此本地开发不需要放宽 FastAPI CORS。生产构建使用 `npm run build`；当前尚未制作前端静态资源容器。
 
 ## 可重放事故时间线
 

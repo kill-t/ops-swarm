@@ -46,42 +46,26 @@ onUnmounted(() => store.clearSelection());
 </script>
 
 <template>
-  <div class="workroom-shell">
-    <header class="app-header">
-      <div class="brand-block">
-        <div class="brand-mark">OS</div>
-        <div>
-          <p>OpsSwarm</p>
-          <span>Incident Command Center</span>
-        </div>
-      </div>
-      <div class="environment-badge">
-        <span />
-        LOCAL FAULT LAB
-      </div>
-    </header>
-
-    <div class="workroom-layout">
-      <IncidentList
-        :incidents="store.incidents"
-        :selected-incident-id="store.selectedIncidentId"
-        :loading="store.listLoading"
-        :error="store.listError"
-        @select="selectIncident"
-        @refresh="store.loadIncidents"
-      />
-      <IncidentDetail
-        :incident="store.selectedIncident"
-        :events="store.events"
-        :loading="store.detailLoading"
-        :error="store.detailError"
-        :stream-status="store.streamStatus"
-        :stream-error="store.streamError"
-        :workroom="store.workroom"
-        :workroom-loading="store.workroomLoading"
-        :workroom-error="store.workroomError"
-        @refresh-workroom="store.refreshSelectedWorkroom"
-      />
-    </div>
+  <div class="workroom-layout">
+    <IncidentList
+      :incidents="store.incidents"
+      :selected-incident-id="store.selectedIncidentId"
+      :loading="store.listLoading"
+      :error="store.listError"
+      @select="selectIncident"
+      @refresh="store.loadIncidents"
+    />
+    <IncidentDetail
+      :incident="store.selectedIncident"
+      :events="store.events"
+      :loading="store.detailLoading"
+      :error="store.detailError"
+      :stream-status="store.streamStatus"
+      :stream-error="store.streamError"
+      :workroom="store.workroom"
+      :workroom-loading="store.workroomLoading"
+      :workroom-error="store.workroomError"
+      @refresh-workroom="store.refreshSelectedWorkroom"
+    />
   </div>
 </template>

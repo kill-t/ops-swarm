@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getIncidentWorkroom, listIncidents } from "./api";
+import {
+  getEvaluationRun,
+  getIncidentWorkroom,
+  listEvaluationRuns,
+  listIncidents,
+} from "./api";
 
 describe("控制面 API 客户端", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -63,6 +68,39 @@ describe("控制面 API 客户端", () => {
     await expect(getIncidentWorkroom("incident/001")).resolves.toEqual(body);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/incidents/incident%2F001/workroom",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("使用服务端游标读取评测历史", async () => {
+    const body = { items: [], next_before_sequence: null };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listEvaluationRuns(42)).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/evaluation-runs?limit=50&before_sequence=42",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("编码评测运行 ID 后读取完整报告", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "run/001" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getEvaluationRun("run/001");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/evaluation-runs/run%2F001",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
   });

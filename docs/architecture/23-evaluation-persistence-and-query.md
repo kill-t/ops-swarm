@@ -18,7 +18,7 @@ flowchart LR
     runs[(evaluation_runs)]
     results[(evaluation_results)]
     api[FastAPI 只读接口]
-    panel[后续评测面板]
+    panel[只读评测面板]
 
     command --> dataset
     dataset --> runner
@@ -119,7 +119,7 @@ uv run python -m opsswarm.evaluation.main `
 - 运行器名称已保存，但冻结报告尚无模型名、提示版本、Token、成本和安全拒绝分类。
 - 评测集只有三个确定性主路径场景，不能证明真实模型泛化能力。
 - 控制面尚无可信身份，因此只读评测接口也只允许 localhost 和 Compose 内网。
-- 下一阶段可先做评测面板只读页面，再扩展真实模型重复运行、失败分类和成本统计；不能为了页面先虚构不存在的数据。
+- 只读评测面板已经落地；下一阶段扩展真实模型重复运行、失败分类和成本统计时，必须先持久化对应事实，不能由页面虚构不存在的数据。
 
 ## 7. 面试表达
 

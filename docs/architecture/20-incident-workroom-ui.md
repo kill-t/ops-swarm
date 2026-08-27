@@ -70,7 +70,7 @@ sequenceDiagram
 
 ## 5. 技术选择与本地网络
 
-前端位于独立 `web/` 目录，使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4、Vue Router 5、Vitest 4 和 Vue Test Utils。`package-lock.json` 固定实际解析结果；生产构建同时执行 `vue-tsc --noEmit`，类型错误不能生成交付包。
+前端位于独立 `web/` 目录，使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4、Vue Router 5、Vitest 4 和 Vue Test Utils。`package-lock.json` 固定实际解析结果；生产构建同时执行 `vue-tsc --noEmit`，类型错误不能生成交付包。后续评测面板切片把品牌、全局导航和本地演练标识提升到根级 `App`，作战室视图只保留自身业务布局。
 
 开发环境中浏览器只请求 Vite 的同源 `/api`，由 Vite 转发到 `127.0.0.1:8000`。这使 REST 与 SSE 都保持同源，也不会为了开发便利扩大 FastAPI 的 CORS 安全边界。`VITE_API_BASE_URL` 仅作为未来部署适配项，默认不配置。
 
@@ -99,7 +99,7 @@ sequenceDiagram
 - 调查、Evidence Board、计划、审批、执行和验证已经通过只读聚合投影展示，但明细仍需使用各领域查询接口读取。
 - 前端当前由本地 Node 开发服务运行，尚未制作生产静态资源容器和正式反向代理配置。
 - Vite 只承担开发代理；正式反向代理是否及时终止异常 SSE、浏览器能否无刷新续传，需要在部署切片中单独做端到端故障测试。
-- 下一切片进入评测集与单 Agent、多 Agent 公平对照；浏览器命令交互继续等到身份和最小权限边界明确后再引入。
+- 评测集、公平对照、结果持久化和只读评测面板已经完成；浏览器命令交互继续等到身份和最小权限边界明确后再引入。
 
 ## 9. 面试表达
 

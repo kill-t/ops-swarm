@@ -1,4 +1,5 @@
 import type { Incident, IncidentPage } from "../types/incidents";
+import type { EvaluationRun, EvaluationRunPage } from "../types/evaluations";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 interface ApiErrorBody {
@@ -60,6 +61,21 @@ export function getIncidentWorkroom(
 ): Promise<IncidentWorkroomSnapshot> {
   return requestJson<IncidentWorkroomSnapshot>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/workroom`,
+    signal,
+  );
+}
+
+export function listEvaluationRuns(
+  beforeSequence?: number,
+  signal?: AbortSignal,
+): Promise<EvaluationRunPage> {
+  const cursor = beforeSequence === undefined ? "" : `&before_sequence=${beforeSequence}`;
+  return requestJson<EvaluationRunPage>(`/api/v1/evaluation-runs?limit=50${cursor}`, signal);
+}
+
+export function getEvaluationRun(runId: string, signal?: AbortSignal): Promise<EvaluationRun> {
+  return requestJson<EvaluationRun>(
+    `/api/v1/evaluation-runs/${encodeURIComponent(runId)}`,
     signal,
   );
 }
