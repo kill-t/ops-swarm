@@ -29,6 +29,8 @@ from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
+from opsswarm.evaluation.errors import EvaluationRunNotFound
+from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import (
     ExecutionError,
     ExecutionLeaseLost,
@@ -94,6 +96,7 @@ def create_app(
     verification_store: VerificationStore | None = None,
     verification_adapter: VerificationAdapter | None = None,
     workroom_store: WorkroomStore | None = None,
+    evaluation_store: EvaluationStore | None = None,
     database_settings: DatabaseSettings | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -109,10 +112,11 @@ def create_app(
             operation_execution_store,
             verification_store,
             workroom_store,
+            evaluation_store,
         )
         if any(store is not None for store in stores):
             if any(store is None for store in stores):
-                raise RuntimeError("注入控制面仓储时必须同时提供七个仓储")
+                raise RuntimeError("注入控制面仓储时必须同时提供八个仓储")
             application.state.incident_store = incident_store
             application.state.investigation_store = investigation_store
             application.state.action_plan_store = action_plan_store
@@ -132,6 +136,7 @@ def create_app(
                 clock=clock,
             )
             application.state.workroom_store = workroom_store
+            application.state.evaluation_store = evaluation_store
             yield
             return
 
@@ -158,6 +163,7 @@ def create_app(
             clock=clock,
         )
         application.state.workroom_store = WorkroomStore(database.session_factory)
+        application.state.evaluation_store = EvaluationStore(database.session_factory)
         try:
             yield
         finally:
@@ -176,6 +182,7 @@ def create_app(
     app.state.operation_execution_service = None
     app.state.verification_service = None
     app.state.workroom_store = workroom_store
+    app.state.evaluation_store = evaluation_store
     app.include_router(create_router(clock))
 
     @app.exception_handler(RequestValidationError)
@@ -273,6 +280,21 @@ def create_app(
         response = ApiErrorResponse(error_code="investigation_error", message=str(error))
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(EvaluationRunNotFound)
+    async def handle_evaluation_run_not_found(
+        _: Request,
+        error: EvaluationRunNotFound,
+    ) -> JSONResponse:
+        response = ApiErrorResponse(
+            error_code="evaluation_run_not_found",
+            message=str(error),
+            details={"run_id": str(error.run_id)},
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
             content=response.model_dump(mode="json"),
         )
 

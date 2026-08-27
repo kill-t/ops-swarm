@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付二十一个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示，以及三故障版本化调查评测集。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要；离线评测可以公平比较单 Agent 与多 Agent，暂不提供状态变更命令。
+项目已交付二十二个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集，以及评测结果 PostgreSQL 持久化与只读查询。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要；离线评测可以公平比较单 Agent 与多 Agent，并把完整报告持久化为评测面板的稳定数据源，暂不提供状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -51,6 +51,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Incident 作战室前端](docs/architecture/20-incident-workroom-ui.md)
 - [Incident 作战室只读聚合投影](docs/architecture/21-incident-workroom-projection.md)
 - [版本化调查评测集与公平对照](docs/architecture/22-versioned-investigation-evaluation.md)
+- [评测结果持久化与只读查询](docs/architecture/23-evaluation-persistence-and-query.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -66,7 +67,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 已使用“新版本触发大量 500”场景打通完整处置链路，并把数据库连接池配置错误、Redis 不可用加入 `opsswarm-mvp-investigation-v1` 评测集。下一切片把评测运行和结果持久化到 PostgreSQL，并提供只读查询接口，为评测面板准备稳定数据源；所有环境读写仍只允许本地故障演练环境。
+阶段 1 已使用“新版本触发大量 500”场景打通完整处置链路，并把数据库连接池配置错误、Redis 不可用加入 `opsswarm-mvp-investigation-v1` 评测集。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给后续评测面板；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -117,6 +118,17 @@ uv run python -m opsswarm.evaluation.main
 ```
 
 该命令使用冻结假模型真实经过 LangChain 工具循环和 LangGraph 并行图，用于验证数据、证据护栏、评分和 JSON 报告契约。输出的满分与本地耗时不能代表真实模型质量；真实模型评测必须记录模型、提示、Token、成本、失败和多次重复运行。
+
+显式保存一轮完整报告到业务库：
+
+```powershell
+uv run alembic upgrade head
+uv run python -m opsswarm.evaluation.main `
+  --persist `
+  --idempotency-key fixture-contract-20260827-001
+```
+
+不带 `--persist` 时不会连接数据库。评测历史只能通过 `GET /api/v1/evaluation-runs` 和 `GET /api/v1/evaluation-runs/{run_id}` 读取；控制面不提供启动评测或改写报告的 HTTP 接口。
 
 ## 单 Agent 调查基线
 

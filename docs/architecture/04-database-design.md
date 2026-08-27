@@ -91,7 +91,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表，以及恢复验证运行和样本表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行和样本表，以及评测集、运行和结果三表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -294,9 +294,23 @@ erDiagram
 
 ### 4.16 verification_samples
 
+恢复验证探针取得的只追加样本；同一运行内幂等键和序号分别唯一，状态、数值、HTTP 状态与错误字段由检查约束保持一致。
+
 每个样本保存运行 ID、运行内幂等键、连续序号、`passed`、`failed` 或 `error` 判定、信号、冻结阈值、可空观测值、可空 HTTP 状态、有限错误和服务器 `observed_at`。`(verification_run_id, idempotency_key)` 与 `(verification_run_id, sequence)` 分别唯一。
 
 数值样本必须包含 0～1 的观测值和 HTTP 状态，且数据库直接校验 `passed` 必须小于阈值、`failed` 必须大于等于阈值。`error` 样本不得伪造数值，必须保存错误码和摘要。应用只提供插入和读取，不更新或删除历史样本。探针读取发生在事务外，因为它是可安全重试的只读操作；写入时锁定验证运行并重新检查终态和幂等键。
+
+### 4.17 evaluation_cases
+
+每行保存一个版本化数据集的规范化 JSONB 快照、稳定键、内容 SHA-256、评分规则版本和场景数。数据集键与哈希均唯一；仓储遇到同键不同内容时拒绝写入，防止历史真值被静默改写。
+
+### 4.18 evaluation_runs
+
+每行保存一次完成的公平对照运行，使用 `BIGINT GENERATED ALWAYS AS IDENTITY` 的 `sequence` 提供稳定倒序分页。唯一幂等键绑定完整报告 SHA-256，并保存运行器名称、生成时间、落库时间、单 Agent 与多 Agent 聚合指标及差值。`generated_at` 不得晚于 `created_at`。
+
+### 4.19 evaluation_results
+
+每行保存一个场景的完整对照 JSONB。`scenario_id` 和从 1 开始的 `position` 在同一运行内分别唯一，外键使用 `ON DELETE RESTRICT`。运行、结果与数据集快照在同一事务中创建或复用，不会提交缺少场景明细的半份报告。完整字段、幂等与读取校验见 [评测结果持久化与只读查询](23-evaluation-persistence-and-query.md)。
 
 ## 5. Incident 状态机
 
@@ -376,12 +390,12 @@ flowchart TD
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
 - 审批必须绑定已实现的 `action_plans` 精确 ID 和版本；计划变化后旧审批失效。
-- `tool_calls` 和评测表保存模型、提示、工具版本、延迟、Token 和错误分类，支持公平对比。
+- `tool_calls` 和后续评测扩展字段保存模型、提示、工具版本、Token、成本和错误分类；当前评测表已保存运行器、耗时与质量指标。
 - 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。
 
 ## 8. 数据保留与安全
 
-- MVP 不提供 Incident、Alert、Event、Approval 或 Execution 的物理删除 API。
+- MVP 不提供 Incident、Alert、Event、Approval、Execution 或 Evaluation 的物理删除 API。
 - 未来归档使用保留策略和受控后台任务，不使用级联删除抹除审计链。
 - 数据库应用账号不使用超级用户；迁移、运行和 checkpoint 账号分离。
 - JSONB 写入前必须经过 Pydantic 校验并限制大小。

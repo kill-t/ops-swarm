@@ -12,6 +12,16 @@ from opsswarm.approval.persistence import (
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
+from opsswarm.evaluation.models import (
+    InvestigationAggregateDelta,
+    InvestigationAggregateMetrics,
+    InvestigationBenchmarkReport,
+)
+from opsswarm.evaluation.persistence import (
+    EvaluationRunPage,
+    StoredEvaluationRun,
+    StoredEvaluationRunSummary,
+)
 from opsswarm.execution import ExecutionStatus
 from opsswarm.execution.persistence import (
     OperationExecutionOutcome,
@@ -703,6 +713,53 @@ class IncidentPageResponse(StrictApiModel):
 
     items: list[IncidentResponse]
     next_before_display_number: int | None
+
+
+class EvaluationRunSummaryResponse(StrictApiModel):
+    """评测面板列表所需的版本、运行器和聚合指标。"""
+
+    id: UUID
+    sequence: int
+    dataset_key: str
+    dataset_content_hash: str
+    scoring_policy_version: str
+    scenario_count: int
+    runner_name: str
+    generated_at: datetime
+    created_at: datetime
+    single_agent: InvestigationAggregateMetrics
+    multi_agent: InvestigationAggregateMetrics
+    delta: InvestigationAggregateDelta
+
+    @classmethod
+    def from_stored(cls, stored: StoredEvaluationRunSummary) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class EvaluationRunPageResponse(StrictApiModel):
+    """按运行序号倒序游标返回的评测历史。"""
+
+    items: list[EvaluationRunSummaryResponse]
+    next_before_sequence: int | None
+
+    @classmethod
+    def from_page(cls, page: EvaluationRunPage) -> Self:
+        return cls(
+            items=[EvaluationRunSummaryResponse.from_stored(item) for item in page.items],
+            next_before_sequence=page.next_before_sequence,
+        )
+
+
+class EvaluationRunResponse(EvaluationRunSummaryResponse):
+    """一次评测运行的完整、可复核报告。"""
+
+    idempotency_key: str
+    report_content_hash: str
+    report: InvestigationBenchmarkReport
+
+    @classmethod
+    def from_run(cls, stored: StoredEvaluationRun) -> Self:
+        return cls.model_validate(stored.model_dump())
 
 
 class IncidentEventResponse(StrictApiModel):

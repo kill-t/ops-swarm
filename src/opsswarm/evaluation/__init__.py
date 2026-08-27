@@ -12,7 +12,10 @@ from opsswarm.evaluation.models import (
     InvestigationModeBenchmark,
     InvestigationScenarioBenchmark,
 )
-from opsswarm.evaluation.runner import run_investigation_benchmark
+from opsswarm.evaluation.runner import (
+    run_investigation_benchmark,
+    validate_benchmark_report_consistency,
+)
 
 __all__ = [
     "MVP_INVESTIGATION_DATASET_V1",
@@ -24,4 +27,5 @@ __all__ = [
     "InvestigationModeBenchmark",
     "InvestigationScenarioBenchmark",
     "run_investigation_benchmark",
+    "validate_benchmark_report_consistency",
 ]

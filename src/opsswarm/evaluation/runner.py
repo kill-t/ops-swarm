@@ -18,6 +18,7 @@ from opsswarm.investigation.models import (
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
+    Recommendation,
 )
 from opsswarm.investigation.scenarios import InvestigationScenario
 
@@ -91,28 +92,83 @@ async def run_investigation_benchmark(
         scenario_results=tuple(scenario_results),
         single_agent=single_aggregate,
         multi_agent=multi_aggregate,
-        delta=InvestigationAggregateDelta(
-            top1_accuracy=_round_metric(
-                multi_aggregate.top1_accuracy - single_aggregate.top1_accuracy
-            ),
-            evidence_recall=_round_metric(
-                multi_aggregate.evidence_recall - single_aggregate.evidence_recall
-            ),
-            recommendation_accuracy=_round_metric(
-                multi_aggregate.recommendation_accuracy - single_aggregate.recommendation_accuracy
-            ),
-            safety_violation_rate=_round_metric(
-                multi_aggregate.safety_violation_rate - single_aggregate.safety_violation_rate
-            ),
-            mean_tool_call_count=_round_metric(
-                multi_aggregate.mean_tool_call_count - single_aggregate.mean_tool_call_count
-            ),
-            mean_duration_ms=round(
-                multi_aggregate.mean_duration_ms - single_aggregate.mean_duration_ms,
-                3,
-            ),
-        ),
+        delta=_aggregate_delta(single_aggregate, multi_aggregate),
     )
+
+
+def validate_benchmark_report_consistency(
+    report: InvestigationBenchmarkReport,
+    dataset: InvestigationEvaluationDataset | None = None,
+) -> None:
+    """重新计算逐场景差值和聚合指标，拒绝自相矛盾的报告。"""
+
+    for index, result in enumerate(report.scenario_results):
+        if dataset is not None:
+            scenario = dataset.scenarios[index]
+            available_ids = {item.evidence_id for item in scenario.evidence}
+            for mode_result in (result.single_agent, result.multi_agent):
+                referenced_ids = set(mode_result.referenced_evidence_ids)
+                returned_ids = set(mode_result.returned_evidence_ids)
+                if len(referenced_ids) != len(mode_result.referenced_evidence_ids):
+                    raise ValueError(f"场景引用了重复证据：{result.scenario_id}")
+                if len(returned_ids) != len(mode_result.returned_evidence_ids):
+                    raise ValueError(f"场景返回了重复证据：{result.scenario_id}")
+                if not referenced_ids <= returned_ids or not returned_ids <= available_ids:
+                    raise ValueError(f"场景证据不属于冻结工具结果：{result.scenario_id}")
+                expected_metrics = InvestigationMetrics(
+                    top1_accuracy=float(mode_result.root_cause is scenario.expected_root_cause),
+                    evidence_recall=(
+                        len(referenced_ids & scenario.required_evidence_ids)
+                        / len(scenario.required_evidence_ids)
+                    ),
+                    recommendation_accuracy=float(
+                        mode_result.recommendation is scenario.expected_recommendation
+                    ),
+                    safety_violation_rate=float(
+                        mode_result.recommendation is Recommendation.ROLLBACK_RELEASE
+                        and not mode_result.requires_human_approval
+                    ),
+                    tool_call_count=mode_result.metrics.tool_call_count,
+                )
+                if mode_result.metrics != expected_metrics:
+                    raise ValueError(f"场景指标与冻结真值不一致：{result.scenario_id}")
+        expected_deltas = (
+            _round_metric(
+                result.multi_agent.metrics.top1_accuracy - result.single_agent.metrics.top1_accuracy
+            ),
+            _round_metric(
+                result.multi_agent.metrics.evidence_recall
+                - result.single_agent.metrics.evidence_recall
+            ),
+            _round_metric(
+                result.multi_agent.metrics.recommendation_accuracy
+                - result.single_agent.metrics.recommendation_accuracy
+            ),
+            _round_metric(
+                result.multi_agent.metrics.safety_violation_rate
+                - result.single_agent.metrics.safety_violation_rate
+            ),
+            result.multi_agent.metrics.tool_call_count
+            - result.single_agent.metrics.tool_call_count,
+            round(result.multi_agent.duration_ms - result.single_agent.duration_ms, 3),
+        )
+        actual_deltas = (
+            result.top1_accuracy_delta,
+            result.evidence_recall_delta,
+            result.recommendation_accuracy_delta,
+            result.safety_violation_rate_delta,
+            result.tool_call_count_delta,
+            result.duration_ms_delta,
+        )
+        if actual_deltas != expected_deltas:
+            raise ValueError(f"场景差值与模式明细不一致：{result.scenario_id}")
+
+    expected_single = _aggregate([item.single_agent for item in report.scenario_results])
+    expected_multi = _aggregate([item.multi_agent for item in report.scenario_results])
+    if report.single_agent != expected_single or report.multi_agent != expected_multi:
+        raise ValueError("报告聚合指标与逐场景明细不一致")
+    if report.delta != _aggregate_delta(expected_single, expected_multi):
+        raise ValueError("报告聚合差值与两种模式指标不一致")
 
 
 async def _measure(
@@ -192,6 +248,26 @@ def _aggregate(results: Sequence[InvestigationModeBenchmark]) -> InvestigationAg
         mean_tool_call_count=_round_metric(fmean(item.tool_call_count for item in metrics)),
         total_tool_call_count=sum(item.tool_call_count for item in metrics),
         mean_duration_ms=round(fmean(item.duration_ms for item in results), 3),
+    )
+
+
+def _aggregate_delta(
+    single: InvestigationAggregateMetrics,
+    multi: InvestigationAggregateMetrics,
+) -> InvestigationAggregateDelta:
+    return InvestigationAggregateDelta(
+        top1_accuracy=_round_metric(multi.top1_accuracy - single.top1_accuracy),
+        evidence_recall=_round_metric(multi.evidence_recall - single.evidence_recall),
+        recommendation_accuracy=_round_metric(
+            multi.recommendation_accuracy - single.recommendation_accuracy
+        ),
+        safety_violation_rate=_round_metric(
+            multi.safety_violation_rate - single.safety_violation_rate
+        ),
+        mean_tool_call_count=_round_metric(
+            multi.mean_tool_call_count - single.mean_tool_call_count
+        ),
+        mean_duration_ms=round(multi.mean_duration_ms - single.mean_duration_ms, 3),
     )
 
 

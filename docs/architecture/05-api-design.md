@@ -32,6 +32,8 @@
 | `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` | 不存在 `404`；运行已结束或 Incident 冲突 `409` |
 | `GET /api/v1/incidents/{id}/events` | 按全局事件游标正序读取时间线 | 不存在 `404`；查询参数错误 `422` |
 | `GET /api/v1/incidents/{id}/stream` | 补发游标后的事件并持续保持 SSE 连接 | 不存在 `404`；非法 `Last-Event-ID` 为 `422` |
+| `GET /api/v1/evaluation-runs` | 按全局运行序号倒序返回聚合历史 | 查询参数错误 `422` |
+| `GET /api/v1/evaluation-runs/{run_id}` | 返回数据集版本和完整逐场景报告 | 不存在 `404` |
 
 SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件类型，`data` 是对应 `IncidentEventResponse` 的单行 JSON。首次连接默认从游标 0 补发；客户端重连时通过 `Last-Event-ID` 请求严格大于该游标的事件。服务端空闲时发送不含 `id` 的注释心跳，因此不会推进恢复位置。事件至少一次投递，客户端应按 `id` 幂等处理。
 
@@ -109,7 +111,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 
 事件列表按全局 `incident_events.id ASC` 排序。响应中的 `next_after_cursor` 非空时，下一页把它作为 `after_cursor`。该语义与后续 SSE `Last-Event-ID` 重放保持一致。
 
-两类接口默认最多返回 50 和 100 条，单次请求上限均为 100；API 多读取一条判断是否还有下一页。
+评测运行列表按 `sequence DESC` 排序，响应中的 `next_before_sequence` 用作下一页同名参数。Incident 与评测列表默认返回 50 条，事件默认返回 100 条，三类接口单次请求上限均为 100；仓储多读取一条判断是否还有下一页。
 
 ## 6. 错误契约
 
@@ -134,6 +136,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `incident_version_conflict` | `409` | `expected_version` 已过期 |
 | `invalid_incident_transition` | `409` | 当前状态不允许执行指定动作 |
 | `investigation_run_not_found` | `404` | 调查运行不存在 |
+| `evaluation_run_not_found` | `404` | 评测运行不存在 |
 | `action_plan_not_found` | `404` | 调查存在但尚无计划 |
 | `action_plan_not_ready` | `409` | 调查未成功或缺少已提交假设 |
 | `hypothesis_not_supported` | `409` | 根因假设尚未通过质疑 |

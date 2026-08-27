@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
+from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
+from opsswarm.evaluation.fixtures import run_fixture_benchmark
+from opsswarm.evaluation.persistence import EvaluationRunSubmission, EvaluationStore
 from opsswarm.execution import OperationResult
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
 from opsswarm.incidents.persistence import IncidentStore, StoredIncident
@@ -133,6 +136,52 @@ async def test_health_endpoint(control_client: httpx2.AsyncClient) -> None:
     assert response.json() == {
         "service": "opsswarm-control-plane",
         "status": "healthy",
+    }
+
+
+async def test_evaluation_runs_are_read_only_and_cursor_paginated(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    report = await run_fixture_benchmark()
+    creation = await EvaluationStore(database_session_factory).save_report(
+        EvaluationRunSubmission(
+            dataset=MVP_INVESTIGATION_DATASET_V1,
+            report=report,
+            idempotency_key="evaluation-api-001",
+            runner_name="fixture-contract-v1",
+            created_at=report.generated_at,
+        )
+    )
+
+    page = await control_client.get("/api/v1/evaluation-runs", params={"limit": 1})
+    detail = await control_client.get(f"/api/v1/evaluation-runs/{creation.run.id}")
+
+    assert page.status_code == 200
+    assert len(page.json()["items"]) == 1
+    assert page.json()["items"][0]["id"] == str(creation.run.id)
+    assert page.json()["items"][0]["dataset_key"] == MVP_INVESTIGATION_DATASET_V1.dataset_key
+    assert page.json()["next_before_sequence"] is None
+    assert detail.status_code == 200
+    assert detail.json()["idempotency_key"] == "evaluation-api-001"
+    assert (
+        detail.json()["report"]["scenario_results"]
+        == report.model_dump(mode="json")["scenario_results"]
+    )
+
+
+async def test_missing_evaluation_run_returns_structured_404(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    run_id = uuid4()
+
+    response = await control_client.get(f"/api/v1/evaluation-runs/{run_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error_code": "evaluation_run_not_found",
+        "message": f"评测运行不存在：{run_id}",
+        "details": {"run_id": str(run_id)},
     }
 
 

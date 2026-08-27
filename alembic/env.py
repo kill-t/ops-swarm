@@ -12,6 +12,7 @@ from opsswarm.approval.persistence import tables as approval_tables  # noqa: F40
 from opsswarm.database.asyncio_compat import create_selector_event_loop
 from opsswarm.database.base import Base
 from opsswarm.database.settings import DatabaseSettings
+from opsswarm.evaluation.persistence import tables as evaluation_tables  # noqa: F401
 from opsswarm.execution.persistence import tables as execution_tables  # noqa: F401
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401

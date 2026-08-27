@@ -80,8 +80,9 @@ async def database_session_factory(
     async with engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE TABLE work_items, investigation_runs, incident_events, alerts, "
-                "incidents RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE evaluation_results, evaluation_runs, evaluation_cases, "
+                "work_items, investigation_runs, incident_events, alerts, incidents "
+                "RESTART IDENTITY CASCADE"
             )
         )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)

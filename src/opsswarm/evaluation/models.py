@@ -65,13 +65,21 @@ class InvestigationEvaluationDataset(StrictEvaluationModel):
         """对规范化完整内容计算 SHA-256，检测同版本静默改写。"""
 
         payload = json.dumps(
-            _canonicalize(self),
+            self.canonical_payload(),
             allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
+
+    def canonical_payload(self) -> dict[str, object]:
+        """返回可稳定序列化的数据集快照，供哈希和持久化共用。"""
+
+        payload = _canonicalize(self)
+        if not isinstance(payload, dict):
+            raise TypeError("评测集规范化结果必须是对象")
+        return payload
 
 
 class InvestigationModeBenchmark(StrictEvaluationModel):

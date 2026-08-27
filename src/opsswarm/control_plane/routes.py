@@ -24,6 +24,8 @@ from opsswarm.control_plane.schemas import (
     CreateVerificationRunResponse,
     DecideApprovalRequest,
     DecideApprovalRequestResponse,
+    EvaluationRunPageResponse,
+    EvaluationRunResponse,
     EvidenceBoardResponse,
     ExecuteOperationRequest,
     ExecuteOperationResponse,
@@ -42,6 +44,7 @@ from opsswarm.control_plane.schemas import (
     VerificationSampleRequest,
 )
 from opsswarm.control_plane.sse import IncidentEventStream
+from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
@@ -147,6 +150,18 @@ def get_workroom_store(request: Request) -> WorkroomStore:
 WorkroomStoreDependency = Annotated[WorkroomStore, Depends(get_workroom_store)]
 
 
+def get_evaluation_store(request: Request) -> EvaluationStore:
+    """从应用生命周期状态获取只读评测仓储。"""
+
+    store = getattr(request.app.state, "evaluation_store", None)
+    if not isinstance(store, EvaluationStore):
+        raise RuntimeError("EvaluationStore 尚未初始化")
+    return store
+
+
+EvaluationStoreDependency = Annotated[EvaluationStore, Depends(get_evaluation_store)]
+
+
 def create_router(clock: Clock) -> APIRouter:
     """创建使用可注入 UTC 时钟的控制面路由。"""
 
@@ -162,6 +177,36 @@ def create_router(clock: Clock) -> APIRouter:
     @router.get("/health", response_model=HealthResponse, tags=["系统"])
     async def get_health() -> HealthResponse:
         return HealthResponse()
+
+    @router.get(
+        "/api/v1/evaluation-runs",
+        response_model=EvaluationRunPageResponse,
+        tags=["评测"],
+    )
+    async def list_evaluation_runs(
+        store: EvaluationStoreDependency,
+        before_sequence: Annotated[int | None, Query(ge=1)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> EvaluationRunPageResponse:
+        """读取已由离线命令持久化的评测历史，不触发新评测。"""
+
+        return EvaluationRunPageResponse.from_page(
+            await store.list_runs(limit=limit, before_sequence=before_sequence)
+        )
+
+    @router.get(
+        "/api/v1/evaluation-runs/{run_id}",
+        response_model=EvaluationRunResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["评测"],
+    )
+    async def get_evaluation_run(
+        run_id: UUID,
+        store: EvaluationStoreDependency,
+    ) -> EvaluationRunResponse:
+        """返回数据集版本、完整逐场景结果和聚合对照。"""
+
+        return EvaluationRunResponse.from_run(await store.get_run(run_id))
 
     @router.post(
         "/api/v1/alerts",

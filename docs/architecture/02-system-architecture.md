@@ -187,6 +187,8 @@ LangGraph 1.x 用于：
 | `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次固定只读订单探针 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 从 PostgreSQL 补发并持续推送 SSE 时间线 |
+| `GET /api/v1/evaluation-runs` | 按全局运行序号倒序分页查询评测聚合历史 |
+| `GET /api/v1/evaluation-runs/{run_id}` | 查询完整版本、逐场景结果和聚合对照报告 |
 | `GET /orders/{id}` | 演练订单查询 |
 | `PUT /__admin/faults/release-500` | 在演练环境启用或关闭确定性 500 故障 |
 
