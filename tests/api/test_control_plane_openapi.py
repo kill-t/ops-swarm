@@ -32,8 +32,11 @@ def test_openapi_exposes_current_incident_contract() -> None:
         "/api/v1/verification-runs/{run_id}/samples",
         "/api/v1/evaluation-runs",
         "/api/v1/evaluation-runs/{run_id}",
+        "/api/v1/evaluation-attempts",
+        "/api/v1/evaluation-attempts/{attempt_id}",
     }
     assert set(paths["/api/v1/evaluation-runs"]) == {"get"}
+    assert set(paths["/api/v1/evaluation-attempts"]) == {"get"}
     assert set(paths["/api/v1/alerts"]["post"]["responses"]) >= {"200", "201", "422"}
     validation_schema = paths["/api/v1/incidents"]["get"]["responses"]["422"]["content"][
         "application/json"

@@ -29,7 +29,7 @@ from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
-from opsswarm.evaluation.errors import EvaluationRunNotFound
+from opsswarm.evaluation.errors import EvaluationAttemptNotFound, EvaluationRunNotFound
 from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import (
     ExecutionError,
@@ -292,6 +292,21 @@ def create_app(
             error_code="evaluation_run_not_found",
             message=str(error),
             details={"run_id": str(error.run_id)},
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(EvaluationAttemptNotFound)
+    async def handle_evaluation_attempt_not_found(
+        _: Request,
+        error: EvaluationAttemptNotFound,
+    ) -> JSONResponse:
+        response = ApiErrorResponse(
+            error_code="evaluation_attempt_not_found",
+            message=str(error),
+            details={"attempt_id": str(error.attempt_id)},
         )
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,

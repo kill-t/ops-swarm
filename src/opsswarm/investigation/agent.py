@@ -37,12 +37,14 @@ class SingleAgentInvestigator:
         model: BaseChatModel,
         data_source: InvestigationDataSource,
         recursion_limit: int = 12,
+        max_tool_calls: int | None = None,
     ) -> None:
         if recursion_limit < 2:
             raise ValueError("recursion_limit 不能小于 2")
         self._model = model
         self._data_source = data_source
         self._recursion_limit = recursion_limit
+        self._max_tool_calls = max_tool_calls
 
     async def investigate(self, request: InvestigationRequest) -> InvestigationRunResult:
         """运行工具循环，并拒绝任何未经工具返回的证据引用。"""
@@ -55,7 +57,7 @@ class SingleAgentInvestigator:
     ) -> InvestigationArtifacts:
         """返回结论和工具真实观察，供 Worker 原子写入 Evidence Board。"""
 
-        collector = EvidenceCollector()
+        collector = EvidenceCollector(max_tool_calls=self._max_tool_calls)
         tools = create_investigation_tools(self._data_source, collector)
         workflow = create_agent(
             model=self._model,

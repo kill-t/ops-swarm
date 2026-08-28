@@ -162,6 +162,99 @@ class EvaluationRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class EvaluationAttemptRow(Base):
+    """一个真实模型场景在一种 Agent 模式下的可审计生命周期。"""
+
+    __tablename__ = "evaluation_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "mode IN ('single_agent', 'multi_agent')",
+            name="ck_evaluation_attempts_mode",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed')",
+            name="ck_evaluation_attempts_status",
+        ),
+        CheckConstraint(
+            "failure_category IS NULL OR failure_category IN "
+            "('model_request_error', 'tool_error', 'timeout', "
+            "'structured_output_error', 'safety_rejection', 'budget_exceeded')",
+            name="ck_evaluation_attempts_failure_category",
+        ),
+        CheckConstraint(
+            "repetition_index BETWEEN 1 AND 1000",
+            name="ck_evaluation_attempts_repetition_index",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(budget_snapshot) = 'object'",
+            name="ck_evaluation_attempts_budget_object",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(telemetry) = 'object'",
+            name="ck_evaluation_attempts_telemetry_object",
+        ),
+        CheckConstraint(
+            "result_snapshot IS NULL OR jsonb_typeof(result_snapshot) = 'object'",
+            name="ck_evaluation_attempts_result_object",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND finished_at IS NULL AND result_snapshot IS NULL "
+            "AND failure_category IS NULL AND failure_message IS NULL) OR "
+            "(status = 'succeeded' AND finished_at IS NOT NULL AND result_snapshot IS NOT NULL "
+            "AND failure_category IS NULL AND failure_message IS NULL) OR "
+            "(status = 'failed' AND finished_at IS NOT NULL AND result_snapshot IS NULL "
+            "AND failure_category IS NOT NULL AND failure_message IS NOT NULL)",
+            name="ck_evaluation_attempts_terminal_shape",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="ck_evaluation_attempts_time_order",
+        ),
+        UniqueConstraint(
+            "experiment_id",
+            "repetition_index",
+            "scenario_id",
+            "mode",
+            name="uq_evaluation_attempts_experiment_slot",
+        ),
+        Index("ix_evaluation_attempts_sequence", "sequence"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    sequence: Mapped[int] = mapped_column(
+        BigInteger,
+        Identity(always=True),
+        nullable=False,
+        unique=True,
+    )
+    evaluation_case_set_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("evaluation_cases.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    experiment_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("evaluation_experiments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    repetition_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    scenario_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    mode: Mapped[str] = mapped_column(String(30), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    budget_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    telemetry: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+    )
+    failure_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class EvaluationResultRow(Base):
     """一次评测运行中的单个场景对照结果。"""
 

@@ -12,11 +12,23 @@ from opsswarm.approval.persistence import (
     ApprovalRequestCreation,
     StoredApprovalRequest,
 )
-from opsswarm.evaluation.metadata import EvaluationExperimentSpec, EvaluationRunTelemetry
+from opsswarm.evaluation.attempts import (
+    EvaluationAttemptBudget,
+    EvaluationAttemptPage,
+    EvaluationAttemptStatus,
+    EvaluationFailureCategory,
+    StoredEvaluationAttempt,
+)
+from opsswarm.evaluation.metadata import (
+    EvaluationExperimentSpec,
+    EvaluationModeTelemetry,
+    EvaluationRunTelemetry,
+)
 from opsswarm.evaluation.models import (
     InvestigationAggregateDelta,
     InvestigationAggregateMetrics,
     InvestigationBenchmarkReport,
+    InvestigationModeBenchmark,
 )
 from opsswarm.evaluation.persistence import (
     EvaluationRunPage,
@@ -764,6 +776,48 @@ class EvaluationRunResponse(EvaluationRunSummaryResponse):
     @classmethod
     def from_run(cls, stored: StoredEvaluationRun) -> Self:
         return cls.model_validate(stored.model_dump())
+
+
+class EvaluationAttemptResponse(StrictApiModel):
+    """一条真实模型评测尝试的预算、遥测和终态。"""
+
+    id: UUID
+    sequence: int
+    dataset_key: str
+    dataset_content_hash: str
+    experiment: EvaluationExperimentSpec
+    runner_name: str
+    repetition_index: int
+    scenario_id: str
+    mode: InvestigationMode
+    idempotency_key: str
+    status: EvaluationAttemptStatus
+    budget: EvaluationAttemptBudget
+    telemetry: EvaluationModeTelemetry
+    result: InvestigationModeBenchmark | None
+    failure_category: EvaluationFailureCategory | None
+    failure_message: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredEvaluationAttempt) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class EvaluationAttemptPageResponse(StrictApiModel):
+    """按尝试序号倒序游标返回的真实模型调用历史。"""
+
+    items: list[EvaluationAttemptResponse]
+    next_before_sequence: int | None
+
+    @classmethod
+    def from_page(cls, page: EvaluationAttemptPage) -> Self:
+        return cls(
+            items=[EvaluationAttemptResponse.from_stored(item) for item in page.items],
+            next_before_sequence=page.next_before_sequence,
+        )
 
 
 class IncidentEventResponse(StrictApiModel):

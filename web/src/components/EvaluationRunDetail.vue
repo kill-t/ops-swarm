@@ -96,7 +96,8 @@ function failureTotal(failures: EvaluationFailureCounts): number {
     failures.tool_error +
     failures.timeout +
     failures.structured_output_error +
-    failures.safety_rejection
+    failures.safety_rejection +
+    failures.budget_exceeded
   );
 }
 

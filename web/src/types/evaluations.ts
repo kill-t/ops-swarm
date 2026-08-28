@@ -90,9 +90,11 @@ export interface EvaluationFailureCounts {
   timeout: number;
   structured_output_error: number;
   safety_rejection: number;
+  budget_exceeded: number;
 }
 
 export interface EvaluationModeTelemetry {
+  model_request_count: number;
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;

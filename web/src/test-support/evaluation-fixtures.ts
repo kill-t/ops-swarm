@@ -17,6 +17,7 @@ const AGGREGATE: InvestigationAggregateMetrics = {
 };
 
 const EMPTY_MODE_TELEMETRY = {
+  model_request_count: 0,
   input_tokens: 0,
   output_tokens: 0,
   total_tokens: 0,
@@ -27,6 +28,7 @@ const EMPTY_MODE_TELEMETRY = {
     timeout: 0,
     structured_output_error: 0,
     safety_rejection: 0,
+    budget_exceeded: 0,
   },
 };
 

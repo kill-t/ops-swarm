@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import httpx2
@@ -12,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
 from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
+from opsswarm.evaluation.attempts import EvaluationAttemptBudget, EvaluationAttemptSubmission
 from opsswarm.evaluation.fixtures import run_fixture_benchmark
 from opsswarm.evaluation.metadata import empty_evaluation_telemetry, fixture_experiment_spec
 from opsswarm.evaluation.persistence import EvaluationRunSubmission, EvaluationStore
+from opsswarm.evaluation.real_model import real_model_experiment_spec
 from opsswarm.execution import OperationResult
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
 from opsswarm.incidents.persistence import IncidentStore, StoredIncident
@@ -23,11 +26,13 @@ from opsswarm.investigation.models import (
     InvestigationArtifacts,
     InvestigationConclusion,
     InvestigationMetrics,
+    InvestigationMode,
     InvestigationRunResult,
     SpecialistReport,
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.investigation.settings import LlmSettings
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import VerificationObservation
 
@@ -189,6 +194,64 @@ async def test_missing_evaluation_run_returns_structured_404(
         "error_code": "evaluation_run_not_found",
         "message": f"评测运行不存在：{run_id}",
         "details": {"run_id": str(run_id)},
+    }
+
+
+async def test_evaluation_attempts_are_read_only_and_include_budget(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    budget = EvaluationAttemptBudget(
+        timeout_seconds=60,
+        max_model_requests=6,
+        max_tool_calls=3,
+        max_output_tokens_per_request=512,
+        max_estimated_cost_usd=Decimal("0.10"),
+        input_cost_per_million_usd=Decimal("1"),
+        output_cost_per_million_usd=Decimal("2"),
+    )
+    llm_settings = LlmSettings(api_key="test-only-key", model="test-model")
+    creation = await EvaluationStore(database_session_factory).start_attempt(
+        EvaluationAttemptSubmission(
+            dataset=MVP_INVESTIGATION_DATASET_V1,
+            experiment=real_model_experiment_spec(
+                "evaluation-api-attempts",
+                llm_settings=llm_settings,
+                budget=budget,
+            ),
+            runner_name="real-model-smoke-v1",
+            repetition_index=1,
+            scenario_id=RELEASE_500_SCENARIO.scenario_id,
+            mode=InvestigationMode.SINGLE_AGENT,
+            idempotency_key="evaluation-api-attempt-001",
+            budget=budget,
+            started_at=BASE_TIME,
+        )
+    )
+
+    page = await control_client.get("/api/v1/evaluation-attempts")
+    detail = await control_client.get(f"/api/v1/evaluation-attempts/{creation.attempt.id}")
+
+    assert page.status_code == 200
+    assert page.json()["items"][0]["status"] == "running"
+    assert page.json()["items"][0]["budget"]["max_tool_calls"] == 3
+    assert detail.status_code == 200
+    assert detail.json()["id"] == str(creation.attempt.id)
+    assert "api_key" not in detail.text.lower()
+
+
+async def test_missing_evaluation_attempt_returns_structured_404(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    attempt_id = uuid4()
+
+    response = await control_client.get(f"/api/v1/evaluation-attempts/{attempt_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error_code": "evaluation_attempt_not_found",
+        "message": f"评测尝试不存在：{attempt_id}",
+        "details": {"attempt_id": str(attempt_id)},
     }
 
 

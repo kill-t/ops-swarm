@@ -96,6 +96,17 @@ async def run_investigation_benchmark(
     )
 
 
+def build_mode_benchmark(
+    mode: InvestigationMode,
+    result: InvestigationRunResult,
+    scenario: InvestigationScenario,
+    duration_ms: float,
+) -> InvestigationModeBenchmark:
+    """把一次真实或冻结调查转换为可复算的单模式评分结果。"""
+
+    return _mode_benchmark(mode, result, scenario, duration_ms)
+
+
 def validate_benchmark_report_consistency(
     report: InvestigationBenchmarkReport,
     dataset: InvestigationEvaluationDataset | None = None,

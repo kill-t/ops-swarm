@@ -1,7 +1,9 @@
 """可选真实模型的环境配置与工厂。"""
 
-from typing import Self
+from collections.abc import Sequence
+from typing import Any, Self, cast
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +29,13 @@ class LlmSettings(BaseSettings):
             raise ValueError("必须设置 LLM_MODEL")
         return self
 
+    @classmethod
+    def from_dotenv(cls) -> Self:
+        """仅供显式本地命令读取项目根目录的 .env。"""
+
+        constructor = cast(Any, cls)
+        return cast(Self, constructor(_env_file=".env", _env_file_encoding="utf-8"))
+
 
 def create_openai_compatible_model(settings: LlmSettings) -> ChatOpenAI:
     """创建模型适配器但不发起网络请求。"""
@@ -36,4 +45,24 @@ def create_openai_compatible_model(settings: LlmSettings) -> ChatOpenAI:
         model=settings.model,
         base_url=settings.base_url,
         temperature=settings.temperature,
+    )
+
+
+def create_bounded_openai_compatible_model(
+    settings: LlmSettings,
+    *,
+    max_output_tokens: int,
+    timeout_seconds: float,
+    callbacks: Sequence[BaseCallbackHandler] = (),
+) -> ChatOpenAI:
+    """为显式评测创建带单请求输出上限、超时和审计回调的模型。"""
+
+    return ChatOpenAI(
+        api_key=settings.api_key,
+        model=settings.model,
+        base_url=settings.base_url,
+        temperature=settings.temperature,
+        max_completion_tokens=max_output_tokens,
+        timeout=timeout_seconds,
+        callbacks=list(callbacks),
     )

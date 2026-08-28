@@ -113,7 +113,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 
 评测运行列表按 `sequence DESC` 排序，响应中的 `next_before_sequence` 用作下一页同名参数。Incident 与评测列表默认返回 50 条，事件默认返回 100 条，三类接口单次请求上限均为 100；仓储多读取一条判断是否还有下一页。
 
-评测列表与详情都返回不可变 `experiment`、`repetition_index` 和单/多 Agent `telemetry`。其中模型成本使用十进制定点字符串传输，避免 JSON 浮点改变审计数值；控制面仍没有启动或改写评测的 HTTP 接口。
+评测列表与详情都返回不可变 `experiment`、`repetition_index` 和单/多 Agent `telemetry`。真实模型尝试列表与详情还返回调用前预算、`running`、`succeeded` 或 `failed` 状态、模式级结果或稳定失败分类。其中模型成本使用十进制定点字符串传输，避免 JSON 浮点改变审计数值；控制面仍没有启动或改写评测的 HTTP 接口。
 
 ## 6. 错误契约
 
@@ -139,6 +139,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `invalid_incident_transition` | `409` | 当前状态不允许执行指定动作 |
 | `investigation_run_not_found` | `404` | 调查运行不存在 |
 | `evaluation_run_not_found` | `404` | 评测运行不存在 |
+| `evaluation_attempt_not_found` | `404` | 真实模型评测尝试不存在 |
 | `action_plan_not_found` | `404` | 调查存在但尚无计划 |
 | `action_plan_not_ready` | `409` | 调查未成功或缺少已提交假设 |
 | `hypothesis_not_supported` | `409` | 根因假设尚未通过质疑 |

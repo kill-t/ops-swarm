@@ -15,6 +15,34 @@ class EvaluationRunNotFound(EvaluationError):
         super().__init__(f"评测运行不存在：{run_id}")
 
 
+class EvaluationAttemptNotFound(EvaluationError):
+    """请求的真实模型评测尝试不存在。"""
+
+    def __init__(self, attempt_id: UUID) -> None:
+        self.attempt_id = attempt_id
+        super().__init__(f"评测尝试不存在：{attempt_id}")
+
+
+class EvaluationAttemptConflict(EvaluationError):
+    """幂等键或实验槽位已经绑定另一条尝试。"""
+
+    def __init__(self, identity: str) -> None:
+        self.identity = identity
+        super().__init__(f"评测尝试标识冲突：{identity}")
+
+
+class EvaluationAttemptAlreadyFinished(EvaluationError):
+    """终态尝试不能被第二次改写。"""
+
+    def __init__(self, attempt_id: UUID) -> None:
+        self.attempt_id = attempt_id
+        super().__init__(f"评测尝试已经结束：{attempt_id}")
+
+
+class EvaluationBudgetExceeded(EvaluationError):
+    """真实模型尝试触及调用、Token 或费用护栏。"""
+
+
 class EvaluationIdempotencyConflict(EvaluationError):
     """同一幂等键被用于不同评测报告。"""
 

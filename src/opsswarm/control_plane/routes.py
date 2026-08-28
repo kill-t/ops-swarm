@@ -24,6 +24,8 @@ from opsswarm.control_plane.schemas import (
     CreateVerificationRunResponse,
     DecideApprovalRequest,
     DecideApprovalRequestResponse,
+    EvaluationAttemptPageResponse,
+    EvaluationAttemptResponse,
     EvaluationRunPageResponse,
     EvaluationRunResponse,
     EvidenceBoardResponse,
@@ -177,6 +179,36 @@ def create_router(clock: Clock) -> APIRouter:
     @router.get("/health", response_model=HealthResponse, tags=["系统"])
     async def get_health() -> HealthResponse:
         return HealthResponse()
+
+    @router.get(
+        "/api/v1/evaluation-attempts",
+        response_model=EvaluationAttemptPageResponse,
+        tags=["评测"],
+    )
+    async def list_evaluation_attempts(
+        store: EvaluationStoreDependency,
+        before_sequence: Annotated[int | None, Query(ge=1)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> EvaluationAttemptPageResponse:
+        """只读查询真实模型尝试，不允许 HTTP 接口触发付费调用。"""
+
+        return EvaluationAttemptPageResponse.from_page(
+            await store.list_attempts(limit=limit, before_sequence=before_sequence)
+        )
+
+    @router.get(
+        "/api/v1/evaluation-attempts/{attempt_id}",
+        response_model=EvaluationAttemptResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["评测"],
+    )
+    async def get_evaluation_attempt(
+        attempt_id: UUID,
+        store: EvaluationStoreDependency,
+    ) -> EvaluationAttemptResponse:
+        """读取一次调用的预算、Token、结果或稳定失败分类。"""
+
+        return EvaluationAttemptResponse.from_stored(await store.get_attempt(attempt_id))
 
     @router.get(
         "/api/v1/evaluation-runs",

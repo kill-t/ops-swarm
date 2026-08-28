@@ -77,6 +77,7 @@ class EvaluationFailureCounts(StrictEvaluationModel):
     timeout: int = Field(default=0, ge=0)
     structured_output_error: int = Field(default=0, ge=0)
     safety_rejection: int = Field(default=0, ge=0)
+    budget_exceeded: int = Field(default=0, ge=0)
 
     @property
     def total(self) -> int:
@@ -88,12 +89,14 @@ class EvaluationFailureCounts(StrictEvaluationModel):
             + self.timeout
             + self.structured_output_error
             + self.safety_rejection
+            + self.budget_exceeded
         )
 
 
 class EvaluationModeTelemetry(StrictEvaluationModel):
     """一种 Agent 模式在整轮评测中的模型资源和失败统计。"""
 
+    model_request_count: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     total_tokens: int = Field(default=0, ge=0)

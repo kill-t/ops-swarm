@@ -54,6 +54,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [评测结果持久化与只读查询](docs/architecture/23-evaluation-persistence-and-query.md)
 - [只读评测面板](docs/architecture/24-evaluation-dashboard-ui.md)
 - [评测实验身份、重复运行与遥测](docs/architecture/25-evaluation-experiments-and-telemetry.md)
+- [真实模型单场景冒烟与尝试生命周期](docs/architecture/26-real-model-smoke-attempts.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -145,6 +146,18 @@ uv run pytest tests/unit/investigation -q
 ```
 
 真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 和 `LLM_TEMPERATURE` 显式配置。自动化测试不读取这些变量，也不会产生模型费用。
+
+第一次真实模型测试使用独立的单场景冒烟命令。先把 `.env.example` 复制为 `.env`，填写模型配置、该模型每百万输入/输出 Token 的实际美元价格以及费用上限，再执行：
+
+```powershell
+uv run alembic upgrade head
+uv run python -m opsswarm.evaluation.real_main `
+  --experiment-key real-model-smoke-exp01 `
+  --idempotency-prefix real-model-smoke-exp01-r01 `
+  --repetition-index 1
+```
+
+命令会先分别登记单 Agent、多 Agent 尝试，再调用模型；重放同一幂等前缀不会重复付费。尝试历史通过 `GET /api/v1/evaluation-attempts` 和详情接口只读查询，控制面不能启动模型评测。
 
 ## 持久调查 Worker
 

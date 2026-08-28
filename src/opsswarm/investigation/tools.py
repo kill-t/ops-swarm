@@ -9,6 +9,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as langchain_tool
 from pydantic import BaseModel, ConfigDict, Field
 
+from opsswarm.investigation.errors import InvestigationToolBudgetExceeded
 from opsswarm.investigation.models import EvidenceObservation
 
 
@@ -63,6 +64,7 @@ class EvidenceCollector:
     """记录本轮工具实际暴露给模型的证据，供结论交叉校验。"""
 
     tool_call_count: int = 0
+    max_tool_calls: int | None = None
     _observations: dict[str, EvidenceObservation] = field(default_factory=dict, repr=False)
     _lock: Lock = field(default_factory=Lock, repr=False)
 
@@ -84,6 +86,8 @@ class EvidenceCollector:
         """并行工具调用时也原子更新本轮统计。"""
 
         with self._lock:
+            if self.max_tool_calls is not None and self.tool_call_count >= self.max_tool_calls:
+                raise InvestigationToolBudgetExceeded("调查工具调用次数超过显式预算")
             self.tool_call_count += 1
             for item in observations:
                 existing = self._observations.get(item.evidence_id)

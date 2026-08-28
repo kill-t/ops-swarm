@@ -89,12 +89,13 @@ erDiagram
 | `work_items` | Worker 租约、重试和至少一次处理 |
 | `evaluation_cases` | 故障真值和期望行为 |
 | `evaluation_experiments` | 数据集、模型、参数哈希、运行器和提示版本组成的可比配置 |
+| `evaluation_attempts` | 真实模型单场景、单模式调用的预算、运行中与成功/失败终态 |
 | `evaluation_runs` | 完成报告、重复序号、聚合指标和模式级遥测 |
 | `evaluation_results` | 逐场景准确率、耗时、证据和安全指标 |
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行和样本表，以及评测集、实验、运行和结果四表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行和样本表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -313,11 +314,17 @@ erDiagram
 
 ### 4.19 evaluation_runs
 
-每行保存一次完成的公平对照运行，使用 `BIGINT GENERATED ALWAYS AS IDENTITY` 的 `sequence` 提供稳定倒序分页。唯一幂等键绑定完整报告和业务元数据，`(experiment_id, repetition_index)` 唯一。运行还保存单 Agent、多 Agent 聚合指标、Token、美元估算成本和五类失败计数；`generated_at` 不得晚于 `created_at`。
+每行保存一次完成的公平对照运行，使用 `BIGINT GENERATED ALWAYS AS IDENTITY` 的 `sequence` 提供稳定倒序分页。唯一幂等键绑定完整报告和业务元数据，`(experiment_id, repetition_index)` 唯一。运行还保存单 Agent、多 Agent 聚合指标、模型请求数、Token、美元估算成本和六类失败计数；`generated_at` 不得晚于 `created_at`。
 
 ### 4.20 evaluation_results
 
 每行保存一个场景的完整对照 JSONB。`scenario_id` 和从 1 开始的 `position` 在同一运行内分别唯一，外键使用 `ON DELETE RESTRICT`。实验、运行、结果与数据集快照在同一事务中创建或复用，不会提交缺少场景明细的半份报告。完整字段、幂等与读取校验见 [评测结果持久化与只读查询](23-evaluation-persistence-and-query.md) 和 [评测实验身份、重复运行与遥测](25-evaluation-experiments-and-telemetry.md)。
+
+### 4.21 evaluation_attempts
+
+每行保存一个真实模型实验在某次重复、某个冻结场景和一种 Agent 模式下的独立尝试。`sequence` 用于稳定倒序分页，幂等键全局唯一，`(experiment_id, repetition_index, scenario_id, mode)` 防止同一实验槽位重复付费调用。
+
+`running` 不允许结果、失败或完成时间；`succeeded` 必须保存结构化评分结果；`failed` 必须保存六类稳定失败之一和有限脱敏消息。预算与遥测均为经过 Pydantic 校验的 JSONB。终态只能由仓储从 `running` 条件更新一次，完整设计见 [真实模型单场景冒烟与尝试生命周期](26-real-model-smoke-attempts.md)。
 
 ## 5. Incident 状态机
 
