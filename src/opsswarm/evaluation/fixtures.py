@@ -9,7 +9,10 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
 from opsswarm.evaluation.dataset import MVP_INVESTIGATION_DATASET_V1
-from opsswarm.evaluation.models import InvestigationBenchmarkReport
+from opsswarm.evaluation.models import (
+    InvestigationBenchmarkReport,
+    InvestigationEvaluationDataset,
+)
 from opsswarm.evaluation.runner import run_investigation_benchmark
 from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.models import (
@@ -18,7 +21,6 @@ from opsswarm.investigation.models import (
     InvestigationConclusion,
     InvestigationRequest,
     InvestigationRunResult,
-    Recommendation,
     SpecialistReport,
 )
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
@@ -76,11 +78,13 @@ class _FixtureConclusionSynthesizer:
         return _fixture_conclusion(self._scenario)
 
 
-async def run_fixture_benchmark() -> InvestigationBenchmarkReport:
+async def run_fixture_benchmark(
+    dataset: InvestigationEvaluationDataset = MVP_INVESTIGATION_DATASET_V1,
+) -> InvestigationBenchmarkReport:
     """运行三故障离线契约基准，真实经过 LangChain 和 LangGraph。"""
 
     return await run_investigation_benchmark(
-        MVP_INVESTIGATION_DATASET_V1,
+        dataset,
         single_agent_runner=_run_single_agent,
         multi_agent_runner=_run_multi_agent,
     )
@@ -147,7 +151,7 @@ def _single_agent_fixture_model(scenario: InvestigationScenario) -> _ToolCalling
 
 
 def _fixture_conclusion(scenario: InvestigationScenario) -> InvestigationConclusion:
-    requires_approval = scenario.expected_recommendation is Recommendation.ROLLBACK_RELEASE
+    requires_approval = scenario.expected_recommendation.requires_human_approval
     return InvestigationConclusion(
         root_cause=scenario.expected_root_cause,
         confidence=0.95,

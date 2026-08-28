@@ -60,7 +60,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 
 工具没有 Shell、SQL、容器控制或写接口。系统提示词只是第一层约束；真正安全边界来自没有向模型注册危险能力、Pydantic 参数校验、数据源权限和返回证据校验。
 
-回滚只是 `Recommendation.ROLLBACK_RELEASE`，模型不能执行它。Pydantic 规则要求回滚建议必须设置 `requires_human_approval=true`；后续还要由持久化审批和白名单执行器独立校验。
+处置建议只是结构化语义，模型不能执行它。`rollback_release`、`rollback_configuration` 和 `restore_dependency` 都必须设置 `requires_human_approval=true`；只有 `continue_investigation` 不要求审批。后续还要由持久化审批、能力映射和白名单执行器独立校验，新增建议枚举不会自动获得执行权限。
 
 ## 5. 冻结场景与评测
 

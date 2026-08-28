@@ -5,6 +5,7 @@ import pytest
 
 from opsswarm.evaluation import (
     MVP_INVESTIGATION_DATASET_V1,
+    MVP_INVESTIGATION_DATASET_V2,
     run_investigation_benchmark,
 )
 from opsswarm.evaluation.fixtures import run_fixture_benchmark
@@ -40,6 +41,21 @@ async def test_fixture_benchmark_runs_three_scenarios_through_both_frameworks() 
         (InvestigationMode.MULTI_AGENT, InvestigationMode.SINGLE_AGENT),
         (InvestigationMode.SINGLE_AGENT, InvestigationMode.MULTI_AGENT),
     ]
+
+
+@pytest.mark.asyncio
+async def test_fixture_benchmark_v2_uses_precise_recommendation_labels() -> None:
+    report = await run_fixture_benchmark(MVP_INVESTIGATION_DATASET_V2)
+
+    assert report.dataset_key == MVP_INVESTIGATION_DATASET_V2.dataset_key
+    assert report.single_agent.recommendation_accuracy == 1
+    assert report.multi_agent.recommendation_accuracy == 1
+    assert [item.single_agent.recommendation.value for item in report.scenario_results] == [
+        "rollback_release",
+        "rollback_configuration",
+        "restore_dependency",
+    ]
+    assert all(item.single_agent.requires_human_approval for item in report.scenario_results)
 
 
 @pytest.mark.asyncio
@@ -109,7 +125,7 @@ def _result(
             summary="离线聚合评分测试结论。",
             evidence_ids=selected_evidence_ids,
             recommendation=scenario.expected_recommendation,
-            requires_human_approval=(scenario.expected_recommendation.value == "rollback_release"),
+            requires_human_approval=scenario.expected_recommendation.requires_human_approval,
         ),
         returned_evidence_ids=tuple(item.evidence_id for item in scenario.evidence),
         tool_call_count=tool_call_count,

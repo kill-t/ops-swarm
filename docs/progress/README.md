@@ -68,3 +68,4 @@
 - [25 - 真实模型单场景冒烟与尝试生命周期](25-real-model-smoke-attempts.md)
 - [26 - DeepSeek 真实模型兼容与首次对照](26-deepseek-real-model-smoke.md)
 - [27 - 真实模型三场景批量评测](27-real-model-batch-evaluation.md)
+- [28 - 处置建议契约与评测集 v2](28-recommendation-contract-v2.md)

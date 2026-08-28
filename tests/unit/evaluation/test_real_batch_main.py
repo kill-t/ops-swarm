@@ -2,7 +2,10 @@
 
 import pytest
 
-from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
+from opsswarm.evaluation import (
+    MVP_INVESTIGATION_DATASET_V1,
+    MVP_INVESTIGATION_DATASET_V2,
+)
 from opsswarm.evaluation.real_batch_main import (
     RealModelBatchCommandOptions,
     parse_arguments,
@@ -22,6 +25,7 @@ def test_batch_command_defaults_to_all_scenarios_once() -> None:
     assert options == RealModelBatchCommandOptions(
         experiment_key="real-batch-exp01",
         idempotency_prefix="real-batch-exp01",
+        dataset_version=1,
         repetition_start=1,
         repetitions=1,
         scenario_ids=tuple(item.scenario_id for item in MVP_INVESTIGATION_DATASET_V1.scenarios),
@@ -49,6 +53,24 @@ def test_batch_command_accepts_explicit_scenario_and_repetition_range() -> None:
     assert options.scenario_ids == ("redis-unavailable-v1",)
 
 
+def test_batch_command_selects_dataset_v2_explicitly() -> None:
+    options = parse_arguments(
+        [
+            "--experiment-key",
+            "real-batch-v2-exp01",
+            "--idempotency-prefix",
+            "real-batch-v2-exp01",
+            "--dataset-version",
+            "2",
+        ]
+    )
+
+    assert options.dataset_version == 2
+    assert options.scenario_ids == tuple(
+        item.scenario_id for item in MVP_INVESTIGATION_DATASET_V2.scenarios
+    )
+
+
 @pytest.mark.parametrize(
     "extra_arguments",
     [
@@ -60,6 +82,7 @@ def test_batch_command_accepts_explicit_scenario_and_repetition_range() -> None:
             "--scenario-id",
             "redis-unavailable-v1",
         ],
+        ["--dataset-version", "2", "--scenario-id", "redis-unavailable-v1"],
     ],
 )
 def test_batch_command_rejects_unsafe_plan(extra_arguments: list[str]) -> None:

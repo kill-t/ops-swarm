@@ -13,14 +13,22 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 
 
-def test_rollback_recommendation_requires_human_approval() -> None:
+@pytest.mark.parametrize(
+    "recommendation",
+    [
+        "rollback_release",
+        "rollback_configuration",
+        "restore_dependency",
+    ],
+)
+def test_mitigation_recommendation_requires_human_approval(recommendation: str) -> None:
     with pytest.raises(ValidationError, match="必须标记为需要人工审批"):
         InvestigationConclusion(
             root_cause="release_500_regression",
             confidence=0.9,
             summary="新版本可能导致回归。",
             evidence_ids=("change-order-release-rc1",),
-            recommendation="rollback_release",
+            recommendation=recommendation,
             requires_human_approval=False,
         )
 

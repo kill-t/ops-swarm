@@ -6,7 +6,10 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
+from opsswarm.evaluation import (
+    MVP_INVESTIGATION_DATASET_V1,
+    MVP_INVESTIGATION_DATASET_V2,
+)
 from opsswarm.evaluation.attempts import (
     EvaluationAttemptBudget,
     EvaluationAttemptStatus,
@@ -119,9 +122,7 @@ class _SuccessfulBatchRunner(RealModelSmokeRunner):
                 summary="批量编排离线成功结论。",
                 evidence_ids=tuple(sorted(scenario.required_evidence_ids)),
                 recommendation=scenario.expected_recommendation,
-                requires_human_approval=(
-                    scenario.expected_recommendation.value == "rollback_release"
-                ),
+                requires_human_approval=(scenario.expected_recommendation.requires_human_approval),
             ),
             returned_evidence_ids=tuple(item.evidence_id for item in scenario.evidence),
             tool_call_count=3,
@@ -234,17 +235,17 @@ async def test_batch_runner_persists_complete_matrix_and_replays_without_duplica
         max_batch_cost_usd=Decimal("0.10"),
         utc_clock=lambda: STARTED_AT,
     )
-    scenario_ids = tuple(item.scenario_id for item in MVP_INVESTIGATION_DATASET_V1.scenarios)
+    scenario_ids = tuple(item.scenario_id for item in MVP_INVESTIGATION_DATASET_V2.scenarios)
 
     first = await batch_runner.run(
-        MVP_INVESTIGATION_DATASET_V1,
+        MVP_INVESTIGATION_DATASET_V2,
         experiment_key="real-model-batch-exp01",
         repetition_indexes=(1,),
         scenario_ids=scenario_ids,
         idempotency_prefix="real-model-batch-exp01",
     )
     replay = await batch_runner.run(
-        MVP_INVESTIGATION_DATASET_V1,
+        MVP_INVESTIGATION_DATASET_V2,
         experiment_key="real-model-batch-exp01",
         repetition_indexes=(1,),
         scenario_ids=scenario_ids,

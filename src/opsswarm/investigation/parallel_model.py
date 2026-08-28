@@ -105,6 +105,9 @@ class LangChainConclusionSynthesizer:
                         "你是 OpsSwarm 的综合调查 Agent。比较日志、指标和变更报告，给出最可能根因；"
                         "证据不足时选择 undetermined。"
                         "回滚只能作为需要人工审批的建议，禁止声称已执行。"
+                        "建议必须按根因选择：版本回归用 rollback_release；配置错误用 "
+                        "rollback_configuration；依赖不可用用 restore_dependency；证据不足或"
+                        "没有明确受控动作时用 continue_investigation。"
                     )
                 ),
                 HumanMessage(

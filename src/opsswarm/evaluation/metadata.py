@@ -7,9 +7,13 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from opsswarm.evaluation.models import StrictEvaluationModel
+from opsswarm.investigation.prompt_versions import (
+    MULTI_AGENT_PROMPT_VERSION,
+    SINGLE_AGENT_PROMPT_VERSION,
+)
 
-FIXTURE_SINGLE_AGENT_PROMPT_VERSION = "single-agent-v1"
-FIXTURE_MULTI_AGENT_PROMPT_VERSION = "multi-agent-parallel-v1"
+FIXTURE_SINGLE_AGENT_PROMPT_VERSION = SINGLE_AGENT_PROMPT_VERSION
+FIXTURE_MULTI_AGENT_PROMPT_VERSION = MULTI_AGENT_PROMPT_VERSION
 
 
 class EvaluationKind(StrEnum):

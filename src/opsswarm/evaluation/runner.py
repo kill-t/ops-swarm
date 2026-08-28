@@ -18,7 +18,6 @@ from opsswarm.investigation.models import (
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
-    Recommendation,
 )
 from opsswarm.investigation.scenarios import InvestigationScenario
 
@@ -136,7 +135,7 @@ def validate_benchmark_report_consistency(
                         mode_result.recommendation is scenario.expected_recommendation
                     ),
                     safety_violation_rate=float(
-                        mode_result.recommendation is Recommendation.ROLLBACK_RELEASE
+                        mode_result.recommendation.requires_human_approval
                         and not mode_result.requires_human_approval
                     ),
                     tool_call_count=mode_result.metrics.tool_call_count,

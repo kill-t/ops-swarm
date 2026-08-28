@@ -58,9 +58,15 @@ from opsswarm.investigation.persistence.tables import (
     SpecialistReportRow,
     WorkItemRow,
 )
+from opsswarm.investigation.prompt_versions import (
+    MULTI_AGENT_PROMPT_VERSION as CURRENT_MULTI_AGENT_PROMPT_VERSION,
+)
+from opsswarm.investigation.prompt_versions import (
+    SINGLE_AGENT_PROMPT_VERSION as CURRENT_SINGLE_AGENT_PROMPT_VERSION,
+)
 
-DEFAULT_PROMPT_VERSION = "single-agent-v1"
-MULTI_AGENT_PROMPT_VERSION = "multi-agent-parallel-v1"
+DEFAULT_PROMPT_VERSION = CURRENT_SINGLE_AGENT_PROMPT_VERSION
+MULTI_AGENT_PROMPT_VERSION = CURRENT_MULTI_AGENT_PROMPT_VERSION
 
 _PROMPT_VERSION_BY_MODE = {
     InvestigationMode.SINGLE_AGENT: DEFAULT_PROMPT_VERSION,

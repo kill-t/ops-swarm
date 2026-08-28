@@ -49,7 +49,15 @@ class Recommendation(StrEnum):
     """调查阶段只能建议动作，不能直接执行。"""
 
     ROLLBACK_RELEASE = "rollback_release"
+    ROLLBACK_CONFIGURATION = "rollback_configuration"
+    RESTORE_DEPENDENCY = "restore_dependency"
     CONTINUE_INVESTIGATION = "continue_investigation"
+
+    @property
+    def requires_human_approval(self) -> bool:
+        """所有会改变被管系统状态的建议都必须经过人工审批。"""
+
+        return self is not Recommendation.CONTINUE_INVESTIGATION
 
 
 class InvestigationMode(StrEnum):
@@ -168,11 +176,8 @@ class InvestigationConclusion(StrictModel):
     def enforce_approval_boundary(self) -> Self:
         """回滚只能作为待审批建议，不能伪装成已授权操作。"""
 
-        if (
-            self.recommendation is Recommendation.ROLLBACK_RELEASE
-            and not self.requires_human_approval
-        ):
-            raise ValueError("回滚版本建议必须标记为需要人工审批")
+        if self.recommendation.requires_human_approval and not self.requires_human_approval:
+            raise ValueError("处置建议必须标记为需要人工审批")
         return self
 
 

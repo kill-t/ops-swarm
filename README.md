@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付二十七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配，以及真实模型三场景批量对照。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付二十八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照，以及处置建议契约与评测集 v2。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -56,6 +56,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [评测实验身份、重复运行与遥测](docs/architecture/25-evaluation-experiments-and-telemetry.md)
 - [真实模型单场景冒烟与尝试生命周期](docs/architecture/26-real-model-smoke-attempts.md)
 - [真实模型批量评测与聚合报告](docs/architecture/27-real-model-batch-evaluation.md)
+- [处置建议契约与评测集 v2](docs/architecture/28-recommendation-contract-v2.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -166,11 +167,12 @@ uv run python -m opsswarm.evaluation.real_main `
 uv run python -m opsswarm.evaluation.real_batch_main `
   --experiment-key real-model-three-scenario-exp01 `
   --idempotency-prefix real-model-three-scenario-exp01 `
+  --dataset-version 2 `
   --repetition-start 1 `
   --repetitions 1
 ```
 
-批量报告从已持久化尝试派生，不创建第二份可变业务事实；相同命令重放会复用原序号和终态，不再次调用模型。
+批量命令默认仍选择历史 v1，避免旧命令静默改变实验含义；新实验必须显式传入 `--dataset-version 2`。批量报告从已持久化尝试派生，不创建第二份可变业务事实；相同命令重放会复用原序号和终态，不再次调用模型。
 
 ## 持久调查 Worker
 

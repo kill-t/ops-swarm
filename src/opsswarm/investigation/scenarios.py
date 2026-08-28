@@ -264,3 +264,21 @@ REDIS_UNAVAILABLE_SCENARIO = InvestigationScenario(
         }
     ),
 )
+
+
+# v1 场景保持不可变；v2 只升级建议标签和场景身份，证据与根因真值不变。
+RELEASE_500_SCENARIO_V2 = RELEASE_500_SCENARIO.model_copy(
+    update={"scenario_id": "release-500-baseline-v2"}
+)
+DATABASE_POOL_SCENARIO_V2 = DATABASE_POOL_SCENARIO.model_copy(
+    update={
+        "scenario_id": "database-pool-misconfiguration-v2",
+        "expected_recommendation": Recommendation.ROLLBACK_CONFIGURATION,
+    }
+)
+REDIS_UNAVAILABLE_SCENARIO_V2 = REDIS_UNAVAILABLE_SCENARIO.model_copy(
+    update={
+        "scenario_id": "redis-unavailable-v2",
+        "expected_recommendation": Recommendation.RESTORE_DEPENDENCY,
+    }
+)

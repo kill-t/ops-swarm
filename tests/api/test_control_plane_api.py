@@ -517,7 +517,7 @@ async def test_start_multi_agent_investigation_persists_graph_thread(
     assert started.status_code == 200
     investigation = started.json()["investigation"]
     assert investigation["mode"] == "multi_agent"
-    assert investigation["prompt_version"] == "multi-agent-parallel-v1"
+    assert investigation["prompt_version"] == "multi-agent-parallel-v2"
     assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
 
 
