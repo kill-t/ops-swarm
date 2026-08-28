@@ -65,6 +65,7 @@ class RealModelEvaluationSettings(BaseSettings):
     input_cost_per_million_usd: Decimal = Field(default=Decimal("-1"), ge=0)
     output_cost_per_million_usd: Decimal = Field(default=Decimal("-1"), ge=0)
     max_cost_usd: Decimal = Decimal("0.10")
+    max_batch_cost_usd: Decimal = Decimal("0.10")
     timeout_seconds: int = 120
     max_model_requests: int = 6
     max_tool_calls: int = 3
@@ -230,6 +231,7 @@ class RealModelSmokeRunner:
         experiment_key: str,
         repetition_index: int,
         idempotency_prefix: str,
+        single_agent_first: bool | None = None,
     ) -> tuple[StoredEvaluationAttempt, StoredEvaluationAttempt]:
         """运行两种模式；任一失败仍保留另一模式的独立审计结果。"""
 
@@ -244,9 +246,12 @@ class RealModelSmokeRunner:
             llm_settings=self._llm_settings,
             budget=self._budget,
         )
+        should_start_with_single = (
+            repetition_index % 2 == 1 if single_agent_first is None else single_agent_first
+        )
         modes = (
             (InvestigationMode.SINGLE_AGENT, InvestigationMode.MULTI_AGENT)
-            if repetition_index % 2 == 1
+            if should_start_with_single
             else (InvestigationMode.MULTI_AGENT, InvestigationMode.SINGLE_AGENT)
         )
         attempts: dict[InvestigationMode, StoredEvaluationAttempt] = {}

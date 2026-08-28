@@ -17,6 +17,7 @@ from opsswarm.evaluation.errors import EvaluationAttemptAlreadyFinished
 from opsswarm.evaluation.metadata import EvaluationFailureCounts, EvaluationModeTelemetry
 from opsswarm.evaluation.models import InvestigationModeBenchmark
 from opsswarm.evaluation.persistence import EvaluationStore
+from opsswarm.evaluation.real_batch import RealModelBatchRunner
 from opsswarm.evaluation.real_model import (
     ModelUsageBudgetHandler,
     RealModelSmokeRunner,
@@ -99,6 +100,32 @@ class _SuccessfulSmokeRunner(RealModelSmokeRunner):
     ) -> InvestigationRunResult:
         del mode, scenario, usage
         return _run_result()
+
+
+class _SuccessfulBatchRunner(RealModelSmokeRunner):
+    """为批量编排返回与当前冻结场景一致的离线成功结果。"""
+
+    async def _investigate(
+        self,
+        mode: InvestigationMode,
+        scenario: InvestigationScenario,
+        usage: ModelUsageBudgetHandler,
+    ) -> InvestigationRunResult:
+        del mode, usage
+        return InvestigationRunResult(
+            conclusion=InvestigationConclusion(
+                root_cause=scenario.expected_root_cause,
+                confidence=0.95,
+                summary="批量编排离线成功结论。",
+                evidence_ids=tuple(sorted(scenario.required_evidence_ids)),
+                recommendation=scenario.expected_recommendation,
+                requires_human_approval=(
+                    scenario.expected_recommendation.value == "rollback_release"
+                ),
+            ),
+            returned_evidence_ids=tuple(item.evidence_id for item in scenario.evidence),
+            tool_call_count=3,
+        )
 
 
 async def test_attempt_is_persisted_before_success_and_replay_is_idempotent(
@@ -187,3 +214,51 @@ async def test_smoke_runner_creates_two_modes_and_replay_does_not_rerun(
     )
     assert tuple(item.id for item in replay) == tuple(item.id for item in first)
     assert len((await store.list_attempts()).items) == 2
+
+
+async def test_batch_runner_persists_complete_matrix_and_replays_without_duplicates(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store = EvaluationStore(database_session_factory)
+    budget = _budget()
+    smoke_runner = _SuccessfulBatchRunner(
+        store=store,
+        llm_settings=LlmSettings(api_key="test-only-key", model="test-model"),
+        budget=budget,
+        utc_clock=lambda: STARTED_AT,
+        monotonic_clock=lambda: 0,
+    )
+    batch_runner = RealModelBatchRunner(
+        smoke_runner=smoke_runner,
+        budget=budget,
+        max_batch_cost_usd=Decimal("0.10"),
+        utc_clock=lambda: STARTED_AT,
+    )
+    scenario_ids = tuple(item.scenario_id for item in MVP_INVESTIGATION_DATASET_V1.scenarios)
+
+    first = await batch_runner.run(
+        MVP_INVESTIGATION_DATASET_V1,
+        experiment_key="real-model-batch-exp01",
+        repetition_indexes=(1,),
+        scenario_ids=scenario_ids,
+        idempotency_prefix="real-model-batch-exp01",
+    )
+    replay = await batch_runner.run(
+        MVP_INVESTIGATION_DATASET_V1,
+        experiment_key="real-model-batch-exp01",
+        repetition_indexes=(1,),
+        scenario_ids=scenario_ids,
+        idempotency_prefix="real-model-batch-exp01",
+    )
+
+    assert len(first.attempts) == 6
+    assert first.single_agent.success_rate == 1
+    assert first.multi_agent.success_rate == 1
+    assert tuple(item.sequence for item in replay.attempts) == tuple(
+        item.sequence for item in first.attempts
+    )
+    database_pair = tuple(item for item in first.attempts if item.scenario_id == scenario_ids[1])
+    single = next(item for item in database_pair if item.mode is InvestigationMode.SINGLE_AGENT)
+    multi = next(item for item in database_pair if item.mode is InvestigationMode.MULTI_AGENT)
+    assert multi.sequence < single.sequence
+    assert len((await store.list_attempts()).items) == 6
