@@ -49,8 +49,14 @@ async def run_once() -> bool:
         async with open_checkpoint_saver(checkpoint_settings.checkpoint_database_url) as saver:
             multi_agent_investigator = LangGraphParallelInvestigator(
                 data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
-                analyst=LangChainSpecialistAnalyst(model),
-                synthesizer=LangChainConclusionSynthesizer(model),
+                analyst=LangChainSpecialistAnalyst(
+                    model,
+                    structured_output_method=llm_settings.structured_output_method,
+                ),
+                synthesizer=LangChainConclusionSynthesizer(
+                    model,
+                    structured_output_method=llm_settings.structured_output_method,
+                ),
                 checkpointer=saver,
             )
             processor = ModeRoutingProcessor(

@@ -181,6 +181,8 @@ def real_model_experiment_spec(
     payload = {
         "base_url": llm_settings.base_url,
         "temperature": llm_settings.temperature,
+        "thinking_mode": llm_settings.thinking_mode,
+        "structured_output_method": llm_settings.structured_output_method,
         "budget": budget.model_dump(mode="json"),
     }
     parameters_hash = hashlib.sha256(
@@ -338,8 +340,14 @@ class RealModelSmokeRunner:
             ).investigate(scenario.request)
         investigator = LangGraphParallelInvestigator(
             data_source=data_source,
-            analyst=LangChainSpecialistAnalyst(model),
-            synthesizer=LangChainConclusionSynthesizer(model),
+            analyst=LangChainSpecialistAnalyst(
+                model,
+                structured_output_method=self._llm_settings.structured_output_method,
+            ),
+            synthesizer=LangChainConclusionSynthesizer(
+                model,
+                structured_output_method=self._llm_settings.structured_output_method,
+            ),
         )
         return (await investigator.investigate(scenario.request)).result
 

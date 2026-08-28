@@ -101,6 +101,29 @@ def test_model_parameter_hash_does_not_contain_api_key() -> None:
     assert len(spec.model_parameters_hash) == 64
 
 
+def test_model_parameter_hash_changes_with_provider_compatibility() -> None:
+    default_settings = LlmSettings(api_key="secret-value", model="test-model")
+    compatible_settings = LlmSettings(
+        api_key="secret-value",
+        model="test-model",
+        thinking_mode="disabled",
+        structured_output_method="json_mode",
+    )
+
+    default_spec = real_model_experiment_spec(
+        "real-model-exp01",
+        llm_settings=default_settings,
+        budget=_budget(),
+    )
+    compatible_spec = real_model_experiment_spec(
+        "real-model-exp01",
+        llm_settings=compatible_settings,
+        budget=_budget(),
+    )
+
+    assert default_spec.model_parameters_hash != compatible_spec.model_parameters_hash
+
+
 def test_failure_message_is_redacted_and_bounded() -> None:
     message = redact_failure_message(
         "供应商拒绝 secret-value " + "x" * 600,

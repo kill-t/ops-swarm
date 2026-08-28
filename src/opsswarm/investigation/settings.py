@@ -1,12 +1,15 @@
 """可选真实模型的环境配置与工厂。"""
 
 from collections.abc import Sequence
-from typing import Any, Self, cast
+from typing import Any, Literal, Self, cast
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ThinkingMode = Literal["provider_default", "enabled", "disabled"]
+StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
 
 
 class LlmSettings(BaseSettings):
@@ -18,6 +21,8 @@ class LlmSettings(BaseSettings):
     model: str = ""
     base_url: str | None = None
     temperature: float = Field(default=0, ge=0, le=2)
+    thinking_mode: ThinkingMode = "provider_default"
+    structured_output_method: StructuredOutputMethod = "json_schema"
 
     @model_validator(mode="after")
     def ensure_real_model_is_explicit(self) -> Self:
@@ -45,6 +50,7 @@ def create_openai_compatible_model(settings: LlmSettings) -> ChatOpenAI:
         model=settings.model,
         base_url=settings.base_url,
         temperature=settings.temperature,
+        extra_body=_thinking_extra_body(settings),
     )
 
 
@@ -65,4 +71,13 @@ def create_bounded_openai_compatible_model(
         max_completion_tokens=max_output_tokens,
         timeout=timeout_seconds,
         callbacks=list(callbacks),
+        extra_body=_thinking_extra_body(settings),
     )
+
+
+def _thinking_extra_body(settings: LlmSettings) -> dict[str, object] | None:
+    """只在显式配置时向兼容接口传递思考模式，避免猜测供应商能力。"""
+
+    if settings.thinking_mode == "provider_default":
+        return None
+    return {"thinking": {"type": settings.thinking_mode}}

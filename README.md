@@ -145,7 +145,7 @@ uv run python -m opsswarm.evaluation.main `
 uv run pytest tests/unit/investigation -q
 ```
 
-真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 和 `LLM_TEMPERATURE` 显式配置。自动化测试不读取这些变量，也不会产生模型费用。
+真实 OpenAI 兼容模型仅通过 `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL`、`LLM_TEMPERATURE`、`LLM_THINKING_MODE` 和 `LLM_STRUCTURED_OUTPUT_METHOD` 显式配置。自动化测试不读取这些变量，也不会产生模型费用。供应商只支持普通 JSON Output 时选择 `json_mode`；此时适配器会把 Pydantic JSON Schema 放入提示并继续在本地严格校验。
 
 第一次真实模型测试使用独立的单场景冒烟命令。先把 `.env.example` 复制为 `.env`，填写模型配置、该模型每百万输入/输出 Token 的实际美元价格以及费用上限，再执行：
 
@@ -169,6 +169,8 @@ uv run python -m opsswarm.evaluation.real_main `
 $env:LLM_API_KEY = "本地模型服务密钥"
 $env:LLM_MODEL = "模型名称"
 $env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
+$env:LLM_THINKING_MODE = "provider_default、enabled 或 disabled"
+$env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_calling"
 uv run python -m opsswarm.worker.main
 ```
 

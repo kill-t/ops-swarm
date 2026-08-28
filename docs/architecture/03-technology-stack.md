@@ -54,9 +54,11 @@ OpsSwarm 的单 Agent 基线需要模型选择工具、读取工具结果并返�
 | `LLM_MODEL` | 默认模型名称 |
 | `LLM_BASE_URL` | 可选的 OpenAI 兼容地址 |
 | `LLM_TEMPERATURE` | 默认使用确定性较高的低温度配置 |
+| `LLM_THINKING_MODE` | 是否沿用供应商默认思考模式，或显式启用/关闭 |
+| `LLM_STRUCTURED_OUTPUT_METHOD` | 在 `json_schema`、`json_mode` 和 `function_calling` 中显式选择供应商支持的结构化输出方式 |
 | `LANGSMITH_TRACING` | 是否启用可选 LangSmith 追踪 |
 
-配置对象只能出现在基础设施层，领域层通过模型网关协议调用，不读取环境变量。
+配置对象只能出现在基础设施层，领域层通过模型网关协议调用，不读取环境变量。不同供应商的思考与结构化输出能力不能靠模型名称隐式猜测；两项兼容配置会进入真实评测的模型参数哈希，防止不同请求语义被合并为同一实验。
 
 ## 4. 测试与质量
 

@@ -96,7 +96,17 @@ class RecordingSynthesizer:
 class StructuredModelStub:
     """返回固定结构化对象的模型适配桩。"""
 
-    def with_structured_output(self, schema: type) -> RunnableLambda:
+    def __init__(self) -> None:
+        self.methods: list[str] = []
+        self.inputs: list[object] = []
+
+    def with_structured_output(
+        self,
+        schema: type,
+        *,
+        method: str = "json_schema",
+    ) -> RunnableLambda:
+        self.methods.append(method)
         if schema is SpecialistReport:
             response = {
                 "specialist": "log",
@@ -115,7 +125,11 @@ class StructuredModelStub:
                 "requires_human_approval": True,
                 "safety_notes": ["需要审批"],
             }
-        return RunnableLambda(lambda _: response)
+        return RunnableLambda(lambda input_value: self._record(input_value, response))
+
+    def _record(self, input_value: object, response: dict[str, object]) -> dict[str, object]:
+        self.inputs.append(input_value)
+        return response
 
 
 class MissingLogDataSource(FrozenScenarioDataSource):
@@ -279,3 +293,26 @@ async def test_langchain_model_adapters_validate_structured_responses() -> None:
     assert report.evidence_ids == ("log-order-runtime-error",)
     assert conclusion.root_cause.value == "release_500_regression"
     assert conclusion.requires_human_approval is True
+
+
+@pytest.mark.asyncio
+async def test_langchain_model_adapters_support_json_mode() -> None:
+    model = StructuredModelStub()
+    analyst = LangChainSpecialistAnalyst(model, structured_output_method="json_mode")
+    synthesizer = LangChainConclusionSynthesizer(model, structured_output_method="json_mode")
+    log_evidence = [item for item in RELEASE_500_SCENARIO.evidence if item.kind is EvidenceKind.LOG]
+
+    report = await analyst.analyze(
+        specialist=EvidenceKind.LOG,
+        request=RELEASE_500_SCENARIO.request,
+        evidence=log_evidence,
+    )
+    await synthesizer.synthesize(
+        request=RELEASE_500_SCENARIO.request,
+        evidence=log_evidence,
+        reports=[report],
+    )
+
+    assert model.methods == ["json_mode", "json_mode"]
+    assert len(model.inputs) == 2
+    assert all("output_json_schema" in str(item) for item in model.inputs)

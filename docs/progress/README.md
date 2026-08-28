@@ -66,3 +66,4 @@
 - [23 - 只读评测面板](23-evaluation-dashboard-ui.md)
 - [24 - 评测实验身份、重复运行与遥测](24-evaluation-experiments-and-telemetry.md)
 - [25 - 真实模型单场景冒烟与尝试生命周期](25-real-model-smoke-attempts.md)
+- [26 - DeepSeek 真实模型兼容与首次对照](26-deepseek-real-model-smoke.md)

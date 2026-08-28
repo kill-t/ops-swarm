@@ -65,9 +65,13 @@ stateDiagram-v2
 `.env` 已由 Git 忽略，真实命令从项目根目录读取：
 
 - `LLM_API_KEY`、`LLM_MODEL`、可选 `LLM_BASE_URL` 与 `LLM_TEMPERATURE`。
+- `LLM_THINKING_MODE` 显式选择供应商默认、开启或关闭思考模式。
+- `LLM_STRUCTURED_OUTPUT_METHOD` 显式选择 `json_schema`、`json_mode` 或 `function_calling`。
 - `EVALUATION_INPUT_COST_PER_MILLION_USD`、`EVALUATION_OUTPUT_COST_PER_MILLION_USD` 与费用上限。
 
-数据库只保存提供方、模型名和配置 SHA-256。哈希包含模型行为参数、兼容接口地址和预算快照，但不包含 API Key。失败消息在持久化前替换已知密钥并限制为 500 字符；命令参数不接受密钥，因此 Key 不会进入 Shell 历史中的命令行。
+数据库只保存提供方、模型名和配置 SHA-256。哈希包含模型行为参数、思考模式、结构化输出方式、兼容接口地址和预算快照，但不包含 API Key。失败消息在持久化前替换已知密钥并限制为 500 字符；命令参数不接受密钥，因此 Key 不会进入 Shell 历史中的命令行。
+
+DeepSeek V4 默认启用思考模式，而思考模式不接受 LangChain 单 Agent 结构化结论使用的强制 `tool_choice`；其 Chat Completions JSON Output 使用 `json_object`，不是 OpenAI 的 `json_schema`。因此本地 DeepSeek 配置显式使用 `disabled + json_mode`。`json_mode` 下，适配器把 Pydantic JSON Schema 放入提示词，模型返回 JSON 对象后仍由 Pydantic 严格校验；这只是模型接口适配，不削弱 Evidence ID 白名单和确定性安全校验。具体能力以 [DeepSeek 思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/) 与 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode/) 文档为准。
 
 ## 6. 遥测与失败分类
 
