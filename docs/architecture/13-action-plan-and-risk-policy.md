@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-本切片把已经通过质疑的根因转换为可持久化、可审查、可绑定审批版本的结构化处置计划。它解决“建议回滚”仍是一段文本、风险可以被模型随意填写、并发请求可能生成重复计划的问题。
+本切片把已经通过质疑的根因转换为可持久化、可审查、可绑定审批版本的结构化处置计划。后续能力映射又要求根因与调查建议成对匹配，解决“建议回滚”仍是一段文本、风险可以被模型随意填写、并发请求可能生成重复计划的问题。
 
 当前只为 `release_500_regression` 提供 `rollback_release` 确定性模板。生成时计划为 `draft`；后续审批请求切片可以把它迁移到 `awaiting_approval`，但计划仍不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限。
 
@@ -14,8 +14,10 @@ Evidence Board 和主假设是已经确认的调查事实；计划是基于事�
 flowchart LR
     investigation[成功调查] --> board[(Evidence Board)]
     board --> hypothesis{主假设状态}
-    hypothesis -->|supported| planner[确定性计划模板]
+    hypothesis -->|supported| capability{根因与建议匹配}
     hypothesis -->|其他| blocked[409 阻止生成]
+    capability -->|模板可用| planner[确定性计划模板]
+    capability -->|不支持或无需动作| blocked
     planner --> policy[风险策略重算]
     policy --> plan[(draft 计划版本)]
     plan --> approval[绑定精确版本的审批请求]
@@ -78,10 +80,11 @@ erDiagram
 
 | 方法与路径 | 语义 |
 | --- | --- |
+| `GET /api/v1/investigations/{run_id}/action-plans/capability` | 只读返回建议、模板支持状态和当前是否可创建 |
 | `POST /api/v1/investigations/{run_id}/action-plans` | 从已提交事实幂等生成计划草案 |
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回当前最高版本 |
 
-调查未成功、假设缺失、假设未通过、根因无模板或回滚目标不明确都返回结构化失败。计划生成成功后 Incident 仍是 `investigating`，版本也不变化。
+调查未成功、假设缺失、假设未通过、根因与建议不匹配、模板未实现或回滚目标不明确都返回结构化失败。计划生成成功后 Incident 仍是 `investigating`，版本也不变化。完整能力契约见 [确定性处置计划能力映射](29-action-plan-capability-mapping.md)。
 
 ## 7. 当前限制与下一步
 

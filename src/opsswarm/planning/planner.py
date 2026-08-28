@@ -7,12 +7,14 @@ from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
     HypothesisStatus,
+    Recommendation,
     RootCause,
 )
+from opsswarm.planning.capabilities import assess_action_plan_capability
 from opsswarm.planning.errors import (
+    ActionPlanCapabilityUnavailable,
     HypothesisNotSupported,
     UnsafeRollbackTarget,
-    UnsupportedPlanningRootCause,
 )
 from opsswarm.planning.models import (
     ActionPlan,
@@ -31,6 +33,7 @@ def propose_action_plan(
     *,
     service_name: str,
     root_cause: RootCause,
+    recommendation: Recommendation,
     hypothesis_status: HypothesisStatus,
     evidence_items: Sequence[EvidenceObservation],
     version: int = 1,
@@ -39,8 +42,15 @@ def propose_action_plan(
 
     if hypothesis_status is not HypothesisStatus.SUPPORTED:
         raise HypothesisNotSupported(hypothesis_status)
-    if root_cause is not RootCause.RELEASE_500_REGRESSION:
-        raise UnsupportedPlanningRootCause(root_cause)
+    capability = assess_action_plan_capability(
+        root_cause=root_cause,
+        recommendation=recommendation,
+        hypothesis_status=hypothesis_status,
+    )
+    if not capability.can_create:
+        raise ActionPlanCapabilityUnavailable(capability)
+    if capability.action_type is not ActionType.ROLLBACK_RELEASE:
+        raise RuntimeError("可用计划能力没有对应的确定性模板实现")
 
     change = _latest_safe_deployment(evidence_items)
     parameters = RollbackReleaseParameters(

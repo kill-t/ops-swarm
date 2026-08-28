@@ -31,7 +31,11 @@ from opsswarm.investigation.models import (
     SpecialistReport,
 )
 from opsswarm.investigation.persistence import InvestigationStore
-from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import (
+    DATABASE_POOL_SCENARIO_V2,
+    RELEASE_500_SCENARIO,
+    InvestigationScenario,
+)
 from opsswarm.investigation.settings import LlmSettings
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import VerificationObservation
@@ -110,6 +114,55 @@ def alert_payload(
         "payload": {"status_code": 500},
         "occurred_at": "2026-01-01T07:59:59+00:00",
     }
+
+
+async def complete_scenario_investigation(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: str,
+    scenario: InvestigationScenario,
+    worker_id: str,
+) -> None:
+    """通过正式 Worker 仓储提交一个冻结场景的调查事实。"""
+
+    store = InvestigationStore(session_factory)
+    claimed = await store.claim_next(
+        worker_id=worker_id,
+        occurred_at=BASE_TIME + timedelta(seconds=1),
+        lease_duration=timedelta(seconds=30),
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    assert claimed.run.id == UUID(run_id)
+    result = InvestigationRunResult(
+        conclusion=InvestigationConclusion(
+            root_cause=scenario.expected_root_cause,
+            confidence=0.96,
+            summary="冻结场景证据支持当前根因。",
+            evidence_ids=tuple(sorted(scenario.required_evidence_ids)),
+            recommendation=scenario.expected_recommendation,
+            requires_human_approval=scenario.expected_recommendation.requires_human_approval,
+        ),
+        returned_evidence_ids=tuple(item.evidence_id for item in scenario.evidence),
+        tool_call_count=3,
+    )
+    artifacts = InvestigationArtifacts(result=result, evidence_items=scenario.evidence)
+    await store.complete(
+        claimed.work_item.id,
+        lease_token=claimed.work_item.lease_token,
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        result=result,
+        evidence_items=scenario.evidence,
+        specialist_reports=(),
+        hypothesis_challenge=challenge_investigation(artifacts),
+        metrics=InvestigationMetrics(
+            top1_accuracy=1,
+            evidence_recall=1,
+            recommendation_accuracy=1,
+            safety_violation_rate=0,
+            tool_call_count=3,
+        ),
+        model_name="fake-capability-model",
+    )
 
 
 @pytest_asyncio.fixture
@@ -488,6 +541,13 @@ async def test_start_investigation_and_status_filter(
     assert plan_response.status_code == 409
     assert plan_response.json()["error_code"] == "action_plan_not_ready"
 
+    capability_response = await control_client.get(
+        f"/api/v1/investigations/{started_body['investigation']['id']}/action-plans/capability"
+    )
+    assert capability_response.status_code == 409
+    assert capability_response.json()["error_code"] == "action_plan_not_ready"
+    assert capability_response.json()["details"]["reason_code"] == "investigation_not_succeeded"
+
     missing_plan = await control_client.get(
         f"/api/v1/investigations/{started_body['investigation']['id']}/action-plans/current"
     )
@@ -612,6 +672,24 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert body["hypotheses"][0]["rule_version"] == "hypothesis-challenge-v1"
     assert {item["relation"] for item in body["hypotheses"][0]["evidence_assessments"]} == {
         "supports"
+    }
+
+    capability = await control_client.get(
+        f"/api/v1/investigations/{run_id}/action-plans/capability"
+    )
+    assert capability.status_code == 200
+    assert capability.json() == {
+        "investigation_run_id": run_id,
+        "root_cause": "release_500_regression",
+        "recommendation": "rollback_release",
+        "hypothesis_status": "supported",
+        "status": "available",
+        "action_type": "rollback_release",
+        "template_version": "rollback-release-v1",
+        "requires_human_approval": True,
+        "can_create": True,
+        "reason_code": "template_available",
+        "explanation": "版本回滚模板可用，且主根因假设已经通过确定性质疑。",
     }
 
     created_plan = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
@@ -847,6 +925,60 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert workroom_body["verification_run"]["sample_count"] == 1
 
 
+async def test_unsupported_recommendation_exposes_capability_without_creating_plan(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload(
+            "alert-database-capability",
+            fingerprint="order-service:database-pool-capability",
+        ),
+    )
+    started = await control_client.post(
+        f"/api/v1/incidents/{created.json()['incident']['id']}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "验证配置回滚能力边界",
+        },
+    )
+    run_id = started.json()["investigation"]["id"]
+    await complete_scenario_investigation(
+        database_session_factory,
+        run_id=run_id,
+        scenario=DATABASE_POOL_SCENARIO_V2,
+        worker_id="api-database-capability-worker",
+    )
+
+    capability = await control_client.get(
+        f"/api/v1/investigations/{run_id}/action-plans/capability"
+    )
+
+    assert capability.status_code == 200
+    capability_body = capability.json()
+    assert capability_body["root_cause"] == "database_pool_misconfiguration"
+    assert capability_body["recommendation"] == "rollback_configuration"
+    assert capability_body["hypothesis_status"] == "supported"
+    assert capability_body["status"] == "unsupported"
+    assert capability_body["action_type"] is None
+    assert capability_body["template_version"] is None
+    assert capability_body["requires_human_approval"] is True
+    assert capability_body["can_create"] is False
+    assert capability_body["reason_code"] == "template_not_implemented"
+
+    rejected = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
+
+    assert rejected.status_code == 409
+    assert rejected.json()["error_code"] == "action_plan_capability_unavailable"
+    assert rejected.json()["details"] == {
+        key: value for key, value in capability_body.items() if key != "investigation_run_id"
+    }
+    missing = await control_client.get(f"/api/v1/investigations/{run_id}/action-plans/current")
+    assert missing.status_code == 404
+
+
 async def test_start_investigation_rejects_unknown_mode(
     control_client: httpx2.AsyncClient,
 ) -> None:
@@ -886,6 +1018,7 @@ async def test_missing_investigation_run_returns_structured_404(
 
     for method, path in (
         ("POST", f"/api/v1/investigations/{run_id}/action-plans"),
+        ("GET", f"/api/v1/investigations/{run_id}/action-plans/capability"),
         ("GET", f"/api/v1/investigations/{run_id}/action-plans/current"),
     ):
         plan_response = await control_client.request(method, path)

@@ -143,6 +143,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `action_plan_not_found` | `404` | 调查存在但尚无计划 |
 | `action_plan_not_ready` | `409` | 调查未成功或缺少已提交假设 |
 | `hypothesis_not_supported` | `409` | 根因假设尚未通过质疑 |
+| `action_plan_capability_unavailable` | `409` | 调查建议没有当前可创建的确定性计划模板 |
 | `unsupported_planning_root_cause` | `409` | 当前没有该根因的白名单计划模板 |
 | `unsafe_rollback_target` | `409` | 证据无法确定安全回滚目标 |
 | `approval_action_plan_not_found` | `404` | 要提交审批的计划不存在 |

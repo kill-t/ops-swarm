@@ -1,6 +1,11 @@
 """OpsSwarm 结构化处置计划与确定性风险策略。"""
 
+from opsswarm.planning.capabilities import (
+    ROLLBACK_RELEASE_TEMPLATE_VERSION,
+    assess_action_plan_capability,
+)
 from opsswarm.planning.errors import (
+    ActionPlanCapabilityUnavailable,
     ActionPlanNotFound,
     ActionPlanNotReady,
     HypothesisNotSupported,
@@ -11,6 +16,9 @@ from opsswarm.planning.errors import (
 from opsswarm.planning.integrity import action_plan_content_hash
 from opsswarm.planning.models import (
     ActionPlan,
+    ActionPlanCapability,
+    ActionPlanCapabilityReason,
+    ActionPlanCapabilityStatus,
     ActionPlanStatus,
     ActionStep,
     ActionType,
@@ -26,7 +34,12 @@ from opsswarm.planning.policy import RISK_POLICY_VERSION, validate_action_plan_p
 
 __all__ = [
     "RISK_POLICY_VERSION",
+    "ROLLBACK_RELEASE_TEMPLATE_VERSION",
     "ActionPlan",
+    "ActionPlanCapability",
+    "ActionPlanCapabilityReason",
+    "ActionPlanCapabilityStatus",
+    "ActionPlanCapabilityUnavailable",
     "ActionPlanNotFound",
     "ActionPlanNotReady",
     "ActionPlanStatus",
@@ -45,4 +58,5 @@ __all__ = [
     "propose_action_plan",
     "validate_action_plan_policy",
     "action_plan_content_hash",
+    "assess_action_plan_capability",
 ]

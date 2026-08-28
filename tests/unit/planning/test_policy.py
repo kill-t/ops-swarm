@@ -2,7 +2,7 @@
 
 import pytest
 
-from opsswarm.investigation.models import HypothesisStatus, RootCause
+from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.planning import RiskLevel, propose_action_plan, validate_action_plan_policy
 
@@ -11,6 +11,7 @@ def test_policy_rejects_tampered_low_risk_and_approval_bypass() -> None:
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     )
@@ -36,6 +37,7 @@ def test_policy_rejects_unknown_version() -> None:
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     ).model_copy(update={"risk_policy_version": "action-risk-v0"})

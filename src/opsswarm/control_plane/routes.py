@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from opsswarm.approval import ApprovalDecision, ApprovalRequestExpired, ApprovalRequestStatus
 from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.control_plane.schemas import (
+    ActionPlanCapabilityResponse,
     ActionPlanResponse,
     AlertIngestionResponse,
     AlertRequest,
@@ -413,6 +414,24 @@ def create_router(clock: Clock) -> APIRouter:
         if not creation.created:
             response.status_code = status.HTTP_200_OK
         return CreateActionPlanResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/action-plans/capability",
+        response_model=ActionPlanCapabilityResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["处置计划"],
+    )
+    async def get_action_plan_capability(
+        run_id: UUID,
+        store: ActionPlanStoreDependency,
+    ) -> ActionPlanCapabilityResponse:
+        """只读返回模板支持状态，不创建计划、审批或执行记录。"""
+
+        capability = await store.get_capability(run_id)
+        return ActionPlanCapabilityResponse.from_capability(run_id, capability)
 
     @router.get(
         "/api/v1/investigations/{run_id}/action-plans/current",

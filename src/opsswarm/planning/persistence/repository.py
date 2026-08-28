@@ -14,6 +14,7 @@ from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
     HypothesisStatus,
+    InvestigationRunResult,
     InvestigationRunStatus,
     RootCause,
 )
@@ -22,9 +23,11 @@ from opsswarm.investigation.persistence.tables import (
     HypothesisRow,
     InvestigationRunRow,
 )
+from opsswarm.planning.capabilities import assess_action_plan_capability
 from opsswarm.planning.errors import ActionPlanNotFound, ActionPlanNotReady
 from opsswarm.planning.models import (
     ActionPlan,
+    ActionPlanCapability,
     ActionPlanStatus,
     ActionStep,
     ActionType,
@@ -59,25 +62,7 @@ class ActionPlanStore:
 
         created_at = _normalize_time(created_at)
         async with self._session_factory() as session, session.begin():
-            run_row = await session.get(InvestigationRunRow, run_id)
-            if run_row is None:
-                raise InvestigationRunNotFound(run_id)
-            if run_row.status != InvestigationRunStatus.SUCCEEDED.value:
-                raise ActionPlanNotReady(
-                    run_id,
-                    reason_code="investigation_not_succeeded",
-                    message="调查尚未成功完成，不能生成处置计划",
-                )
-
-            hypothesis_row = await session.scalar(
-                select(HypothesisRow).where(HypothesisRow.investigation_run_id == run_id)
-            )
-            if hypothesis_row is None:
-                raise ActionPlanNotReady(
-                    run_id,
-                    reason_code="hypothesis_missing",
-                    message="调查没有已提交的主根因假设",
-                )
+            run_row, hypothesis_row = await _load_planning_source(session, run_id)
 
             # 注入时钟可能短暂回拨，计划时间不能早于其来源假设。
             created_at = max(created_at, hypothesis_row.created_at)
@@ -88,6 +73,8 @@ class ActionPlanStore:
                     plan=await load_action_plan_in_session(session, existing),
                     created=False,
                 )
+
+            capability = _capability_from_rows(run_row, hypothesis_row)
 
             incident_row = await session.get(IncidentRow, run_row.incident_id)
             if incident_row is None:
@@ -102,6 +89,7 @@ class ActionPlanStore:
             plan = propose_action_plan(
                 service_name=incident_row.service_name,
                 root_cause=RootCause(hypothesis_row.root_cause),
+                recommendation=capability.recommendation,
                 hypothesis_status=HypothesisStatus(hypothesis_row.status),
                 evidence_items=tuple(_evidence_observation(row) for row in evidence_rows),
                 version=1,
@@ -164,6 +152,13 @@ class ActionPlanStore:
                 created=True,
             )
 
+    async def get_capability(self, run_id: UUID) -> ActionPlanCapability:
+        """读取调查事实并返回可重算的计划模板能力，不创建任何记录。"""
+
+        async with self._session_factory() as session:
+            run_row, hypothesis_row = await _load_planning_source(session, run_id)
+            return _capability_from_rows(run_row, hypothesis_row)
+
     async def get_current(self, run_id: UUID) -> StoredActionPlan:
         """读取调查当前最高版本计划。"""
 
@@ -186,6 +181,56 @@ async def _current_plan_row(session: AsyncSession, run_id: UUID) -> ActionPlanRo
             .order_by(ActionPlanRow.version.desc())
             .limit(1)
         ),
+    )
+
+
+async def _load_planning_source(
+    session: AsyncSession,
+    run_id: UUID,
+) -> tuple[InvestigationRunRow, HypothesisRow]:
+    run_row = await session.get(InvestigationRunRow, run_id)
+    if run_row is None:
+        raise InvestigationRunNotFound(run_id)
+    if run_row.status != InvestigationRunStatus.SUCCEEDED.value:
+        raise ActionPlanNotReady(
+            run_id,
+            reason_code="investigation_not_succeeded",
+            message="调查尚未成功完成，不能判断处置计划能力",
+        )
+    hypothesis_row = await session.scalar(
+        select(HypothesisRow).where(HypothesisRow.investigation_run_id == run_id)
+    )
+    if hypothesis_row is None:
+        raise ActionPlanNotReady(
+            run_id,
+            reason_code="hypothesis_missing",
+            message="调查没有已提交的主根因假设",
+        )
+    return run_row, hypothesis_row
+
+
+def _capability_from_rows(
+    run_row: InvestigationRunRow,
+    hypothesis_row: HypothesisRow,
+) -> ActionPlanCapability:
+    if run_row.result is None:
+        raise ActionPlanNotReady(
+            run_row.id,
+            reason_code="investigation_result_missing",
+            message="成功调查缺少结构化结果，不能判断处置计划能力",
+        )
+    result = InvestigationRunResult.model_validate(run_row.result)
+    root_cause = RootCause(hypothesis_row.root_cause)
+    if result.conclusion.root_cause is not root_cause:
+        raise ActionPlanNotReady(
+            run_row.id,
+            reason_code="conclusion_hypothesis_mismatch",
+            message="调查结论与主根因假设不一致，不能判断处置计划能力",
+        )
+    return assess_action_plan_capability(
+        root_cause=root_cause,
+        recommendation=result.conclusion.recommendation,
+        hypothesis_status=HypothesisStatus(hypothesis_row.status),
     )
 
 

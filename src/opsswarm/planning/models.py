@@ -5,6 +5,8 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
+
 
 class StrictPlanningModel(BaseModel):
     """处置计划值对象共同约束。"""
@@ -16,6 +18,63 @@ class ActionType(StrEnum):
     """确定性执行器未来可以识别的动作白名单。"""
 
     ROLLBACK_RELEASE = "rollback_release"
+
+
+class ActionPlanCapabilityStatus(StrEnum):
+    """确定性计划模板对调查建议的支持状态。"""
+
+    AVAILABLE = "available"
+    UNSUPPORTED = "unsupported"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class ActionPlanCapabilityReason(StrEnum):
+    """能力判断的稳定机器可读原因。"""
+
+    TEMPLATE_AVAILABLE = "template_available"
+    HYPOTHESIS_NOT_SUPPORTED = "hypothesis_not_supported"
+    TEMPLATE_NOT_IMPLEMENTED = "template_not_implemented"
+    RECOMMENDATION_ROOT_CAUSE_MISMATCH = "recommendation_root_cause_mismatch"
+    CONTINUE_INVESTIGATION = "continue_investigation"
+
+
+class ActionPlanCapability(StrictPlanningModel):
+    """一次调查结论是否能进入确定性计划模板。"""
+
+    root_cause: RootCause
+    recommendation: Recommendation
+    hypothesis_status: HypothesisStatus
+    status: ActionPlanCapabilityStatus
+    action_type: ActionType | None = None
+    template_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+    )
+    requires_human_approval: bool
+    can_create: bool
+    reason_code: ActionPlanCapabilityReason
+    explanation: str = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def enforce_capability_shape(self) -> Self:
+        """模板、审批与可创建状态必须能够由输入事实重算。"""
+
+        if self.status is ActionPlanCapabilityStatus.AVAILABLE:
+            if self.action_type is None or self.template_version is None:
+                raise ValueError("available 能力必须携带动作类型和模板版本")
+        elif self.action_type is not None or self.template_version is not None:
+            raise ValueError("不可用能力不能携带动作类型或模板版本")
+        if self.requires_human_approval != self.recommendation.requires_human_approval:
+            raise ValueError("能力审批要求必须与调查建议一致")
+        expected_can_create = (
+            self.status is ActionPlanCapabilityStatus.AVAILABLE
+            and self.hypothesis_status is HypothesisStatus.SUPPORTED
+        )
+        if self.can_create != expected_can_create:
+            raise ValueError("计划可创建状态必须同时满足模板可用和假设已支持")
+        return self
 
 
 class TargetType(StrEnum):

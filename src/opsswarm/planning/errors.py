@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from opsswarm.investigation.models import HypothesisStatus, RootCause
+from opsswarm.planning.models import ActionPlanCapability
 
 
 class PlanningError(Exception):
@@ -40,6 +41,14 @@ class UnsupportedPlanningRootCause(PlanningError):
     def __init__(self, root_cause: RootCause) -> None:
         self.root_cause = root_cause
         super().__init__(f"当前计划模板不支持根因：{root_cause.value}")
+
+
+class ActionPlanCapabilityUnavailable(PlanningError):
+    """调查建议没有当前可创建的确定性计划模板。"""
+
+    def __init__(self, capability: ActionPlanCapability) -> None:
+        self.capability = capability
+        super().__init__(capability.explanation)
 
 
 class UnsafeRollbackTarget(PlanningError):

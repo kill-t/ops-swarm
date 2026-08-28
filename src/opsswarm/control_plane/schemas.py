@@ -58,6 +58,7 @@ from opsswarm.investigation.models import (
     InvestigationMode,
     InvestigationRunResult,
     InvestigationRunStatus,
+    Recommendation,
     RootCause,
     WorkItemError,
     WorkItemStatus,
@@ -72,6 +73,9 @@ from opsswarm.investigation.persistence import (
     StoredSpecialistReport,
 )
 from opsswarm.planning.models import (
+    ActionPlanCapability,
+    ActionPlanCapabilityReason,
+    ActionPlanCapabilityStatus,
     ActionPlanStatus,
     ActionType,
     RiskLevel,
@@ -287,6 +291,33 @@ class EvidenceBoardResponse(StrictApiModel):
             hypotheses=tuple(
                 HypothesisResponse.from_stored(hypothesis) for hypothesis in stored.hypotheses
             ),
+        )
+
+
+class ActionPlanCapabilityResponse(StrictApiModel):
+    """调查建议进入确定性处置计划模板的当前能力。"""
+
+    investigation_run_id: UUID
+    root_cause: RootCause
+    recommendation: Recommendation
+    hypothesis_status: HypothesisStatus
+    status: ActionPlanCapabilityStatus
+    action_type: ActionType | None
+    template_version: str | None
+    requires_human_approval: bool
+    can_create: bool
+    reason_code: ActionPlanCapabilityReason
+    explanation: str
+
+    @classmethod
+    def from_capability(
+        cls,
+        run_id: UUID,
+        capability: ActionPlanCapability,
+    ) -> Self:
+        return cls(
+            investigation_run_id=run_id,
+            **capability.model_dump(),
         )
 
 

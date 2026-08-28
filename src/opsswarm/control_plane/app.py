@@ -57,6 +57,7 @@ from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.planning import (
+    ActionPlanCapabilityUnavailable,
     ActionPlanNotFound,
     ActionPlanNotReady,
     HypothesisNotSupported,
@@ -348,6 +349,12 @@ def create_app(
                 error_code="unsupported_planning_root_cause",
                 message=str(error),
                 details={"root_cause": error.root_cause.value},
+            )
+        elif isinstance(error, ActionPlanCapabilityUnavailable):
+            response = ApiErrorResponse(
+                error_code="action_plan_capability_unavailable",
+                message=str(error),
+                details=error.capability.model_dump(mode="json"),
             )
         elif isinstance(error, UnsafeRollbackTarget):
             response = ApiErrorResponse(

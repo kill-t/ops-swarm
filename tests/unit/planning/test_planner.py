@@ -2,15 +2,20 @@
 
 import pytest
 
-from opsswarm.investigation.models import EvidenceKind, HypothesisStatus, RootCause
+from opsswarm.investigation.models import (
+    EvidenceKind,
+    HypothesisStatus,
+    Recommendation,
+    RootCause,
+)
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.planning import (
+    ActionPlanCapabilityUnavailable,
     ActionPlanStatus,
     ActionType,
     HypothesisNotSupported,
     RiskLevel,
     UnsafeRollbackTarget,
-    UnsupportedPlanningRootCause,
     propose_action_plan,
 )
 
@@ -19,6 +24,7 @@ def test_supported_release_hypothesis_generates_high_risk_rollback_draft() -> No
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     )
@@ -41,6 +47,7 @@ def test_contested_hypothesis_cannot_generate_plan() -> None:
         propose_action_plan(
             service_name="order-service",
             root_cause=RootCause.RELEASE_500_REGRESSION,
+            recommendation=Recommendation.ROLLBACK_RELEASE,
             hypothesis_status=HypothesisStatus.CONTESTED,
             evidence_items=RELEASE_500_SCENARIO.evidence,
         )
@@ -55,6 +62,7 @@ def test_release_plan_requires_explicit_previous_and_current_versions() -> None:
         propose_action_plan(
             service_name="order-service",
             root_cause=RootCause.RELEASE_500_REGRESSION,
+            recommendation=Recommendation.ROLLBACK_RELEASE,
             hypothesis_status=HypothesisStatus.SUPPORTED,
             evidence_items=evidence,
         )
@@ -73,16 +81,18 @@ def test_release_plan_requires_explicit_previous_and_current_versions() -> None:
         propose_action_plan(
             service_name="order-service",
             root_cause=RootCause.RELEASE_500_REGRESSION,
+            recommendation=Recommendation.ROLLBACK_RELEASE,
             hypothesis_status=HypothesisStatus.SUPPORTED,
             evidence_items=unsafe_evidence,
         )
 
 
-def test_root_cause_without_whitelisted_template_is_rejected() -> None:
-    with pytest.raises(UnsupportedPlanningRootCause, match="redis_unavailable"):
+def test_recommendation_without_whitelisted_template_is_rejected() -> None:
+    with pytest.raises(ActionPlanCapabilityUnavailable, match="尚无经过验证"):
         propose_action_plan(
             service_name="order-service",
             root_cause=RootCause.REDIS_UNAVAILABLE,
+            recommendation=Recommendation.RESTORE_DEPENDENCY,
             hypothesis_status=HypothesisStatus.SUPPORTED,
             evidence_items=RELEASE_500_SCENARIO.evidence,
         )

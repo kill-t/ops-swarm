@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from opsswarm.investigation.models import HypothesisStatus, RootCause
+from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.planning import ActionPlanStatus, action_plan_content_hash, propose_action_plan
 
@@ -15,6 +15,7 @@ def test_action_plan_hash_is_stable_and_ignores_lifecycle_status() -> None:
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     )
@@ -41,6 +42,7 @@ def test_action_plan_hash_changes_when_approved_parameters_change() -> None:
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     )

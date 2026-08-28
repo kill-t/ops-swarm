@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
-from opsswarm.investigation.models import HypothesisStatus, RootCause
+from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.planning import propose_action_plan
 from opsswarm.planning.persistence import StoredActionStep
@@ -27,6 +27,7 @@ def rollback_step() -> StoredActionStep:
     plan = propose_action_plan(
         service_name="order-service",
         root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
         hypothesis_status=HypothesisStatus.SUPPORTED,
         evidence_items=RELEASE_500_SCENARIO.evidence,
     )
