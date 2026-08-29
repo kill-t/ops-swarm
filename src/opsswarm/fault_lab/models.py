@@ -36,6 +36,7 @@ class DatabasePoolUpdate(StrictModel):
     """数据库连接池容量更新请求。"""
 
     value: int = Field(strict=True, ge=1, le=1000)
+    expected_value: int | None = Field(default=None, strict=True, ge=1, le=1000)
 
 
 class DatabasePoolStatus(StrictModel):
@@ -72,3 +73,12 @@ class DatabasePoolErrorResponse(StrictModel):
     message: str
     order_id: str
     database_pool_size: int
+
+
+class DatabasePoolConflictResponse(StrictModel):
+    """比较并设置发现配置已经漂移。"""
+
+    error_code: Literal["database_pool_value_conflict"] = "database_pool_value_conflict"
+    message: str
+    expected_value: int
+    actual_value: int

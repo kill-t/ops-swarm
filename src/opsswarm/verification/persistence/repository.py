@@ -38,7 +38,8 @@ from opsswarm.verification.persistence.records import (
 )
 from opsswarm.verification.persistence.tables import VerificationRunRow, VerificationSampleRow
 
-VERIFIER_NAME = "local_order_http_5xx_ratio_v1"
+RELEASE_VERIFIER_NAME = "local_order_http_5xx_ratio_v1"
+CONFIGURATION_VERIFIER_NAME = "local_database_pool_saturation_v1"
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
 
 
@@ -118,7 +119,7 @@ class VerificationStore:
                 incident_id=execution_row.incident_id,
                 action_step_id=execution_row.action_step_id,
                 status=VerificationStatus.RUNNING.value,
-                verifier_name=VERIFIER_NAME,
+                verifier_name=_verifier_name(step),
                 incident_version_before=incident_row.version,
                 signal=step.verification.signal,
                 operator=step.verification.operator.value,
@@ -356,7 +357,7 @@ async def _complete_run(
         action=(IncidentAction.CONFIRM_RECOVERY if passed else IncidentAction.FAIL_VERIFICATION),
         expected_version=run_row.incident_version_before,
         occurred_at=observed_at,
-        actor=IncidentActor(actor_type=ActorType.EXECUTOR, actor_id=VERIFIER_NAME),
+        actor=IncidentActor(actor_type=ActorType.EXECUTOR, actor_id=run_row.verifier_name),
         reason="恢复验证通过" if passed else "恢复验证失败，继续调查",
     )
     run_row.status = status.value
@@ -394,22 +395,36 @@ async def _load_verified_step(
 
 
 def _validate_supported_rule(execution_id: UUID, step: StoredActionStep) -> None:
-    if (
-        step.action_type is not ActionType.ROLLBACK_RELEASE
-        or step.target_type is not TargetType.SERVICE
-        or step.target_name != "order-service"
-    ):
+    if step.target_type is not TargetType.SERVICE or step.target_name != "order-service":
         raise OperationExecutionNotVerifiable(
             execution_id,
             reason_code="verification_target_not_whitelisted",
-            message="当前恢复验证只支持 order-service 回滚步骤",
+            message="当前恢复验证只支持 order-service 白名单回滚步骤",
         )
     rule = step.verification
-    if rule.signal != "http_5xx_ratio" or rule.operator is not VerificationOperator.LESS_THAN:
+    expected_signal = {
+        ActionType.ROLLBACK_RELEASE: "http_5xx_ratio",
+        ActionType.ROLLBACK_CONFIGURATION: "database_pool_saturation",
+    }.get(step.action_type)
+    if expected_signal is None:
+        raise OperationExecutionNotVerifiable(
+            execution_id,
+            reason_code="verification_action_not_whitelisted",
+            message="当前恢复验证不支持该动作类型",
+        )
+    if rule.signal != expected_signal or rule.operator is not VerificationOperator.LESS_THAN:
         raise UnsupportedVerificationRule(
             signal=rule.signal,
             operator=rule.operator.value,
         )
+
+
+def _verifier_name(step: StoredActionStep) -> str:
+    if step.action_type is ActionType.ROLLBACK_RELEASE:
+        return RELEASE_VERIFIER_NAME
+    if step.action_type is ActionType.ROLLBACK_CONFIGURATION:
+        return CONFIGURATION_VERIFIER_NAME
+    raise ValueError(f"没有动作 {step.action_type.value} 的恢复验证器")
 
 
 async def _load_stored_run(

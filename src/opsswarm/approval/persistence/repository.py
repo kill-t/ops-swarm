@@ -42,6 +42,13 @@ from opsswarm.planning.persistence import load_action_plan_in_session
 from opsswarm.planning.persistence.records import StoredActionPlan
 from opsswarm.planning.persistence.tables import ActionPlanRow
 
+_EXECUTABLE_ACTION_TYPES = frozenset(
+    {
+        ActionType.ROLLBACK_RELEASE,
+        ActionType.ROLLBACK_CONFIGURATION,
+    }
+)
+
 
 class ApprovalRequestStore:
     """创建、读取并原子记录审批决定。"""
@@ -90,7 +97,7 @@ class ApprovalRequestStore:
                 (
                     step
                     for step in stored_plan.steps
-                    if step.action_type is not ActionType.ROLLBACK_RELEASE
+                    if step.action_type not in _EXECUTABLE_ACTION_TYPES
                 ),
                 None,
             )

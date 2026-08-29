@@ -109,10 +109,10 @@ Content-Type: application/json
 | Action Plan | 故障实验室 |
 | --- | --- |
 | `key=database_pool_size` | 固定管理路径，不接受客户端路径 |
-| `target_value` | 未来执行器请求体中的唯一容量值 |
+| `target_value` | 执行器请求体中的唯一目标容量值 |
 | `database_pool_saturation < 0.8` | 状态接口提供同名只读观测值 |
 
-映射存在不代表已经授权。当前审批仓储继续返回 `409 action_plan_not_executable`，执行仓储和旧适配器继续拒绝配置动作。下一切片必须先实现固定配置执行适配器、内容与当前值复核、幂等测试及恢复探针，再决定是否开放审批。
+映射存在不代表自动授权。后续已完成固定 CAS 执行适配器、当前值复核、幂等测试和恢复探针；配置动作仍必须经过人工审批，详细设计见 [配置回滚受控执行与恢复验证](32-configuration-execution-and-verification.md)。
 
 ## 7. 测试策略
 

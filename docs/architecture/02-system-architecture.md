@@ -101,7 +101,7 @@ sequenceDiagram
 5. 执行成功与 Incident 进入验证、执行失败与 Incident 返回调查分别在同一事务落库；成功操作随后创建唯一验证运行，按冻结规则逐次采样。
 6. 健康样本数和观察窗口同时满足时，验证运行、最后样本、Incident `resolved` 与时间线原子提交；阈值或探针失败则原子返回调查。
 
-审批不是一句聊天文本，而是绑定计划版本、动作集合、操作者和有效期的业务对象。决定是不可变终态；批准只进入 `mitigating`，执行接口还必须经过独立授权校验。当前唯一适配器只会把 `order-service` 的 `release_500` 设置为关闭，不接受任意命令、URL 或客户端参数。
+审批不是一句聊天文本，而是绑定计划版本、动作集合、操作者和有效期的业务对象。决定是不可变终态；批准只进入 `mitigating`，执行接口还必须经过独立授权校验。当前适配器只会关闭 `order-service` 的 `release_500`，或用比较并设置把 `database_pool_size` 从计划当前值改为目标值；不接受任意命令、URL、配置键或客户端动作参数。
 
 ### 4.4 逐次恢复验证
 
@@ -189,7 +189,7 @@ LangGraph 1.x 用于：
 | `GET /api/v1/operation-executions/{execution_id}` | 查询持久执行状态、有限结果或失败摘要 |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 为成功操作创建唯一的持久恢复验证 |
 | `GET /api/v1/verification-runs/{run_id}` | 查询冻结规则、验证进度、终态和样本 |
-| `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次固定只读订单探针 |
+| `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次与动作绑定的固定只读探针 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 从 PostgreSQL 补发并持续推送 SSE 时间线 |
 | `GET /api/v1/evaluation-runs` | 按全局运行序号倒序分页查询评测聚合历史 |

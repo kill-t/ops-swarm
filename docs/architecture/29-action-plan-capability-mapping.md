@@ -83,7 +83,7 @@ GET /api/v1/investigations/{run_id}/action-plans/capability
 }
 ```
 
-配置回滚现返回 `200 available` 并允许创建 `draft` 计划；参数只从已提交的数据库连接池配置变更证据提取。由于执行器尚未开放，提交审批时返回 `409 action_plan_not_executable`，Incident 保持 `investigating`，也不会产生审批或执行记录。完整模板设计见 [数据库连接池配置回滚计划模板](30-database-pool-configuration-plan.md)。
+配置回滚返回 `200 available` 并允许创建 `draft` 计划；参数只从已提交的数据库连接池配置变更证据提取。后续已完成审批、CAS 执行和饱和度验证链路，完整设计见 [数据库连接池配置回滚计划模板](30-database-pool-configuration-plan.md) 与 [配置回滚受控执行与恢复验证](32-configuration-execution-and-verification.md)。
 
 调查未成功、缺少结构化结果或主假设时，能力本身还无法判断，因此返回既有的 `409 action_plan_not_ready`。调查不存在仍返回 `404 investigation_run_not_found`。
 
@@ -107,9 +107,9 @@ GET /api/v1/investigations/{run_id}/action-plans/capability
 
 ## 7. 当前限制与下一步
 
-- 配置回滚已可生成草案但不能审批或执行，依赖恢复仍没有计划模板。
+- 配置回滚已具备完整本地审批、执行和验证链路，依赖恢复仍没有计划模板。
 - 能力尚未加入 Incident 作战室聚合投影，当前通过独立 API 查询。
-- 数据库连接池故障实验室已经提供确定性配置状态和订单超时行为，但执行适配器与恢复探针仍未接入；在两者完成前审批层继续阻止动作进入授权状态。
+- 数据库连接池故障实验室、执行适配器和恢复探针已经接入；下一步应补充自动采样调度或推进 Redis 依赖恢复模板。
 
 ## 8. 面试表达
 

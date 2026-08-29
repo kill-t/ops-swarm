@@ -7,8 +7,13 @@ from fastapi import FastAPI, Path
 from fastapi.responses import JSONResponse
 
 from opsswarm import __version__
-from opsswarm.fault_lab.controller import FaultController, FaultSnapshot
+from opsswarm.fault_lab.controller import (
+    DatabasePoolValueConflict,
+    FaultController,
+    FaultSnapshot,
+)
 from opsswarm.fault_lab.models import (
+    DatabasePoolConflictResponse,
     DatabasePoolErrorResponse,
     DatabasePoolStatus,
     DatabasePoolUpdate,
@@ -128,14 +133,35 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
     @app.put(
         "/__admin/configuration/database-pool",
         response_model=DatabasePoolStatus,
+        responses={
+            409: {
+                "model": DatabasePoolConflictResponse,
+                "description": "连接池配置当前值与调用方预期不一致",
+            }
+        },
         tags=["配置控制"],
     )
     def update_database_pool_configuration(
         request: DatabasePoolUpdate,
-    ) -> DatabasePoolStatus:
-        snapshot = fault_controller.set_database_pool_size(value=request.value)
+    ) -> DatabasePoolStatus | JSONResponse:
+        try:
+            snapshot = fault_controller.set_database_pool_size(
+                value=request.value,
+                expected_value=request.expected_value,
+            )
+        except DatabasePoolValueConflict as error:
+            conflict = DatabasePoolConflictResponse(
+                message=str(error),
+                expected_value=error.expected_value,
+                actual_value=error.actual_value,
+            )
+            return JSONResponse(
+                status_code=409,
+                content=conflict.model_dump(mode="json"),
+            )
         logger.info(
-            "更新演练配置 key=database_pool_size value=%s saturation=%s",
+            "更新演练配置 key=database_pool_size expected_value=%s value=%s saturation=%s",
+            request.expected_value,
             request.value,
             snapshot.database_pool_saturation,
         )

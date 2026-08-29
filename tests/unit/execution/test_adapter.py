@@ -14,7 +14,7 @@ from opsswarm.execution import (
     OperationResult,
 )
 from opsswarm.fault_lab.app import create_app
-from opsswarm.fault_lab.controller import FaultController
+from opsswarm.fault_lab.controller import FaultController, FaultSnapshot
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
 from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
 from opsswarm.planning import propose_action_plan
@@ -86,15 +86,81 @@ async def test_adapter_rejects_target_outside_whitelist_before_http() -> None:
 
 
 @pytest.mark.asyncio
-async def test_adapter_rejects_configuration_rollback_before_http() -> None:
+async def test_adapter_rolls_back_database_pool_with_compare_and_set() -> None:
+    controller = FaultController(database_pool_size=5)
     adapter = FaultLabOperationAdapter(
-        ExecutionSettings(fault_lab_base_url="http://127.0.0.1:18001")
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
     )
 
-    with pytest.raises(OperationAdapterFailure, match="只允许") as captured:
+    result = await adapter.execute(configuration_rollback_step())
+
+    assert controller.snapshot().database_pool_size == 50
+    assert result.output == {
+        "configuration_key": "database_pool_size",
+        "planned_current_value": 5,
+        "target_value": 50,
+        "current_value": 50,
+        "database_pool_saturation": 0.2,
+        "already_at_target": False,
+        "service": "order-service",
+    }
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_configuration_drift_without_overwriting() -> None:
+    controller = FaultController(database_pool_size=7)
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    with pytest.raises(OperationAdapterFailure, match="当前值为 7") as captured:
         await adapter.execute(configuration_rollback_step())
 
-    assert captured.value.error_code == "operation_not_whitelisted"
+    assert captured.value.error_code == "configuration_current_value_mismatch"
+    assert controller.snapshot().database_pool_size == 7
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_configuration_changed_between_read_and_write() -> None:
+    class DriftingController(FaultController):
+        def __init__(self) -> None:
+            super().__init__(database_pool_size=5)
+            self._drifted = False
+
+        def snapshot(self) -> FaultSnapshot:
+            snapshot = super().snapshot()
+            if not self._drifted:
+                self._drifted = True
+                self.set_database_pool_size(value=7)
+            return snapshot
+
+    controller = DriftingController()
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    with pytest.raises(OperationAdapterFailure, match="当前值为 7") as captured:
+        await adapter.execute(configuration_rollback_step())
+
+    assert captured.value.error_code == "configuration_current_value_mismatch"
+    assert controller.snapshot().database_pool_size == 7
+
+
+@pytest.mark.asyncio
+async def test_adapter_treats_configuration_already_at_target_as_safe_replay() -> None:
+    controller = FaultController(database_pool_size=50)
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    result = await adapter.execute(configuration_rollback_step())
+
+    assert result.output["already_at_target"] is True
+    assert result.output["current_value"] == 50
 
 
 @pytest.mark.parametrize(

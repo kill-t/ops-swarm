@@ -63,11 +63,23 @@ class FaultController:
             self._release_500_enabled = enabled
             return self._snapshot_unlocked()
 
-    def set_database_pool_size(self, *, value: int) -> FaultSnapshot:
-        """只允许设置白名单范围内的整数连接池容量。"""
+    def set_database_pool_size(
+        self,
+        *,
+        value: int,
+        expected_value: int | None = None,
+    ) -> FaultSnapshot:
+        """以可选的当前值条件原子设置白名单整数容量。"""
 
         _validate_database_pool_size(value)
+        if expected_value is not None:
+            _validate_database_pool_size(expected_value)
         with self._lock:
+            if expected_value is not None and self._database_pool_size != expected_value:
+                raise DatabasePoolValueConflict(
+                    expected_value=expected_value,
+                    actual_value=self._database_pool_size,
+                )
             self._database_pool_size = value
             return self._snapshot_unlocked()
 
@@ -87,3 +99,12 @@ def _validate_database_pool_size(value: int) -> None:
         or not MIN_DATABASE_POOL_SIZE <= value <= MAX_DATABASE_POOL_SIZE
     ):
         raise ValueError("database_pool_size 必须是 1～1000 的整数")
+
+
+class DatabasePoolValueConflict(Exception):
+    """连接池配置不再等于调用方预期的当前值。"""
+
+    def __init__(self, *, expected_value: int, actual_value: int) -> None:
+        self.expected_value = expected_value
+        self.actual_value = actual_value
+        super().__init__(f"database_pool_size 已从预期值 {expected_value} 变为 {actual_value}")

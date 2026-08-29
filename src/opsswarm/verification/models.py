@@ -6,6 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from opsswarm.planning import VerificationOperator, VerificationRule
 
+SUPPORTED_VERIFICATION_SIGNALS = frozenset(
+    {
+        "http_5xx_ratio",
+        "database_pool_saturation",
+    }
+)
+
 
 class VerificationStatus(StrEnum):
     """一次恢复验证运行的持久生命周期。"""
@@ -49,10 +56,10 @@ def sample_status(
     rule: VerificationRule,
     observation: VerificationObservation,
 ) -> VerificationSampleStatus:
-    """只支持计划中已冻结的 5xx 比例小于阈值规则。"""
+    """只判断白名单信号中已冻结的小于阈值规则。"""
 
-    if rule.signal != "http_5xx_ratio":
-        raise ValueError("验证规则只支持 http_5xx_ratio")
+    if rule.signal not in SUPPORTED_VERIFICATION_SIGNALS:
+        raise ValueError("验证规则使用了不支持的信号")
     if rule.operator is not VerificationOperator.LESS_THAN:
         raise ValueError("验证规则只支持 less_than")
     if observation.signal != rule.signal:

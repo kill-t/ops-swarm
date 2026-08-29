@@ -33,7 +33,10 @@ class OperationExecutionRow(Base):
         ),
         CheckConstraint("attempt_count >= 1", name="ck_operation_executions_attempt_count"),
         CheckConstraint(
-            "executor_name IN ('local_fault_lab_release_500_v1')",
+            "executor_name IN ("
+            "'local_fault_lab_release_500_v1', "
+            "'local_fault_lab_database_pool_v1'"
+            ")",
             name="ck_operation_executions_executor",
         ),
         CheckConstraint(

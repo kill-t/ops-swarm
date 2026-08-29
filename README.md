@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十一个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板，以及数据库连接池确定性故障演练。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十二个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练，以及配置回滚受控执行与恢复验证。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -60,6 +60,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [确定性处置计划能力映射](docs/architecture/29-action-plan-capability-mapping.md)
 - [数据库连接池配置回滚计划模板](docs/architecture/30-database-pool-configuration-plan.md)
 - [数据库连接池确定性故障演练](docs/architecture/31-database-pool-fault-lab.md)
+- [配置回滚受控执行与恢复验证](docs/architecture/32-configuration-execution-and-verification.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -218,7 +219,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 `POST /api/v1/investigations/{run_id}/action-plans` 只消费已经成功提交的调查、`supported` 主假设、匹配的可用模板和规范化变更证据。当前确定性模板从变更证据提取当前版本和目标版本；相同假设并发重复请求只会生成一个版本。
 
-新计划使用 `action-risk-v2` 把版本回滚和配置回滚固定判为 `high` 且必须人工审批，读取时仍兼容历史 `action-risk-v1` 版本回滚计划。Pydantic 限制动作和参数形状，风险策略在写入及读取时重算，PostgreSQL 还禁止高风险计划把审批要求设为假。配置回滚目前只能保持 `draft`：审批层会因执行器尚未开放而返回 `action_plan_not_executable`。
+新计划使用 `action-risk-v2` 把版本回滚和配置回滚固定判为 `high` 且必须人工审批，读取时仍兼容历史 `action-risk-v1` 版本回滚计划。Pydantic 限制动作和参数形状，风险策略在写入及读取时重算，PostgreSQL 还禁止高风险计划把审批要求设为假。两个动作都必须经过精确版本审批，配置回滚还会在环境写入前复核计划中的当前值。
 
 ## 精确版本审批请求
 
@@ -230,7 +231,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 ## 确定性白名单执行
 
-`POST /api/v1/action-steps/{step_id}/executions` 不接受 Shell、URL 或动作参数，只接受幂等键和期望 Incident 版本。当前唯一适配器把已经批准的 `rollback_release` 映射为固定本地请求：关闭 `order-service` 的 `release_500` 故障开关。
+`POST /api/v1/action-steps/{step_id}/executions` 不接受 Shell、URL 或动作参数，只接受幂等键和期望 Incident 版本。适配器把 `rollback_release` 映射为关闭固定版本故障，把 `rollback_configuration + database_pool_size` 映射为固定配置端点的比较并设置；配置已经漂移时拒绝覆盖，已经位于目标值时按安全重放成功。
 
 执行记录先以 15 秒租约写入 PostgreSQL，再调用最长 3 秒的本地 HTTP 适配器，最后以有效租约提交成功或失败终态。同一幂等键重复请求不会重复执行；进程中断后只能用相同键在租约过期后接管。外部动作使用“设置为关闭”而非“切换”，因此物理重放仍保持相同效果。
 
@@ -238,9 +239,9 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 ## 逐次恢复验证
 
-`POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行，并冻结步骤中的 `http_5xx_ratio < 0.01`、60 秒观察窗口和 3 个成功样本要求。它不会让一个 HTTP 请求阻塞 60 秒。
+`POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行。版本回滚冻结 `http_5xx_ratio < 0.01`，配置回滚冻结 `database_pool_saturation < 0.8`；两者都要求 60 秒窗口内至少 3 个成功样本，不会让单个 HTTP 请求阻塞 60 秒。
 
-调用方使用 `POST /api/v1/verification-runs/{run_id}/samples` 触发一次固定只读订单探针，只能提交幂等键，不能提交观测数值。每个样本都保存信号、阈值、HTTP 状态和服务器 UTC 时间；同键重试不重复探测。任一 5xx 样本或探针错误会使验证失败并把 Incident 返回 `investigating`。只有成功样本数量与观察窗口都满足时，验证才通过并原子迁移到 `resolved`。
+调用方使用 `POST /api/v1/verification-runs/{run_id}/samples` 触发一次与动作绑定的固定只读探针，只能提交幂等键，不能提交观测数值。每个样本都保存信号、阈值、HTTP 状态和服务器 UTC 时间；同键重试不重复探测。任一失败样本或探针错误会使验证失败并把 Incident 返回 `investigating`。只有成功样本数量与观察窗口都满足时，验证才通过并原子迁移到 `resolved`。
 
 测试使用可注入服务器时钟推进 60 秒窗口，不降低业务规则，也不让测试真实等待。实际演练可在窗口内分三次触发采样；后续调度器可以自动触发相同接口和仓储语义。
 

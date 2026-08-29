@@ -117,6 +117,40 @@ def test_database_pool_update_rejects_invalid_values(
     assert response.status_code == 422
 
 
+def test_database_pool_compare_and_set_rejects_stale_current_value(
+    client: TestClient,
+) -> None:
+    client.put("/__admin/configuration/database-pool", json={"value": 7})
+
+    response = client.put(
+        "/__admin/configuration/database-pool",
+        json={"expected_value": 5, "value": 50},
+    )
+    current = client.get("/__admin/configuration/database-pool")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error_code": "database_pool_value_conflict",
+        "message": "database_pool_size 已从预期值 5 变为 7",
+        "expected_value": 5,
+        "actual_value": 7,
+    }
+    assert current.json()["value"] == 7
+
+
+@pytest.mark.parametrize("expected_value", [0, 1001, True, "5"])
+def test_database_pool_compare_and_set_rejects_invalid_expected_value(
+    client: TestClient,
+    expected_value: object,
+) -> None:
+    response = client.put(
+        "/__admin/configuration/database-pool",
+        json={"expected_value": expected_value, "value": 50},
+    )
+
+    assert response.status_code == 422
+
+
 def test_release_fault_has_stable_precedence_over_pool_fault(client: TestClient) -> None:
     client.put("/__admin/configuration/database-pool", json={"value": 5})
     client.put("/__admin/faults/release-500", json={"enabled": True})

@@ -4,7 +4,7 @@
 
 本切片让 `verifying` 成为可持久化、可恢复、可审计的业务过程。验证只消费成功操作及其步骤中已经冻结的规则，不允许模型或客户端在验证时降低阈值、减少样本数或伪造观测值。
 
-当前规则是 `http_5xx_ratio < 0.01`、观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；调用方逐次触发固定只读探针，运行进度和每个样本先写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
+版本回滚规则是 `http_5xx_ratio < 0.01`，配置回滚规则是 `database_pool_saturation < 0.8`；两者都要求观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；调用方逐次触发固定只读探针，运行进度和每个样本先写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
 
 ## 2. 为什么采用逐次采样
 
@@ -15,7 +15,7 @@ sequenceDiagram
     participant Caller as 调用方或后续调度器
     participant API as 控制面
     participant DB as PostgreSQL
-    participant Probe as 固定只读订单探针
+    participant Probe as 动作绑定的固定只读探针
 
     Caller->>API: 为成功 operation 创建 verification_run
     API->>DB: 校验 succeeded、verifying 和版本，冻结规则
@@ -33,11 +33,12 @@ sequenceDiagram
 
 ## 3. 服务端探针与判定
 
-`local_order_http_5xx_ratio_v1` 只访问本机或 Compose 服务名下的固定路径 `/orders/opsswarm-verification-probe`，不接受客户端 URL、订单 ID、信号值或 HTTP 状态。地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
+`local_order_http_5xx_ratio_v1` 只访问固定订单路径；`local_database_pool_saturation_v1` 只访问固定连接池状态路径。两者都只允许本机或 Compose 服务名，不接受客户端 URL、订单 ID、信号值或 HTTP 状态；地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
 
 - 合法 2xx 且响应符合 `OrderResponse`：样本值为 `0.0`。
 - 任意 5xx：样本值为 `1.0`。
 - 超时、网络失败、无效响应或其他状态：保存 `error` 样本。
+- 配置状态响应有效：直接读取 `database_pool_saturation`，由冻结的 `< 0.8` 判据评分。
 
 数值按计划冻结的 `less_than` 规则比较。任一 `failed` 或 `error` 样本立即终止运行并触发 `fail_verification`；健康样本达到 3 个后仍必须满足 `last_observed_at - first_success_at >= 60 秒`，才能触发 `confirm_recovery`。
 
@@ -62,7 +63,7 @@ sequenceDiagram
 ## 6. 当前限制与下一步
 
 - 采样由调用方显式触发，没有定时调度 Worker；运行可以长期停留在 `running`，但进度不会丢失。
-- 当前只支持一个订单 HTTP 探针，没有 Prometheus 区间查询或多信号组合。
+- 当前支持固定订单探针和连接池状态探针，没有 Prometheus 区间查询或多信号组合。
 - 单个请求代表一个 0 或 1 的 5xx 样本，不是生产流量的统计分位。
 - 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。
 - Incident 已能进入 `resolved`，但关闭、复发和 UI 仍未提供完整操作入口。

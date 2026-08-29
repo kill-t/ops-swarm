@@ -2,7 +2,7 @@
 
 import pytest
 
-from opsswarm.fault_lab.controller import FaultController
+from opsswarm.fault_lab.controller import DatabasePoolValueConflict, FaultController
 
 
 def test_release_500_is_disabled_by_default() -> None:
@@ -53,6 +53,25 @@ def test_full_pool_is_saturated_but_does_not_yet_have_waiters() -> None:
     assert snapshot.database_pool_saturated is True
     assert snapshot.database_pool_waiters == 0
     assert snapshot.database_pool_timeout_enabled is False
+
+
+def test_database_pool_compare_and_set_rejects_drift_without_overwriting() -> None:
+    controller = FaultController(database_pool_size=7)
+
+    with pytest.raises(DatabasePoolValueConflict) as captured:
+        controller.set_database_pool_size(value=50, expected_value=5)
+
+    assert captured.value.expected_value == 5
+    assert captured.value.actual_value == 7
+    assert controller.snapshot().database_pool_size == 7
+
+
+def test_database_pool_compare_and_set_updates_matching_value() -> None:
+    controller = FaultController(database_pool_size=5)
+
+    updated = controller.set_database_pool_size(value=50, expected_value=5)
+
+    assert updated.database_pool_size == 50
 
 
 @pytest.mark.parametrize("value", [0, 1001, True])

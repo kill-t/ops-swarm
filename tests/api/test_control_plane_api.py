@@ -40,6 +40,7 @@ from opsswarm.investigation.scenarios import (
     InvestigationScenario,
 )
 from opsswarm.investigation.settings import LlmSettings
+from opsswarm.planning import ActionType, RollbackConfigurationParameters
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import VerificationObservation
 
@@ -52,6 +53,20 @@ class ApiOperationAdapter:
     """API 集成测试不依赖真实网络，但保持相同白名单结果契约。"""
 
     async def execute(self, step: StoredActionStep) -> OperationResult:
+        if step.action_type is ActionType.ROLLBACK_CONFIGURATION and isinstance(
+            step.parameters, RollbackConfigurationParameters
+        ):
+            return OperationResult(
+                output={
+                    "configuration_key": step.parameters.key.value,
+                    "planned_current_value": step.parameters.current_value,
+                    "target_value": step.parameters.target_value,
+                    "current_value": step.parameters.target_value,
+                    "database_pool_saturation": 0.2,
+                    "already_at_target": False,
+                    "service": step.target_name,
+                }
+            )
         return OperationResult(
             output={
                 "fault": "release_500",
@@ -67,7 +82,7 @@ class ApiVerificationAdapter:
     async def observe(self, step: StoredActionStep) -> VerificationObservation:
         return VerificationObservation(
             signal=step.verification.signal,
-            value=0.0,
+            value=(0.2 if step.verification.signal == "database_pool_saturation" else 0.0),
             http_status=200,
         )
 
@@ -928,7 +943,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert workroom_body["verification_run"]["sample_count"] == 1
 
 
-async def test_database_configuration_plan_is_creatable_but_not_executable(
+async def test_database_configuration_plan_runs_through_controlled_verification(
     control_client: httpx2.AsyncClient,
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -986,7 +1001,7 @@ async def test_database_configuration_plan_is_creatable_but_not_executable(
     }
     assert plan["steps"][0]["verification"]["signal"] == "database_pool_saturation"
 
-    blocked_approval = await control_client.post(
+    approval = await control_client.post(
         f"/api/v1/action-plans/{plan['id']}/approval-requests",
         json={
             "expected_incident_version": 2,
@@ -994,22 +1009,70 @@ async def test_database_configuration_plan_is_creatable_but_not_executable(
             "reason": "审查数据库连接池配置回滚草案",
         },
     )
-    assert blocked_approval.status_code == 409
-    assert blocked_approval.json()["error_code"] == "action_plan_not_executable"
-    assert blocked_approval.json()["details"] == {
-        "plan_id": plan["id"],
-        "action_type": "rollback_configuration",
+    assert approval.status_code == 201
+    approval_request = approval.json()["approval_request"]
+    assert approval_request["status"] == "pending"
+
+    approved = await control_client.post(
+        f"/api/v1/approval-requests/{approval_request['id']}/actions/approve",
+        json={
+            "expected_incident_version": 3,
+            "actor_id": "engineer-002",
+            "reason": "确认配置当前值、目标值和恢复阈值",
+        },
+    )
+    assert approved.status_code == 200
+    assert approved.json()["approval_request"]["status"] == "approved"
+
+    step_id = plan["steps"][0]["id"]
+    execution = await control_client.post(
+        f"/api/v1/action-steps/{step_id}/executions",
+        json={
+            "idempotency_key": "api-config-execution-001",
+            "expected_incident_version": 4,
+        },
+    )
+    assert execution.status_code == 201
+    operation = execution.json()["operation_execution"]
+    assert operation["status"] == "succeeded"
+    assert operation["executor_name"] == "local_fault_lab_database_pool_v1"
+    assert operation["result"]["configuration_key"] == "database_pool_size"
+    assert operation["result"]["current_value"] == 50
+
+    verification = await control_client.post(
+        f"/api/v1/operation-executions/{operation['id']}/verification-runs",
+        json={"expected_incident_version": 5},
+    )
+    assert verification.status_code == 201
+    verification_run = verification.json()["verification_run"]
+    assert verification_run["verifier_name"] == "local_database_pool_saturation_v1"
+    assert verification_run["rule"] == {
+        "signal": "database_pool_saturation",
+        "operator": "less_than",
+        "threshold": 0.8,
+        "observation_window_seconds": 60,
+        "required_successful_samples": 3,
     }
+
+    sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run['id']}/samples",
+        json={"idempotency_key": "api-config-verification-001"},
+    )
+    assert sample.status_code == 201
+    assert sample.json()["sample"]["signal"] == "database_pool_saturation"
+    assert sample.json()["sample"]["observed_value"] == 0.2
+    assert sample.json()["sample"]["status"] == "passed"
+
     incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
-    assert incident.json()["status"] == "investigating"
-    assert incident.json()["version"] == 2
+    assert incident.json()["status"] == "verifying"
+    assert incident.json()["version"] == 5
     async with database_session_factory() as session:
         approval_count = await session.scalar(select(func.count()).select_from(ApprovalRequestRow))
         execution_count = await session.scalar(
             select(func.count()).select_from(OperationExecutionRow)
         )
-    assert approval_count == 0
-    assert execution_count == 0
+    assert approval_count == 1
+    assert execution_count == 1
 
 
 async def test_start_investigation_rejects_unknown_mode(

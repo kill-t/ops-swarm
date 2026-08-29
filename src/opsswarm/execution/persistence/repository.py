@@ -35,7 +35,14 @@ from opsswarm.planning import ActionPlanStatus, ActionType
 from opsswarm.planning.persistence import load_action_plan_in_session
 from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
 
-EXECUTOR_NAME = "local_fault_lab_release_500_v1"
+RELEASE_EXECUTOR_NAME = "local_fault_lab_release_500_v1"
+CONFIGURATION_EXECUTOR_NAME = "local_fault_lab_database_pool_v1"
+_EXECUTABLE_ACTION_TYPES = frozenset(
+    {
+        ActionType.ROLLBACK_RELEASE,
+        ActionType.ROLLBACK_CONFIGURATION,
+    }
+)
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
 
 
@@ -143,7 +150,7 @@ class OperationExecutionStore:
                 incident_row=incident_row,
                 expected_incident_version=expected_incident_version,
             )
-            if stored_step.action_type is not ActionType.ROLLBACK_RELEASE:
+            if stored_step.action_type not in _EXECUTABLE_ACTION_TYPES:
                 raise OperationNotAuthorized(
                     step_id,
                     reason_code="action_type_not_executable",
@@ -171,7 +178,7 @@ class OperationExecutionStore:
                 action_plan_version=plan_row.version,
                 action_step_id=step_id,
                 status=ExecutionStatus.RUNNING.value,
-                executor_name=EXECUTOR_NAME,
+                executor_name=_executor_name(stored_step.action_type),
                 incident_version_before=incident_row.version,
                 attempt_count=1,
                 lease_token=uuid4(),
@@ -247,7 +254,7 @@ class OperationExecutionStore:
                 occurred_at=occurred_at,
                 actor=IncidentActor(
                     actor_type=ActorType.EXECUTOR,
-                    actor_id=EXECUTOR_NAME,
+                    actor_id=row.executor_name,
                 ),
                 reason=("白名单操作执行成功" if succeeded else "白名单操作执行失败"),
             )
@@ -350,6 +357,14 @@ def _stored_execution(row: OperationExecutionRow) -> StoredOperationExecution:
         updated_at=row.updated_at,
         completed_at=row.completed_at,
     )
+
+
+def _executor_name(action_type: ActionType) -> str:
+    if action_type is ActionType.ROLLBACK_RELEASE:
+        return RELEASE_EXECUTOR_NAME
+    if action_type is ActionType.ROLLBACK_CONFIGURATION:
+        return CONFIGURATION_EXECUTOR_NAME
+    raise ValueError(f"没有动作 {action_type.value} 的确定性执行器")
 
 
 def _normalize_idempotency_key(value: str) -> str:

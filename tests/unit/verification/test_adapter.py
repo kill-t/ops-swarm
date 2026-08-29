@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
-from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
 from opsswarm.planning import propose_action_plan
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import (
@@ -33,6 +33,21 @@ def rollback_step() -> StoredActionStep:
     )
     return StoredActionStep(
         id=UUID("00000000-0000-0000-0000-000000000401"),
+        created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
+        **plan.steps[0].model_dump(),
+    )
+
+
+def configuration_rollback_step() -> StoredActionStep:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.DATABASE_POOL_MISCONFIGURATION,
+        recommendation=Recommendation.ROLLBACK_CONFIGURATION,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=DATABASE_POOL_SCENARIO_V2.evidence,
+    )
+    return StoredActionStep(
+        id=UUID("00000000-0000-0000-0000-000000000402"),
         created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
         **plan.steps[0].model_dump(),
     )
@@ -72,6 +87,42 @@ async def test_probe_maps_fault_response_to_failed_5xx_sample() -> None:
     assert observation.value == 1.0
     assert observation.http_status == 500
     assert sample_status(rollback_step().verification, observation) is (
+        VerificationSampleStatus.FAILED
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_reads_healthy_database_pool_saturation() -> None:
+    controller = FaultController(database_pool_size=50)
+    adapter = FaultLabVerificationAdapter(
+        VerificationSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    observation = await adapter.observe(configuration_rollback_step())
+
+    assert observation == VerificationObservation(
+        signal="database_pool_saturation",
+        value=0.2,
+        http_status=200,
+    )
+    assert sample_status(configuration_rollback_step().verification, observation) is (
+        VerificationSampleStatus.PASSED
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_reads_saturated_database_pool_as_failed_sample() -> None:
+    controller = FaultController(database_pool_size=5)
+    adapter = FaultLabVerificationAdapter(
+        VerificationSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    observation = await adapter.observe(configuration_rollback_step())
+
+    assert observation.value == 1.0
+    assert sample_status(configuration_rollback_step().verification, observation) is (
         VerificationSampleStatus.FAILED
     )
 

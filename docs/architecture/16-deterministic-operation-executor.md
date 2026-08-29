@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-本切片把“计划已获批准”推进为一次可审计、可恢复的本地操作。控制面只允许执行已批准计划中的具体步骤，当前唯一动作是把 `order-service` 的 `release_500` 故障开关确定性设置为关闭。
+本切片把“计划已获批准”推进为一次可审计、可恢复的本地操作。控制面只允许执行已批准计划中的具体步骤：版本回滚关闭 `order-service` 的 `release_500`，配置回滚通过固定管理接口把 `database_pool_size` 从计划当前值比较并设置为目标值。
 
 LLM、LangChain 和 LangGraph 都不参与授权或执行。请求不能提供 Shell、SQL、URL、HTTP 方法或任意动作参数；执行器也不读取计划中的地址来拼接请求。操作成功只把 Incident 从 `mitigating` 推进到 `verifying`，随后由独立的[逐次恢复验证](17-persistent-recovery-verification.md)判断是否真正恢复。
 
@@ -21,8 +21,8 @@ sequenceDiagram
     Store->>DB: 写入 running、租约令牌和到期时间
     Store-->>Caller: 返回已领取步骤
     Caller->>Adapter: 受校验 StoredActionStep
-    Adapter->>Lab: PUT 固定路径，enabled=false
-    Lab-->>Adapter: 返回受校验 FaultStatus
+    Adapter->>Lab: 固定路径执行目标状态设置或 CAS
+    Lab-->>Adapter: 返回受校验状态或配置冲突
     Caller->>Store: 使用租约提交结果
     Store->>DB: 成功/失败终态 + Incident 迁移 + 时间线事件
 ```
@@ -37,17 +37,14 @@ sequenceDiagram
 
 ## 3. 白名单和网络边界
 
-当前执行器名称固定为 `local_fault_lab_release_500_v1`。它只接受：
+当前两个执行器名称分别为 `local_fault_lab_release_500_v1` 和 `local_fault_lab_database_pool_v1`。共同只接受 `service + order-service`，各自进一步限制为：
 
-- 动作 `rollback_release`；
-- 目标类型 `service`；
-- 目标名称 `order-service`；
-- 固定请求路径 `/__admin/faults/release-500`；
-- 固定请求体 `{"enabled": false}`。
+- `rollback_release`：固定路径 `/__admin/faults/release-500` 和固定请求体 `{"enabled": false}`；
+- `rollback_configuration`：只允许 `database_pool_size`，固定路径 `/__admin/configuration/database-pool`，请求体只能来自计划的严格整数当前值与目标值。
 
 基础地址只能是明文 HTTP 的 `127.0.0.1`、`localhost` 或 Compose 服务名 `order-service`，不能包含用户信息、路径、查询参数或片段。请求关闭环境代理继承，默认超时 3 秒、配置上限 10 秒。返回值经过 Pydantic 校验并限制为 16 KiB，异常只落库有限的稳定错误码和中文摘要。
 
-这个动作特意采用“设置为关闭”，不采用“切换开关”。前者重复执行仍得到相同状态，是崩溃恢复能够安全重放的前提。
+版本动作采用“设置为关闭”，不采用“切换开关”。配置动作先读取当前值：等于目标值时按崩溃重放成功；等于计划当前值时使用原子 `expected_value` 比较并设置；为其他值时以 `configuration_current_value_mismatch` 拒绝覆盖。两种动作都具备安全重放语义。
 
 ## 4. 幂等、租约与一致性
 
@@ -70,7 +67,7 @@ sequenceDiagram
 
 - API 内同步执行最长 3 秒的本地动作；长时间或生产操作必须改为独立执行 Worker。
 - `actor_id` 和审批身份仍不可信，因此只能在 localhost/Compose 演练。
-- 只有一个固定动作和一个故障服务，没有 Kubernetes、Docker Socket 或云平台权限。
+- 只有两个固定动作和一个故障服务，没有 Kubernetes、Docker Socket 或云平台权限。
 - 执行失败后的新计划版本与重审批循环尚未打通。
 - `verifying` 只是状态，不代表系统已经恢复。
 
