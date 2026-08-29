@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射，以及数据库连接池配置回滚计划模板。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十一个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板，以及数据库连接池确定性故障演练。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -59,6 +59,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [处置建议契约与评测集 v2](docs/architecture/28-recommendation-contract-v2.md)
 - [确定性处置计划能力映射](docs/architecture/29-action-plan-capability-mapping.md)
 - [数据库连接池配置回滚计划模板](docs/architecture/30-database-pool-configuration-plan.md)
+- [数据库连接池确定性故障演练](docs/architecture/31-database-pool-fault-lab.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -364,6 +365,20 @@ Invoke-RestMethod `
   -Body '{"enabled":true}'
 
 Invoke-WebRequest http://127.0.0.1:8000/orders/order-001 -SkipHttpErrorCheck
+
+Invoke-RestMethod `
+  -Method Put `
+  -Uri http://127.0.0.1:8000/__admin/configuration/database-pool `
+  -ContentType 'application/json' `
+  -Body '{"value":5}'
+
+Invoke-WebRequest http://127.0.0.1:8000/orders/order-001 -SkipHttpErrorCheck
+
+Invoke-RestMethod `
+  -Method Put `
+  -Uri http://127.0.0.1:8000/__admin/configuration/database-pool `
+  -ContentType 'application/json' `
+  -Body '{"value":50}'
 ```
 
 ### Docker Compose 运行
@@ -374,7 +389,7 @@ Invoke-RestMethod http://127.0.0.1:18001/health
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。故障开关默认关闭，服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，两者都在服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 ## 测试与检查
 

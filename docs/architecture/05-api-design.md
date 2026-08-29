@@ -146,6 +146,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `action_plan_capability_unavailable` | `409` | 调查建议没有当前可创建的确定性计划模板 |
 | `unsupported_planning_root_cause` | `409` | 当前没有该根因的白名单计划模板 |
 | `unsafe_rollback_target` | `409` | 证据无法确定安全回滚目标 |
+| `unsafe_configuration_rollback_target` | `409` | 证据无法确定白名单配置的安全前后值 |
 | `approval_action_plan_not_found` | `404` | 要提交审批的计划不存在 |
 | `approval_request_not_found` | `404` | 审批请求不存在 |
 | `action_plan_not_current` | `409` | 目标计划已被更新版本替代 |

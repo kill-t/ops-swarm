@@ -9,6 +9,9 @@ from fastapi.responses import JSONResponse
 from opsswarm import __version__
 from opsswarm.fault_lab.controller import FaultController, FaultSnapshot
 from opsswarm.fault_lab.models import (
+    DatabasePoolErrorResponse,
+    DatabasePoolStatus,
+    DatabasePoolUpdate,
     FaultErrorResponse,
     FaultStatus,
     FaultUpdate,
@@ -33,6 +36,15 @@ def _to_fault_status(snapshot: FaultSnapshot) -> FaultStatus:
     return FaultStatus(enabled=snapshot.release_500_enabled)
 
 
+def _to_database_pool_status(snapshot: FaultSnapshot) -> DatabasePoolStatus:
+    return DatabasePoolStatus(
+        value=snapshot.database_pool_size,
+        database_pool_saturation=snapshot.database_pool_saturation,
+        database_pool_waiters=snapshot.database_pool_waiters,
+        status="saturated" if snapshot.database_pool_saturated else "healthy",
+    )
+
+
 def create_app(controller: FaultController | None = None) -> FastAPI:
     """创建可注入独立故障状态的 FastAPI 应用。"""
 
@@ -50,7 +62,12 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
     @app.get(
         "/orders/{order_id}",
         response_model=OrderResponse,
-        responses={500: {"model": FaultErrorResponse, "description": "版本故障已启用"}},
+        responses={
+            500: {
+                "model": FaultErrorResponse | DatabasePoolErrorResponse,
+                "description": "版本故障或数据库连接池故障已启用",
+            }
+        },
         tags=["订单"],
     )
     def get_order(order_id: OrderId) -> OrderResponse | JSONResponse:
@@ -62,6 +79,23 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
                 order_id=order_id,
             )
             return JSONResponse(status_code=500, content=error.model_dump(mode="json"))
+
+        if snapshot.database_pool_timeout_enabled:
+            logger.warning(
+                "故障注入触发 order_id=%s fault=database_pool_timeout pool_size=%s waiters=%s",
+                order_id,
+                snapshot.database_pool_size,
+                snapshot.database_pool_waiters,
+            )
+            database_error = DatabasePoolErrorResponse(
+                message="数据库连接池容量不足，订单接口模拟获取连接超时",
+                order_id=order_id,
+                database_pool_size=snapshot.database_pool_size,
+            )
+            return JSONResponse(
+                status_code=500,
+                content=database_error.model_dump(mode="json"),
+            )
 
         return OrderResponse(order_id=order_id)
 
@@ -82,5 +116,29 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
         snapshot = fault_controller.set_release_500(enabled=request.enabled)
         logger.info("更新故障开关 fault=release_500 enabled=%s", request.enabled)
         return _to_fault_status(snapshot)
+
+    @app.get(
+        "/__admin/configuration/database-pool",
+        response_model=DatabasePoolStatus,
+        tags=["配置控制"],
+    )
+    def get_database_pool_configuration() -> DatabasePoolStatus:
+        return _to_database_pool_status(fault_controller.snapshot())
+
+    @app.put(
+        "/__admin/configuration/database-pool",
+        response_model=DatabasePoolStatus,
+        tags=["配置控制"],
+    )
+    def update_database_pool_configuration(
+        request: DatabasePoolUpdate,
+    ) -> DatabasePoolStatus:
+        snapshot = fault_controller.set_database_pool_size(value=request.value)
+        logger.info(
+            "更新演练配置 key=database_pool_size value=%s saturation=%s",
+            request.value,
+            snapshot.database_pool_saturation,
+        )
+        return _to_database_pool_status(snapshot)
 
     return app

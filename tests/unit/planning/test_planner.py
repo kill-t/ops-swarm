@@ -1,6 +1,7 @@
 """版本化处置计划生成规则的纯单元测试。"""
 
 import pytest
+from pydantic import ValidationError
 
 from opsswarm.investigation.models import (
     EvidenceKind,
@@ -82,6 +83,18 @@ def test_configuration_plan_requires_whitelisted_previous_and_current_values() -
             recommendation=Recommendation.ROLLBACK_CONFIGURATION,
             hypothesis_status=HypothesisStatus.SUPPORTED,
             evidence_items=evidence,
+        )
+
+
+@pytest.mark.parametrize("invalid_value", [True, "5"])
+def test_configuration_parameters_require_strict_integer_values(invalid_value: object) -> None:
+    with pytest.raises(ValidationError):
+        RollbackConfigurationParameters.model_validate(
+            {
+                "key": "database_pool_size",
+                "current_value": invalid_value,
+                "target_value": 50,
+            }
         )
 
 

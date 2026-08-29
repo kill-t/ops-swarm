@@ -137,11 +137,11 @@ class RollbackReleaseParameters(StrictPlanningModel):
 
 
 class RollbackConfigurationParameters(StrictPlanningModel):
-    """数据库连接池配置回滚唯一允许的参数集合。"""
+    """数据库连接池配置回滚唯一允许的严格整数参数集合。"""
 
     key: ConfigurationKey
-    current_value: int = Field(ge=1, le=1000)
-    target_value: int = Field(ge=1, le=1000)
+    current_value: int = Field(strict=True, ge=1, le=1000)
+    target_value: int = Field(strict=True, ge=1, le=1000)
 
     @model_validator(mode="after")
     def reject_noop_rollback(self) -> Self:

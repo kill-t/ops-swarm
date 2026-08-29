@@ -71,3 +71,4 @@
 - [28 - 处置建议契约与评测集 v2](28-recommendation-contract-v2.md)
 - [29 - 确定性处置计划能力映射](29-action-plan-capability-mapping.md)
 - [30 - 数据库连接池配置回滚计划模板](30-database-pool-configuration-plan.md)
+- [31 - 数据库连接池确定性故障演练](31-database-pool-fault-lab.md)

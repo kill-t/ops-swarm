@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StrictModel(BaseModel):
@@ -32,6 +32,22 @@ class FaultStatus(StrictModel):
     enabled: bool
 
 
+class DatabasePoolUpdate(StrictModel):
+    """数据库连接池容量更新请求。"""
+
+    value: int = Field(strict=True, ge=1, le=1000)
+
+
+class DatabasePoolStatus(StrictModel):
+    """数据库连接池配置及确定性负载状态。"""
+
+    key: Literal["database_pool_size"] = "database_pool_size"
+    value: int
+    database_pool_saturation: float = Field(ge=0, le=1)
+    database_pool_waiters: int = Field(ge=0)
+    status: Literal["healthy", "saturated"]
+
+
 class OrderResponse(StrictModel):
     """演练订单查询结果。"""
 
@@ -47,3 +63,12 @@ class FaultErrorResponse(StrictModel):
     error_code: Literal["release_500"] = "release_500"
     message: str
     order_id: str
+
+
+class DatabasePoolErrorResponse(StrictModel):
+    """连接池容量不足时的结构化订单错误。"""
+
+    error_code: Literal["database_pool_timeout"] = "database_pool_timeout"
+    message: str
+    order_id: str
+    database_pool_size: int
