@@ -58,7 +58,7 @@ sequenceDiagram
 
 - 当决定的有效业务时间 `>= expires_at` 时，不再接受批准或拒绝，而是提交 `expired`。
 - 过期时间使用固定 30 分钟策略；查询接口不产生隐式写入，只有决定命令触发显式收敛。
-- 每次决定前重新加载计划、重算 `action-risk-v1` 和审批内容 SHA-256。
+- 每次决定前重新加载计划、按计划冻结的 `action-risk-v1` 或 `action-risk-v2` 重算风险和审批内容 SHA-256。
 - 计划内容漂移、计划不在 `awaiting_approval`、Incident 版本过期或状态不允许时，决定事务失败。
 - 数据库检查约束要求 `approved`、`rejected` 具备完整人工审计，`expired` 具备系统审计，`pending` 不得提前填决定字段。
 

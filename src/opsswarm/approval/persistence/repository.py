@@ -11,6 +11,7 @@ from opsswarm.approval.errors import (
     ActionPlanDoesNotRequireApproval,
     ActionPlanNotCurrent,
     ActionPlanNotDecidable,
+    ActionPlanNotExecutable,
     ActionPlanNotSubmittable,
     ApprovalActionPlanNotFound,
     ApprovalDeciderMustBeHuman,
@@ -36,7 +37,7 @@ from opsswarm.incidents.persistence.repository import transition_incident_in_ses
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.planning import action_plan_content_hash
-from opsswarm.planning.models import ActionPlanStatus
+from opsswarm.planning.models import ActionPlanStatus, ActionType
 from opsswarm.planning.persistence import load_action_plan_in_session
 from opsswarm.planning.persistence.records import StoredActionPlan
 from opsswarm.planning.persistence.tables import ActionPlanRow
@@ -84,6 +85,21 @@ class ApprovalRequestStore:
             if incident_row is None:
                 raise IncidentNotFound(str(run_row.incident_id))
 
+            stored_plan = await load_action_plan_in_session(session, plan_row)
+            unsupported_step = next(
+                (
+                    step
+                    for step in stored_plan.steps
+                    if step.action_type is not ActionType.ROLLBACK_RELEASE
+                ),
+                None,
+            )
+            if unsupported_step is not None:
+                raise ActionPlanNotExecutable(
+                    plan_id,
+                    action_type=unsupported_step.action_type.value,
+                )
+
             existing = await session.scalar(
                 select(ApprovalRequestRow).where(ApprovalRequestRow.action_plan_id == plan_id)
             )
@@ -101,7 +117,6 @@ class ApprovalRequestStore:
             if plan_row.status != ActionPlanStatus.DRAFT.value:
                 raise ActionPlanNotSubmittable(plan_id, status=plan_row.status)
 
-            stored_plan = await load_action_plan_in_session(session, plan_row)
             if not stored_plan.requires_human_approval:
                 raise ActionPlanDoesNotRequireApproval("处置计划不需要人工审批")
             occurred_at = max(occurred_at, stored_plan.created_at, incident_row.updated_at)

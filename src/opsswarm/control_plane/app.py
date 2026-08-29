@@ -15,6 +15,7 @@ from opsswarm.approval import (
     ActionPlanDoesNotRequireApproval,
     ActionPlanNotCurrent,
     ActionPlanNotDecidable,
+    ActionPlanNotExecutable,
     ActionPlanNotSubmittable,
     ApprovalActionPlanNotFound,
     ApprovalDeciderMustBeHuman,
@@ -62,6 +63,7 @@ from opsswarm.planning import (
     ActionPlanNotReady,
     HypothesisNotSupported,
     PlanningError,
+    UnsafeConfigurationRollbackTarget,
     UnsafeRollbackTarget,
     UnsupportedPlanningRootCause,
 )
@@ -361,6 +363,11 @@ def create_app(
                 error_code="unsafe_rollback_target",
                 message=str(error),
             )
+        elif isinstance(error, UnsafeConfigurationRollbackTarget):
+            response = ApiErrorResponse(
+                error_code="unsafe_configuration_rollback_target",
+                message=str(error),
+            )
         else:
             response = ApiErrorResponse(error_code="planning_error", message=str(error))
         return JSONResponse(
@@ -407,6 +414,15 @@ def create_app(
             response = ApiErrorResponse(
                 error_code="action_plan_does_not_require_approval",
                 message=str(error),
+            )
+        elif isinstance(error, ActionPlanNotExecutable):
+            response = ApiErrorResponse(
+                error_code="action_plan_not_executable",
+                message=str(error),
+                details={
+                    "plan_id": str(error.plan_id),
+                    "action_type": error.action_type,
+                },
             )
         elif isinstance(error, ApprovalRequesterMustBeHuman):
             response = ApiErrorResponse(

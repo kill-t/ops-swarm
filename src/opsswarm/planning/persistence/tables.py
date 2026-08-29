@@ -88,7 +88,7 @@ class ActionStepRow(Base):
     __table_args__ = (
         CheckConstraint("step_order >= 1", name="ck_action_steps_order"),
         CheckConstraint(
-            "action_type IN ('rollback_release')",
+            "action_type IN ('rollback_release', 'rollback_configuration')",
             name="ck_action_steps_action_type",
         ),
         CheckConstraint("target_type IN ('service')", name="ck_action_steps_target_type"),

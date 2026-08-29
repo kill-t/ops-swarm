@@ -247,7 +247,7 @@ erDiagram
 
 ### 4.12 action_steps
 
-每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。当前动作只允许 `rollback_release`，参数只有当前版本和目标版本，验证要求 5xx 比例在观察窗口内持续低于阈值。
+每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。动作约束允许 `rollback_release` 和 `rollback_configuration`：前者保存当前版本与目标版本，后者只允许 `database_pool_size` 及 1～1000 范围内的当前值和目标值。具体参数形状由 Pydantic 在写入和读取时重验；两种动作都保持高风险人工审批要求。
 
 数据库检查约束保证 JSONB 为对象、顺序大于零，并禁止 `high` 或 `critical` 步骤及计划把 `requires_human_approval` 设为假。风险仍由应用策略重算；数据库约束是最后一道完整性保护，不承担业务推理。
 

@@ -8,7 +8,7 @@ from opsswarm.execution.errors import OperationAdapterFailure
 from opsswarm.execution.models import OperationResult
 from opsswarm.execution.settings import ExecutionSettings
 from opsswarm.fault_lab.models import FaultStatus
-from opsswarm.planning import ActionType, TargetType
+from opsswarm.planning import ActionType, RollbackReleaseParameters, TargetType
 from opsswarm.planning.persistence import StoredActionStep
 
 
@@ -37,6 +37,7 @@ class FaultLabOperationAdapter:
             step.action_type is not ActionType.ROLLBACK_RELEASE
             or step.target_type is not TargetType.SERVICE
             or step.target_name != "order-service"
+            or not isinstance(step.parameters, RollbackReleaseParameters)
         ):
             raise OperationAdapterFailure(
                 error_code="operation_not_whitelisted",

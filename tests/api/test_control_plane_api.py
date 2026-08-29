@@ -8,8 +8,10 @@ from uuid import UUID, uuid4
 import httpx2
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from opsswarm.approval.persistence.tables import ApprovalRequestRow
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
 from opsswarm.evaluation import MVP_INVESTIGATION_DATASET_V1
@@ -19,6 +21,7 @@ from opsswarm.evaluation.metadata import empty_evaluation_telemetry, fixture_exp
 from opsswarm.evaluation.persistence import EvaluationRunSubmission, EvaluationStore
 from opsswarm.evaluation.real_model import real_model_experiment_spec
 from opsswarm.execution import OperationResult
+from opsswarm.execution.persistence.tables import OperationExecutionRow
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
 from opsswarm.incidents.persistence import IncidentStore, StoredIncident
 from opsswarm.investigation.challenge import challenge_investigation
@@ -700,7 +703,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert plan_body["action_plan"]["status"] == "draft"
     assert plan_body["action_plan"]["risk_level"] == "high"
     assert plan_body["action_plan"]["requires_human_approval"] is True
-    assert plan_body["action_plan"]["risk_policy_version"] == "action-risk-v1"
+    assert plan_body["action_plan"]["risk_policy_version"] == "action-risk-v2"
     assert plan_body["action_plan"]["created_at"] == body["hypotheses"][0]["created_at"]
     assert plan_body["action_plan"]["steps"][0]["action_type"] == "rollback_release"
     assert plan_body["action_plan"]["steps"][0]["parameters"] == {
@@ -925,7 +928,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert workroom_body["verification_run"]["sample_count"] == 1
 
 
-async def test_unsupported_recommendation_exposes_capability_without_creating_plan(
+async def test_database_configuration_plan_is_creatable_but_not_executable(
     control_client: httpx2.AsyncClient,
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -961,22 +964,52 @@ async def test_unsupported_recommendation_exposes_capability_without_creating_pl
     assert capability_body["root_cause"] == "database_pool_misconfiguration"
     assert capability_body["recommendation"] == "rollback_configuration"
     assert capability_body["hypothesis_status"] == "supported"
-    assert capability_body["status"] == "unsupported"
-    assert capability_body["action_type"] is None
-    assert capability_body["template_version"] is None
+    assert capability_body["status"] == "available"
+    assert capability_body["action_type"] == "rollback_configuration"
+    assert capability_body["template_version"] == "rollback-configuration-database-pool-v1"
     assert capability_body["requires_human_approval"] is True
-    assert capability_body["can_create"] is False
-    assert capability_body["reason_code"] == "template_not_implemented"
+    assert capability_body["can_create"] is True
+    assert capability_body["reason_code"] == "template_available"
 
-    rejected = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
+    created_plan = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
 
-    assert rejected.status_code == 409
-    assert rejected.json()["error_code"] == "action_plan_capability_unavailable"
-    assert rejected.json()["details"] == {
-        key: value for key, value in capability_body.items() if key != "investigation_run_id"
+    assert created_plan.status_code == 201
+    plan = created_plan.json()["action_plan"]
+    assert plan["risk_level"] == "high"
+    assert plan["requires_human_approval"] is True
+    assert plan["risk_policy_version"] == "action-risk-v2"
+    assert plan["steps"][0]["action_type"] == "rollback_configuration"
+    assert plan["steps"][0]["parameters"] == {
+        "key": "database_pool_size",
+        "current_value": 5,
+        "target_value": 50,
     }
-    missing = await control_client.get(f"/api/v1/investigations/{run_id}/action-plans/current")
-    assert missing.status_code == 404
+    assert plan["steps"][0]["verification"]["signal"] == "database_pool_saturation"
+
+    blocked_approval = await control_client.post(
+        f"/api/v1/action-plans/{plan['id']}/approval-requests",
+        json={
+            "expected_incident_version": 2,
+            "actor_id": "engineer-001",
+            "reason": "审查数据库连接池配置回滚草案",
+        },
+    )
+    assert blocked_approval.status_code == 409
+    assert blocked_approval.json()["error_code"] == "action_plan_not_executable"
+    assert blocked_approval.json()["details"] == {
+        "plan_id": plan["id"],
+        "action_type": "rollback_configuration",
+    }
+    incident = await control_client.get(f"/api/v1/incidents/{created.json()['incident']['id']}")
+    assert incident.json()["status"] == "investigating"
+    assert incident.json()["version"] == 2
+    async with database_session_factory() as session:
+        approval_count = await session.scalar(select(func.count()).select_from(ApprovalRequestRow))
+        execution_count = await session.scalar(
+            select(func.count()).select_from(OperationExecutionRow)
+        )
+    assert approval_count == 0
+    assert execution_count == 0
 
 
 async def test_start_investigation_rejects_unknown_mode(

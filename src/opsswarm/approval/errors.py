@@ -36,6 +36,15 @@ class ActionPlanDoesNotRequireApproval(ApprovalError):
     """计划没有审批要求，不应创建人工审批。"""
 
 
+class ActionPlanNotExecutable(ApprovalError):
+    """计划动作尚无可用的确定性执行器，不能进入审批状态。"""
+
+    def __init__(self, plan_id: UUID, *, action_type: str) -> None:
+        self.plan_id = plan_id
+        self.action_type = action_type
+        super().__init__(f"处置动作 {action_type} 尚无可用执行器，不能提交审批")
+
+
 class ActionPlanNotSubmittable(ApprovalError):
     """计划当前状态不能创建新的审批请求。"""
 

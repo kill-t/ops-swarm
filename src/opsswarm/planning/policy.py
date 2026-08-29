@@ -1,32 +1,57 @@
 """不依赖模型的动作风险分级策略。"""
 
 from opsswarm.planning.models import (
+    ActionParameters,
     ActionPlan,
     ActionStep,
     ActionType,
     RiskDecision,
     RiskLevel,
+    RollbackConfigurationParameters,
     RollbackReleaseParameters,
 )
 
-RISK_POLICY_VERSION = "action-risk-v1"
+RISK_POLICY_VERSION_V1 = "action-risk-v1"
+RISK_POLICY_VERSION_V2 = "action-risk-v2"
+RISK_POLICY_VERSION = RISK_POLICY_VERSION_V2
 
 
 def classify_action_risk(
     action_type: ActionType,
-    parameters: RollbackReleaseParameters,
+    parameters: ActionParameters,
+    *,
+    policy_version: str = RISK_POLICY_VERSION,
 ) -> RiskDecision:
     """根据动作和经过白名单校验的参数确定风险，不采信模型自报等级。"""
 
-    if action_type is ActionType.ROLLBACK_RELEASE:
+    if policy_version not in {RISK_POLICY_VERSION_V1, RISK_POLICY_VERSION_V2}:
+        raise ValueError(f"风险策略不支持版本：{policy_version}")
+    if action_type is ActionType.ROLLBACK_RELEASE and isinstance(
+        parameters, RollbackReleaseParameters
+    ):
         return RiskDecision(
             risk_level=RiskLevel.HIGH,
             requires_human_approval=True,
-            policy_version=RISK_POLICY_VERSION,
+            policy_version=policy_version,
             rule_code="rollback_changes_running_version",
             rationale=(
                 f"回滚会把运行版本从 {parameters.current_version} 改为 "
                 f"{parameters.target_version}，必须由工程师审批。"
+            ),
+        )
+    if (
+        policy_version == RISK_POLICY_VERSION_V2
+        and action_type is ActionType.ROLLBACK_CONFIGURATION
+        and isinstance(parameters, RollbackConfigurationParameters)
+    ):
+        return RiskDecision(
+            risk_level=RiskLevel.HIGH,
+            requires_human_approval=True,
+            policy_version=policy_version,
+            rule_code="rollback_changes_runtime_configuration",
+            rationale=(
+                f"回滚会把 {parameters.key.value} 从 {parameters.current_value} 改为 "
+                f"{parameters.target_value}，必须由工程师审批。"
             ),
         )
     raise ValueError(f"风险策略不支持动作：{action_type}")
@@ -35,9 +60,14 @@ def classify_action_risk(
 def validate_action_step_risk(step: ActionStep, *, policy_version: str) -> None:
     """重新计算步骤风险，拒绝伪造的低风险或免审批结果。"""
 
-    expected = classify_action_risk(step.action_type, step.parameters)
-    if policy_version != expected.policy_version:
-        raise ValueError("处置计划使用了未知或过期的风险策略版本")
+    try:
+        expected = classify_action_risk(
+            step.action_type,
+            step.parameters,
+            policy_version=policy_version,
+        )
+    except ValueError as error:
+        raise ValueError("处置计划使用了未知或过期的风险策略版本，或动作不受支持") from error
     actual = (
         step.risk_level,
         step.requires_human_approval,

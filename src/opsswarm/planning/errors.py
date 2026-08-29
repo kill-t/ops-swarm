@@ -56,3 +56,10 @@ class UnsafeRollbackTarget(PlanningError):
 
     def __init__(self) -> None:
         super().__init__("变更证据缺少有效的发布前后版本，不能安全生成回滚计划")
+
+
+class UnsafeConfigurationRollbackTarget(PlanningError):
+    """证据无法给出白名单配置的安全旧值和当前值。"""
+
+    def __init__(self) -> None:
+        super().__init__("变更证据缺少有效的数据库连接池配置前后值，不能安全生成回滚计划")

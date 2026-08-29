@@ -5,12 +5,12 @@ from datetime import datetime
 from uuid import UUID
 
 from opsswarm.planning.models import (
+    ActionParameters,
     ActionPlan,
     ActionPlanStatus,
     ActionStep,
     ActionType,
     RiskLevel,
-    RollbackReleaseParameters,
     StrictPlanningModel,
     TargetType,
     VerificationRule,
@@ -25,7 +25,7 @@ class StoredActionStep(StrictPlanningModel):
     action_type: ActionType
     target_type: TargetType
     target_name: str
-    parameters: RollbackReleaseParameters
+    parameters: ActionParameters
     risk_level: RiskLevel
     requires_human_approval: bool
     risk_rule_code: str

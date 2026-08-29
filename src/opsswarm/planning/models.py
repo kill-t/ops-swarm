@@ -18,6 +18,13 @@ class ActionType(StrEnum):
     """确定性执行器未来可以识别的动作白名单。"""
 
     ROLLBACK_RELEASE = "rollback_release"
+    ROLLBACK_CONFIGURATION = "rollback_configuration"
+
+
+class ConfigurationKey(StrEnum):
+    """第一版允许回滚的运行配置键白名单。"""
+
+    DATABASE_POOL_SIZE = "database_pool_size"
 
 
 class ActionPlanCapabilityStatus(StrEnum):
@@ -129,6 +136,23 @@ class RollbackReleaseParameters(StrictPlanningModel):
         return self
 
 
+class RollbackConfigurationParameters(StrictPlanningModel):
+    """数据库连接池配置回滚唯一允许的参数集合。"""
+
+    key: ConfigurationKey
+    current_value: int = Field(ge=1, le=1000)
+    target_value: int = Field(ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def reject_noop_rollback(self) -> Self:
+        if self.current_value == self.target_value:
+            raise ValueError("配置回滚的当前值和目标值不能相同")
+        return self
+
+
+ActionParameters = RollbackReleaseParameters | RollbackConfigurationParameters
+
+
 class VerificationRule(StrictPlanningModel):
     """动作完成后必须满足的最小恢复判据。"""
 
@@ -164,7 +188,7 @@ class ActionStep(StrictPlanningModel):
         max_length=100,
         pattern=r"^[a-z0-9][a-z0-9._-]*$",
     )
-    parameters: RollbackReleaseParameters
+    parameters: ActionParameters
     risk_level: RiskLevel
     requires_human_approval: bool
     risk_rule_code: str = Field(
@@ -174,6 +198,18 @@ class ActionStep(StrictPlanningModel):
     )
     risk_rationale: str = Field(min_length=1, max_length=500)
     verification: VerificationRule
+
+    @model_validator(mode="after")
+    def enforce_action_parameters(self) -> Self:
+        """动作类型必须使用自己的精确参数模型，禁止跨模板借用字段。"""
+
+        expected_type = {
+            ActionType.ROLLBACK_RELEASE: RollbackReleaseParameters,
+            ActionType.ROLLBACK_CONFIGURATION: RollbackConfigurationParameters,
+        }[self.action_type]
+        if not isinstance(self.parameters, expected_type):
+            raise ValueError("动作类型与参数模型不匹配")
+        return self
 
 
 class ActionPlan(StrictPlanningModel):

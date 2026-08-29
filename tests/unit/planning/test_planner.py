@@ -8,13 +8,17 @@ from opsswarm.investigation.models import (
     Recommendation,
     RootCause,
 )
-from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
 from opsswarm.planning import (
     ActionPlanCapabilityUnavailable,
     ActionPlanStatus,
     ActionType,
+    ConfigurationKey,
     HypothesisNotSupported,
     RiskLevel,
+    RollbackConfigurationParameters,
+    RollbackReleaseParameters,
+    UnsafeConfigurationRollbackTarget,
     UnsafeRollbackTarget,
     propose_action_plan,
 )
@@ -37,9 +41,48 @@ def test_supported_release_hypothesis_generates_high_risk_rollback_draft() -> No
     step = plan.steps[0]
     assert step.action_type is ActionType.ROLLBACK_RELEASE
     assert step.target_name == "order-service"
+    assert isinstance(step.parameters, RollbackReleaseParameters)
     assert step.parameters.current_version == "2026.01.01-rc1"
     assert step.parameters.target_version == "stable"
     assert step.verification.threshold == 0.01
+
+
+def test_supported_database_pool_hypothesis_generates_configuration_rollback_draft() -> None:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.DATABASE_POOL_MISCONFIGURATION,
+        recommendation=Recommendation.ROLLBACK_CONFIGURATION,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=DATABASE_POOL_SCENARIO_V2.evidence,
+    )
+
+    assert plan.status is ActionPlanStatus.DRAFT
+    assert plan.risk_level is RiskLevel.HIGH
+    assert plan.requires_human_approval is True
+    assert plan.risk_policy_version == "action-risk-v2"
+    step = plan.steps[0]
+    assert step.action_type is ActionType.ROLLBACK_CONFIGURATION
+    assert isinstance(step.parameters, RollbackConfigurationParameters)
+    assert step.parameters.key is ConfigurationKey.DATABASE_POOL_SIZE
+    assert step.parameters.current_value == 5
+    assert step.parameters.target_value == 50
+    assert step.verification.signal == "database_pool_saturation"
+    assert step.verification.threshold == 0.8
+
+
+def test_configuration_plan_requires_whitelisted_previous_and_current_values() -> None:
+    evidence = tuple(
+        item for item in DATABASE_POOL_SCENARIO_V2.evidence if item.kind is not EvidenceKind.CHANGE
+    )
+
+    with pytest.raises(UnsafeConfigurationRollbackTarget, match="连接池配置前后值"):
+        propose_action_plan(
+            service_name="order-service",
+            root_cause=RootCause.DATABASE_POOL_MISCONFIGURATION,
+            recommendation=Recommendation.ROLLBACK_CONFIGURATION,
+            hypothesis_status=HypothesisStatus.SUPPORTED,
+            evidence_items=evidence,
+        )
 
 
 def test_contested_hypothesis_cannot_generate_plan() -> None:

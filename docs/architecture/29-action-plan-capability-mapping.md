@@ -12,8 +12,8 @@
 
 | 状态 | 含义 | 当前示例 |
 | --- | --- | --- |
-| `available` | 存在经过验证的确定性模板 | 版本回归 + `rollback_release` |
-| `unsupported` | 建议已识别，但模板未实现或建议与根因不匹配 | 配置回滚、恢复依赖 |
+| `available` | 存在经过验证的确定性计划模板 | 版本回归、数据库连接池配置错误 |
+| `unsupported` | 建议已识别，但计划模板未实现或建议与根因不匹配 | 恢复依赖、错误配对 |
 | `not_applicable` | 调查明确要求继续收集证据，不应生成动作计划 | `continue_investigation` |
 
 响应同时包含：
@@ -34,23 +34,25 @@ flowchart TD
     pair -->|不匹配| mismatch[unsupported<br/>recommendation_root_cause_mismatch]
     pair -->|继续调查| noAction[not_applicable<br/>continue_investigation]
     pair -->|版本回归 + 回滚发布| release[available<br/>rollback-release-v1]
-    pair -->|配置回滚或恢复依赖| missing[unsupported<br/>template_not_implemented]
+    pair -->|数据库连接池配置回滚| config[available<br/>rollback-configuration-database-pool-v1]
+    pair -->|恢复依赖| missing[unsupported<br/>template_not_implemented]
     release --> hypothesis{假设是否 supported}
+    config --> hypothesis
     hypothesis -->|是| ready[can_create=true]
     hypothesis -->|否| blocked[can_create=false<br/>hypothesis_not_supported]
 ```
 
-当前唯一可用映射为：
+当前可用计划映射为：
 
 | 根因 | 建议 | 动作 | 模板版本 |
 | --- | --- | --- | --- |
 | `release_500_regression` | `rollback_release` | `rollback_release` | `rollback-release-v1` |
+| `database_pool_misconfiguration` | `rollback_configuration` | `rollback_configuration` | `rollback-configuration-database-pool-v1` |
 
 以下语义已识别但没有执行模板：
 
 | 根因 | 建议 | 原因码 |
 | --- | --- | --- |
-| `database_pool_misconfiguration` | `rollback_configuration` | `template_not_implemented` |
 | `redis_unavailable` | `restore_dependency` | `template_not_implemented` |
 
 系统禁止建议借用其他根因模板。例如数据库配置错误却建议 `rollback_release` 时返回 `recommendation_root_cause_mismatch`，不会尝试从变更证据拼出发布回滚计划。
@@ -81,7 +83,7 @@ GET /api/v1/investigations/{run_id}/action-plans/capability
 }
 ```
 
-配置回滚返回 `200` 和 `unsupported`，因为查询成功且系统能够明确说明当前能力。随后调用计划创建接口会返回 `409 action_plan_capability_unavailable`，错误详情复用同一能力字段，且数据库不会产生 `action_plans` 或 `action_steps` 记录。
+配置回滚现返回 `200 available` 并允许创建 `draft` 计划；参数只从已提交的数据库连接池配置变更证据提取。由于执行器尚未开放，提交审批时返回 `409 action_plan_not_executable`，Incident 保持 `investigating`，也不会产生审批或执行记录。完整模板设计见 [数据库连接池配置回滚计划模板](30-database-pool-configuration-plan.md)。
 
 调查未成功、缺少结构化结果或主假设时，能力本身还无法判断，因此返回既有的 `409 action_plan_not_ready`。调查不存在仍返回 `404 investigation_run_not_found`。
 
@@ -105,9 +107,9 @@ GET /api/v1/investigations/{run_id}/action-plans/capability
 
 ## 7. 当前限制与下一步
 
-- 配置回滚与依赖恢复仍不可执行，这是有意的安全限制。
+- 配置回滚已可生成草案但不能审批或执行，依赖恢复仍没有计划模板。
 - 能力尚未加入 Incident 作战室聚合投影，当前通过独立 API 查询。
-- 下一步应优先设计数据库连接池配置回滚模板：冻结允许修改的配置键、旧值来源、参数类型、风险规则、幂等本地适配器和恢复验证信号，再决定是否开放执行。
+- 下一步为数据库连接池配置回滚增加确定性故障演练适配器与真实恢复探针；在此之前审批层继续阻止动作进入授权状态。
 
 ## 8. 面试表达
 

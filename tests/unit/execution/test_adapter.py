@@ -16,7 +16,7 @@ from opsswarm.execution import (
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
-from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
 from opsswarm.planning import propose_action_plan
 from opsswarm.planning.persistence import StoredActionStep
 
@@ -31,6 +31,21 @@ def rollback_step() -> StoredActionStep:
     )
     return StoredActionStep(
         id=UUID("00000000-0000-0000-0000-000000000301"),
+        created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
+        **plan.steps[0].model_dump(),
+    )
+
+
+def configuration_rollback_step() -> StoredActionStep:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.DATABASE_POOL_MISCONFIGURATION,
+        recommendation=Recommendation.ROLLBACK_CONFIGURATION,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=DATABASE_POOL_SCENARIO_V2.evidence,
+    )
+    return StoredActionStep(
+        id=UUID("00000000-0000-0000-0000-000000000302"),
         created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
         **plan.steps[0].model_dump(),
     )
@@ -66,6 +81,18 @@ async def test_adapter_rejects_target_outside_whitelist_before_http() -> None:
 
     with pytest.raises(OperationAdapterFailure, match="只允许") as captured:
         await adapter.execute(unsafe_step)
+
+    assert captured.value.error_code == "operation_not_whitelisted"
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_configuration_rollback_before_http() -> None:
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://127.0.0.1:18001")
+    )
+
+    with pytest.raises(OperationAdapterFailure, match="只允许") as captured:
+        await adapter.execute(configuration_rollback_step())
 
     assert captured.value.error_code == "operation_not_whitelisted"
 

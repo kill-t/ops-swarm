@@ -44,3 +44,16 @@ def test_policy_rejects_unknown_version() -> None:
 
     with pytest.raises(ValueError, match="未知或过期"):
         validate_action_plan_policy(plan)
+
+
+def test_policy_v2_keeps_historical_release_v1_readable() -> None:
+    current = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.RELEASE_500_REGRESSION,
+        recommendation=Recommendation.ROLLBACK_RELEASE,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=RELEASE_500_SCENARIO.evidence,
+    )
+    historical = current.model_copy(update={"risk_policy_version": "action-risk-v1"})
+
+    validate_action_plan_policy(historical)

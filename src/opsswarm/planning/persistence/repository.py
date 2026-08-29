@@ -32,6 +32,7 @@ from opsswarm.planning.models import (
     ActionStep,
     ActionType,
     RiskLevel,
+    RollbackConfigurationParameters,
     RollbackReleaseParameters,
     TargetType,
     VerificationRule,
@@ -279,18 +280,30 @@ async def load_action_plan_in_session(
 
 
 def _action_step(row: ActionStepRow) -> ActionStep:
+    action_type = ActionType(row.action_type)
     return ActionStep(
         step_order=row.step_order,
-        action_type=ActionType(row.action_type),
+        action_type=action_type,
         target_type=TargetType(row.target_type),
         target_name=row.target_name,
-        parameters=RollbackReleaseParameters.model_validate(row.parameters),
+        parameters=_action_parameters(action_type, row.parameters),
         risk_level=RiskLevel(row.risk_level),
         requires_human_approval=row.requires_human_approval,
         risk_rule_code=row.risk_rule_code,
         risk_rationale=row.risk_rationale,
         verification=VerificationRule.model_validate(row.verification),
     )
+
+
+def _action_parameters(
+    action_type: ActionType,
+    parameters: dict[str, object],
+) -> RollbackReleaseParameters | RollbackConfigurationParameters:
+    if action_type is ActionType.ROLLBACK_RELEASE:
+        return RollbackReleaseParameters.model_validate(parameters)
+    if action_type is ActionType.ROLLBACK_CONFIGURATION:
+        return RollbackConfigurationParameters.model_validate(parameters)
+    raise ValueError(f"未知处置动作参数：{action_type.value}")
 
 
 def _evidence_observation(row: EvidenceItemRow) -> EvidenceObservation:

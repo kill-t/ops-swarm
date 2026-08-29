@@ -4,7 +4,7 @@
 
 本切片把已经通过质疑的根因转换为可持久化、可审查、可绑定审批版本的结构化处置计划。后续能力映射又要求根因与调查建议成对匹配，解决“建议回滚”仍是一段文本、风险可以被模型随意填写、并发请求可能生成重复计划的问题。
 
-当前只为 `release_500_regression` 提供 `rollback_release` 确定性模板。生成时计划为 `draft`；后续审批请求切片可以把它迁移到 `awaiting_approval`，但计划仍不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限。
+当前为 `release_500_regression` 提供 `rollback_release` 模板，并为 `database_pool_misconfiguration` 提供只生成草案的 `rollback_configuration` 模板。两者生成时都为 `draft`，计划本身不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限。配置回滚执行器尚未开放，因此不能提交审批。
 
 ## 2. 为什么计划生成独立于调查事务
 
@@ -33,7 +33,7 @@ flowchart LR
 - 计划最高风险、是否需要人工审批和风险策略版本。
 - 1～20 个连续排序的 `ActionStep`。
 
-每个步骤包含白名单动作、目标、严格参数、风险规则码与理由，以及结构化恢复判据。当前唯一动作是：
+每个步骤包含白名单动作、目标、严格参数、风险规则码与理由，以及结构化恢复判据。当前模板为：
 
 | 字段 | 当前值 |
 | --- | --- |
@@ -43,15 +43,19 @@ flowchart LR
 | 验证信号 | `http_5xx_ratio` |
 | 成功判据 | 60 秒观察窗口内至少 3 个成功样本，比例低于 1% |
 
+数据库连接池配置回滚只允许 `database_pool_size`，参数为 `current_value` 和 `target_value`，值域为 1～1000 且不能相同；验证规则冻结为连接池饱和度在 60 秒窗口内至少 3 次低于 80%。
+
 版本参数从最新一条已完成部署证据的 `to_version` 和 `from_version` 提取，客户端和模型不能直接覆盖。
 
 ## 4. 风险策略
 
-`action-risk-v1` 把版本回滚固定判定为：
+`action-risk-v2` 把版本回滚和运行配置回滚固定判定为：
 
 - `risk_level=high`；
 - `requires_human_approval=true`；
 - 规则码 `rollback_changes_running_version`。
+
+配置回滚使用规则码 `rollback_changes_runtime_configuration`。历史 `action-risk-v1` 版本回滚计划继续按原版本重算，不因当前策略升级而失效。
 
 安全边界分三层：
 

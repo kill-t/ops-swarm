@@ -19,7 +19,7 @@
 
 Pydantic 在结构化结论边界强制前三种动作建议携带 `requires_human_approval=true`。单 Agent 与多 Agent 综合提示都写明了映射规则，但提示只是辅助模型理解；真正的安全约束仍由本地校验、审批和白名单执行器提供。
 
-新增枚举不等于新增执行能力。当前确定性处置计划和执行器仍只支持 `rollback_release`。`rollback_configuration` 与 `restore_dependency` 在建立独立参数契约、风险策略、审批规则和本地幂等适配器前不可执行。
+新增枚举不等于新增执行能力。后续已为 `rollback_configuration` 建立只生成草案的独立参数契约和风险策略，但审批与执行仍未开放；`restore_dependency` 仍没有计划模板。只有完整建立审批边界、本地幂等适配器和恢复验证后，动作才可执行。
 
 ## 3. 数据集版本策略
 

@@ -9,6 +9,7 @@ from opsswarm.planning.models import (
 )
 
 ROLLBACK_RELEASE_TEMPLATE_VERSION = "rollback-release-v1"
+ROLLBACK_CONFIGURATION_TEMPLATE_VERSION = "rollback-configuration-database-pool-v1"
 
 _EXPECTED_RECOMMENDATION_BY_ROOT_CAUSE = {
     RootCause.RELEASE_500_REGRESSION: Recommendation.ROLLBACK_RELEASE,
@@ -68,6 +69,30 @@ def assess_action_plan_capability(
                 "版本回滚模板可用，且主根因假设已经通过确定性质疑。"
                 if can_create
                 else "版本回滚模板可用，但主根因假设尚未通过确定性质疑。"
+            ),
+        )
+
+    if (
+        root_cause is RootCause.DATABASE_POOL_MISCONFIGURATION
+        and recommendation is Recommendation.ROLLBACK_CONFIGURATION
+    ):
+        can_create = hypothesis_status is HypothesisStatus.SUPPORTED
+        return _capability(
+            root_cause=root_cause,
+            recommendation=recommendation,
+            hypothesis_status=hypothesis_status,
+            status=ActionPlanCapabilityStatus.AVAILABLE,
+            action_type=ActionType.ROLLBACK_CONFIGURATION,
+            template_version=ROLLBACK_CONFIGURATION_TEMPLATE_VERSION,
+            reason_code=(
+                ActionPlanCapabilityReason.TEMPLATE_AVAILABLE
+                if can_create
+                else ActionPlanCapabilityReason.HYPOTHESIS_NOT_SUPPORTED
+            ),
+            explanation=(
+                "数据库连接池配置回滚模板可用，且主根因假设已经通过确定性质疑。"
+                if can_create
+                else "数据库连接池配置回滚模板可用，但主根因假设尚未通过确定性质疑。"
             ),
         )
 

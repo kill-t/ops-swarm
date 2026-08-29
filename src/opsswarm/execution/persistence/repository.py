@@ -31,7 +31,7 @@ from opsswarm.incidents.errors import IncidentNotFound, IncidentVersionConflict
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
-from opsswarm.planning import ActionPlanStatus
+from opsswarm.planning import ActionPlanStatus, ActionType
 from opsswarm.planning.persistence import load_action_plan_in_session
 from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
 
@@ -143,6 +143,12 @@ class OperationExecutionStore:
                 incident_row=incident_row,
                 expected_incident_version=expected_incident_version,
             )
+            if stored_step.action_type is not ActionType.ROLLBACK_RELEASE:
+                raise OperationNotAuthorized(
+                    step_id,
+                    reason_code="action_type_not_executable",
+                    message="当前确定性执行器尚未开放该动作类型",
+                )
             if existing is not None:
                 existing.lease_token = uuid4()
                 existing.locked_until = occurred_at + lease_duration

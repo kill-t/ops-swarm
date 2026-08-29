@@ -73,13 +73,13 @@ from opsswarm.investigation.persistence import (
     StoredSpecialistReport,
 )
 from opsswarm.planning.models import (
+    ActionParameters,
     ActionPlanCapability,
     ActionPlanCapabilityReason,
     ActionPlanCapabilityStatus,
     ActionPlanStatus,
     ActionType,
     RiskLevel,
-    RollbackReleaseParameters,
     TargetType,
     VerificationRule,
 )
@@ -329,7 +329,7 @@ class ActionStepResponse(StrictApiModel):
     action_type: ActionType
     target_type: TargetType
     target_name: str
-    parameters: RollbackReleaseParameters
+    parameters: ActionParameters
     risk_level: RiskLevel
     requires_human_approval: bool
     risk_rule_code: str

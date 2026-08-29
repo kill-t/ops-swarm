@@ -151,6 +151,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `action_plan_not_current` | `409` | 目标计划已被更新版本替代 |
 | `action_plan_not_submittable` | `409` | 计划状态不允许新建审批请求 |
 | `action_plan_does_not_require_approval` | `409` | 目标计划不需要人工审批 |
+| `action_plan_not_executable` | `409` | 计划动作尚无确定性执行器，不能提交审批 |
 | `approval_requester_must_be_human` | `409` | 当前切片只接受人工类型请求人 |
 | `approval_plan_integrity_violation` | `409` | 计划当前内容与提交审批时的哈希不一致 |
 | `approval_decider_must_be_human` | `409` | 批准或拒绝不是由人工类型提交 |
