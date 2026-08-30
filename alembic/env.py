@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from opsswarm.approval.persistence import tables as approval_tables  # noqa: F401
+from opsswarm.change_records.persistence import tables as change_record_tables  # noqa: F401
 from opsswarm.database.asyncio_compat import create_selector_event_loop
 from opsswarm.database.base import Base
 from opsswarm.database.settings import DatabaseSettings

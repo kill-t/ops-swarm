@@ -22,7 +22,7 @@
 | 业务数据库 | PostgreSQL 17 | 保存业务事实、审计、事件和持久任务，支持 JSONB、部分索引和行锁 |
 | 任务调度 | PostgreSQL 租约队列 | MVP 无需额外消息中间件，支持 `SKIP LOCKED` 和故障接管 |
 | 实时进度 | SSE + REST | 进度单向推送，审批使用 REST；比 WebSocket 更符合实际交互 |
-| 受控 HTTP | HTTPX2 异步客户端 | 执行固定本地白名单请求；关闭环境代理继承并限制地址和超时 |
+| 受控 HTTP | HTTPX2 客户端 | 执行固定本地白名单请求或只读遥测查询；关闭环境代理继承并限制地址和超时 |
 
 ## 3. Agent 技术栈
 
@@ -98,7 +98,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 恢复验证复用 HTTPX2，但只向项目内 Prometheus 发送代码中预注册的三条只读查询。响应由 Pydantic 校验，并额外验证唯一序列、标签、值域和样本新鲜度；PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。Prometheus 适配器继续实现同一 `VerificationAdapter` 契约，没有改变领域终态语义。
 
-调查指标和日志同样复用 HTTPX2，但使用各自独立的 `InvestigationDataSource` 适配器。指标适配器先执行固定 `up`，再执行固定 `query_range`，把每条序列最多 121 个点压缩为一条 Evidence；日志适配器执行固定 LogQL，对最多 100 条 JSON 日志做标签、类型和双时间戳校验，再按故障聚合。实时调查结果不计算冻结场景的准确率，评测仍通过 `FrozenScenarioDataSource` 运行。
+调查指标、日志和变更同样复用 HTTPX2，但使用各自独立的 `InvestigationDataSource` 适配器。指标适配器先执行固定 `up`，再执行固定 `query_range`，把每条序列最多 121 个点压缩为一条 Evidence；日志适配器执行固定 LogQL，对最多 100 条 JSON 日志做标签、类型和双时间戳校验，再按故障聚合；变更适配器只访问固定本地服务、固定路由和固定服务名，对最多 100 条记录做精确联合类型、时间窗、重复与截断校验。实时调查结果不计算冻结场景的准确率，评测仍通过 `FrozenScenarioDataSource` 运行。
 
 ## 5. 可观测性
 
@@ -120,6 +120,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 被管服务 | gateway-service、order-service | 阶段 1 起逐步增加 |
 | 故障依赖 | PostgreSQL 17、Redis 7.4、redis-py 6 | 数据库切片、真实 Redis 切片 |
 | 遥测 | Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 | 指标恢复验证与日志调查切片 |
+| 变更事实 | FastAPI、PostgreSQL 17 | 固定发布、配置和依赖维护记录及只读调查切片 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
 | 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |

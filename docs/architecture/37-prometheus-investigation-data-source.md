@@ -99,7 +99,7 @@ uv run python -m opsswarm.investigation.prometheus_smoke --lookback-minutes 15
 - Evidence 保存窗口摘要，不保存原始样本引用或 Prometheus 查询审计表；
 - 当前同步工具适配符合 LangChain 工具边界，未来高并发 Worker 需要评估线程池和连接复用。
 
-后续日志设计与实现见 [结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md)。下一步应实现确定性变更记录模拟器与受限只读查询，再把日志、指标和变更证据关联到同一事故时间窗。
+后续日志设计与实现见 [结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md)，变更事实设计见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)。三类现场数据已分别可用，下一步通过统一数据源把它们关联到同一事故时间窗。
 
 ## 10. 面试表达
 

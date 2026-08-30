@@ -24,6 +24,8 @@ flowchart LR
     worker --> model[OpenAI 兼容模型]
     worker --> adapters[只读工具适配器]
     adapters --> lab[Docker Compose 故障环境]
+    adapters -->|固定只读查询| change_service[变更记录模拟服务]
+    change_service --> app_db
 
     verification_worker[恢复验证 Worker] -->|领取到期验证任务| app_db
     verification_worker -->|固定只读探针| lab
@@ -161,7 +163,7 @@ LangGraph 1.x 用于：
 - PostgreSQL：订单依赖和连接池故障目标。
 - Redis：缓存依赖和不可用故障目标。
 - Prometheus 与 Loki：指标、日志来源。
-- 变更记录模拟器：提供部署版本、提交和发布时间。
+- 变更记录模拟器：以独立常驻服务保存发布、配置和依赖维护时间线。
 
 当前故障实验室支持三类确定性故障：
 
@@ -169,7 +171,7 @@ LangGraph 1.x 用于：
 - `database_pool_size`：固定演练负载需要 10 个连接；容量低于 10 时订单固定返回 `database_pool_timeout`，容量恢复为 50 后饱和度为 `0.2` 且订单恢复。状态接口同时返回饱和度和等待数，为后续只读验证探针提供稳定信号。
 - Redis 网络依赖：`order-service` 经固定 TCP 故障代理对独立 `lab-redis` 执行真实 `PING`；代理断开时订单固定返回 `redis_connection_unavailable`，通过 CAS 恢复连通后不可用比例变为 `0.0` 且订单恢复。
 
-当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7 和 Alloy 1.19：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki。Agent 指标工具和日志工具已经可以通过各自的只读适配器生成现场 Evidence，但真实变更数据源和分布式 trace 尚未接入，持久调查 Worker 因此仍使用冻结证据。
+当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。Agent 的指标、日志和变更工具均已能通过各自的只读适配器生成现场 Evidence，但统一现场数据源和分布式 trace 尚未接入，持久调查 Worker 因此仍使用冻结证据。
 
 如果多个故障同时存在，固定按版本故障、连接池故障、Redis 故障排序，避免一次请求的错误类型受分支顺序或随机数影响。版本与连接池状态保存在订单服务进程，Redis 断连状态保存在单副本代理进程；服务重启后都回到安全默认值。故障状态不是 Incident、审批或执行审计的业务事实。管理接口只暴露在 Compose 内网或 localhost，不作为生产接口设计；执行器仍不能访问 Docker Socket，Redis 代理后端也不能在运行时改变。
 
@@ -205,6 +207,8 @@ LangGraph 1.x 用于：
 | `PUT /__admin/faults/release-500` | 在演练环境启用或关闭确定性 500 故障 |
 | `GET /__admin/configuration/database-pool` | 查询演练连接池容量、饱和度和等待数 |
 | `PUT /__admin/configuration/database-pool` | 把演练连接池容量设置为严格整数 `1～1000` |
+| `POST /__admin/changes` | 在独立模拟服务中幂等追加一种固定变更事实，不执行环境操作 |
+| `GET /api/v1/changes` | 按固定服务和 1～24 小时窗口只读查询变更事实 |
 
 非法状态迁移、过期版本或冲突操作统一返回 `409 Conflict`。请求校验错误返回 `422`。当前领域错误响应包含稳定错误码、中文消息和结构化详情；追踪标识将在可观测性切片统一加入。
 
@@ -213,7 +217,7 @@ LangGraph 1.x 用于：
 - 本地 MVP 单租户、无 JWT，仅绑定 localhost 和 Compose 私有网络，并明确标记不可用于生产。
 - 审批阶段再引入操作员身份和角色；没有可信身份之前不能声称具备生产审批能力。
 - 业务数据库 `opsswarm` 由 Alembic 管理；checkpoint 数据库 `opsswarm_checkpoints` 由 LangGraph 初始化流程管理。两者位于同一个本地 PostgreSQL 容器，但属于不同逻辑数据库。
-- API、Worker、执行器和演练服务使用不同数据库或网络权限，执行器是唯一拥有受控写操作能力的组件。
+- 变更记录服务只有 `control` 网络连接，代码仓储只暴露追加和读取，不连接故障实验室；执行器仍是唯一能受控修改被管环境的组件。当前本地 MVP 的业务进程仍共用一个数据库账号，生产化前必须拆分迁移、API、Worker 与变更服务角色，并用数据库权限落实最小授权。
 - 外部模型、LangSmith 和真实平台集成都必须可关闭；离线测试不依赖它们。
 
 ## 10. 失败恢复策略

@@ -2,6 +2,10 @@
 
 from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.challenge import challenge_investigation
+from opsswarm.investigation.changes import (
+    ChangeApiOnlyInvestigationDataSource,
+    ChangeInvestigationSettings,
+)
 from opsswarm.investigation.evaluation import compare_investigation_modes, evaluate_investigation
 from opsswarm.investigation.loki import (
     LokiInvestigationSettings,
@@ -36,6 +40,8 @@ from opsswarm.investigation.prometheus import (
 )
 
 __all__ = [
+    "ChangeApiOnlyInvestigationDataSource",
+    "ChangeInvestigationSettings",
     "EvidenceKind",
     "EvidenceObservation",
     "EvidenceRelation",

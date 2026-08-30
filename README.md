@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证、Prometheus 只读调查数据源，以及结构化日志与 Loki 只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证、Prometheus 只读调查数据源、结构化日志与 Loki 只读调查数据源，以及持久变更记录与只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -67,6 +67,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Prometheus 指标与恢复验证](docs/architecture/36-prometheus-recovery-verification.md)
 - [Prometheus 只读调查数据源](docs/architecture/37-prometheus-investigation-data-source.md)
 - [结构化日志与 Loki 只读调查数据源](docs/architecture/38-structured-logs-and-loki-investigation.md)
+- [持久变更记录模拟器与只读调查数据源](docs/architecture/39-change-record-simulator-and-investigation.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -80,7 +81,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 7. 人工审批、白名单执行器和幂等操作。
 8. 恢复验证、失败恢复与时间线 UI。
 9. 评测集以及单 Agent、多 Agent 对比。
-10. 继续接入变更记录、OpenTelemetry、GitHub 或 MCP 工具。
+10. 组合三类真实现场数据源，再接入 OpenTelemetry、GitHub 或 MCP 工具。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -199,7 +200,7 @@ $env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_callin
 uv run python -m opsswarm.worker.main
 ```
 
-当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus 指标与 Loki 日志已经接入各自的独立只读调查数据源，但在变更适配器和统一现场数据源完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
+当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus、Loki 和变更记录已经接入各自的独立只读调查数据源；在统一现场数据源组合完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
 
 不调用模型、直接验证 Agent 指标工具与真实 Prometheus 的只读链路：
 
@@ -212,6 +213,14 @@ uv run python -m opsswarm.investigation.prometheus_smoke --lookback-minutes 15
 ```powershell
 uv run python -m opsswarm.investigation.loki_smoke --lookback-minutes 15
 ```
+
+不调用模型、直接验证 Agent 变更工具与持久变更服务的只读链路：
+
+```powershell
+uv run python -m opsswarm.investigation.change_smoke --lookback-hours 6
+```
+
+变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定记录；查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
 
 ## Evidence Board
 

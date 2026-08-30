@@ -28,7 +28,7 @@ erDiagram
     SERVICES ||--o{ INCIDENTS : affects
     INCIDENTS ||--o{ ALERTS : groups
     INCIDENTS ||--o{ INCIDENT_EVENTS : records
-    INCIDENTS ||--o{ CHANGE_RECORDS : correlates
+    SERVICES ||--o{ CHANGE_RECORDS : records
     INCIDENTS ||--o{ INVESTIGATION_RUNS : investigates
     INVESTIGATION_RUNS ||--o{ INVESTIGATION_TASKS : contains
     INVESTIGATION_TASKS ||--o{ TOOL_CALLS : invokes
@@ -61,7 +61,7 @@ erDiagram
 | `incidents` | 当前事故状态、严重级别、指纹和生命周期时间 |
 | `alerts` | 原始告警及其外部幂等标识 |
 | `incident_events` | 不可变事故时间线和 SSE 游标 |
-| `change_records` | 部署、配置和代码变更证据 |
+| `change_records` | 独立于 Incident 的部署、配置和依赖维护事实；调查按服务与时间窗关联 |
 
 ### 3.2 调查与证据域
 
@@ -96,7 +96,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、追加式变更记录表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -334,6 +334,20 @@ Worker 使用 `FOR UPDATE SKIP LOCKED` 跳过其他实例正在领取的行，�
 每行保存一个真实模型实验在某次重复、某个冻结场景和一种 Agent 模式下的独立尝试。`sequence` 用于稳定倒序分页，幂等键全局唯一，`(experiment_id, repetition_index, scenario_id, mode)` 防止同一实验槽位重复付费调用。
 
 `running` 不允许结果、失败或完成时间；`succeeded` 必须保存结构化评分结果；`failed` 必须保存六类稳定失败之一和有限脱敏消息。预算与遥测均为经过 Pydantic 校验的 JSONB。终态只能由仓储从 `running` 条件更新一次，完整设计见 [真实模型单场景冒烟与尝试生命周期](26-real-model-smoke-attempts.md)。
+
+### 4.23 change_records
+
+| 字段组 | 说明 |
+| --- | --- |
+| 标识与幂等 | UUID 主键；`(source, external_change_id)` 唯一 |
+| 固定归属 | 来源限定 `fault-lab-change-simulator`，服务限定 `order-service` |
+| 类型与内容 | 类型限定发布、连接池配置或 Redis 依赖维护；`details` 必须为 JSONB 对象 |
+| 内容完整性 | 64 位小写 SHA-256 覆盖规范化变更内容，用于识别外部编号内容漂移 |
+| 时间 | `occurred_at` 与 `recorded_at` 使用 `TIMESTAMPTZ`，且发生时间不得晚于记录时间 |
+
+表不建立 Incident 外键，因为变更事实通常早于告警和 Incident。`(service_name, occurred_at DESC, id DESC)` 索引支持调查按服务与时间窗关联。仓储只暴露追加和有界读取：首次编号插入，完全相同重放返回原记录，不同内容复用编号则冲突；没有更新或删除路径。
+
+JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、服务、类型、对象形状、摘要和时间顺序。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)。
 
 ## 5. Incident 状态机
 
