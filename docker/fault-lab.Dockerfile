@@ -16,7 +16,9 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --locked --no-dev --no-editable && \
+    mkdir -p /var/log/opsswarm && \
+    chown -R 10001:10001 /var/log/opsswarm
 
 USER 10001:10001
 

@@ -37,6 +37,7 @@ from opsswarm.fault_lab.redis_dependency import (
     RedisDependencyBackend,
     RemoteRedisDependencyBackend,
 )
+from opsswarm.fault_lab.structured_logging import FaultKind, FaultLabEventLogger
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +77,13 @@ def create_app(
     controller: FaultController | None = None,
     *,
     redis_backend: RedisDependencyBackend | None = None,
+    event_logger: FaultLabEventLogger | None = None,
 ) -> FastAPI:
     """创建故障演练应用；生产入口默认访问真实 Redis。"""
 
     fault_controller = controller if controller is not None else FaultController()
     fault_metrics = FaultLabMetrics()
+    fault_event_logger = event_logger if event_logger is not None else FaultLabEventLogger()
     dependency_backend = redis_backend
     if dependency_backend is None:
         dependency_backend = (
@@ -95,6 +98,7 @@ def create_app(
             yield
         finally:
             await dependency_backend.close()
+            fault_event_logger.close()
 
     app = FastAPI(
         title="OpsSwarm Fault Lab - order-service",
@@ -132,7 +136,7 @@ def create_app(
         snapshot = fault_controller.snapshot()
         if snapshot.release_500_enabled:
             fault_metrics.record_order(result="failed", failure_reason="release_500")
-            logger.warning("故障注入触发 order_id=%s fault=release_500", order_id)
+            fault_event_logger.order_failure(fault=FaultKind.RELEASE_500, snapshot=snapshot)
             error = FaultErrorResponse(
                 message="新版本故障注入已启用，订单接口模拟返回 500",
                 order_id=order_id,
@@ -141,11 +145,9 @@ def create_app(
 
         if snapshot.database_pool_timeout_enabled:
             fault_metrics.record_order(result="failed", failure_reason="database_pool_timeout")
-            logger.warning(
-                "故障注入触发 order_id=%s fault=database_pool_timeout pool_size=%s waiters=%s",
-                order_id,
-                snapshot.database_pool_size,
-                snapshot.database_pool_waiters,
+            fault_event_logger.order_failure(
+                fault=FaultKind.DATABASE_POOL_TIMEOUT,
+                snapshot=snapshot,
             )
             database_error = DatabasePoolErrorResponse(
                 message="数据库连接池容量不足，订单接口模拟获取连接超时",
@@ -159,7 +161,7 @@ def create_app(
 
         if not await dependency_backend.is_available():
             fault_metrics.record_order(result="failed", failure_reason="redis_unavailable")
-            logger.warning("故障注入触发 order_id=%s fault=redis_unavailable", order_id)
+            fault_event_logger.order_failure(fault=FaultKind.REDIS_UNAVAILABLE, snapshot=snapshot)
             redis_error = RedisDependencyErrorResponse(
                 message="Redis 依赖不可用，订单接口模拟连接失败",
                 order_id=order_id,

@@ -4,7 +4,7 @@
 
 本切片让 LangChain 的 `query_service_metrics` 工具能够读取项目内真实 Prometheus，并把区间指标转换为可进入 Evidence Board 的 `EvidenceObservation`。模型只能提供服务名和 1～60 分钟回看窗口，不能提供 PromQL、目标地址、指标名或任意标签选择器。
 
-当前只接入指标端口。Loki 和变更记录模拟器尚未实现，因此实时数据源的日志、变更查询明确返回空集合，不会用冻结场景伪装成现场数据。持久调查 Worker 继续使用冻结场景，直到三个现场数据端口能够形成一致证据链；离线和真实模型评测也继续使用版本化冻结数据，保证单 Agent、多 Agent 对照可重复。
+本切片交付时只接入指标端口，日志和变更查询明确返回空集合，不会用冻结场景伪装成现场数据。后续 [结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md) 已补齐独立日志端口；持久调查 Worker 仍继续使用冻结场景，直到三个现场数据端口能够形成一致证据链。离线和真实模型评测也继续使用版本化冻结数据，保证单 Agent、多 Agent 对照可重复。
 
 ## 2. 数据流与信任边界
 
@@ -95,11 +95,11 @@ uv run python -m opsswarm.investigation.prometheus_smoke --lookback-minutes 15
 
 - 当前 Gauge 是故障实验室 0～1 快照，不是生产流量 Counter 的 `rate()`；
 - 只支持固定 `order-service`，没有服务目录驱动的多服务查询注册表；
-- 尚未接入 Loki 日志和部署/配置变更记录，运行时 Worker 因此仍使用冻结证据；
+- Loki 日志已在后续切片独立接入，部署/配置变更记录仍未实现，运行时 Worker 因此继续使用冻结证据；
 - Evidence 保存窗口摘要，不保存原始样本引用或 Prometheus 查询审计表；
 - 当前同步工具适配符合 LangChain 工具边界，未来高并发 Worker 需要评估线程池和连接复用。
 
-下一步应实现确定性结构化日志源：故障服务输出有限字段 JSON 日志，Loki 只读适配器使用固定 LogQL 注册表，并把日志证据与本切片的真实指标证据关联到同一事故时间窗。
+后续日志设计与实现见 [结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md)。下一步应实现确定性变更记录模拟器与受限只读查询，再把日志、指标和变更证据关联到同一事故时间窗。
 
 ## 10. 面试表达
 

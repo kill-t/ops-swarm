@@ -110,6 +110,7 @@ services:
     ports:
       - "127.0.0.1:18001:8000"
     environment:
+      OPSSWARM_FAULT_LAB_LOG_PATH: /var/log/opsswarm/order-service.jsonl
       OPSSWARM_FAULT_LAB_REDIS_URL: redis://redis-proxy:6379/0
       OPSSWARM_FAULT_LAB_REDIS_PROXY_ADMIN_URL: http://redis-proxy:8474
     depends_on:
@@ -118,6 +119,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - order-service-logs:/var/log/opsswarm
     cap_drop:
       - ALL
     security_opt:
@@ -171,6 +174,61 @@ services:
     networks:
       - lab
 
+  loki:
+    image: grafana/loki:3.7.7
+    command:
+      - -config.file=/etc/loki/loki.yml
+    ports:
+      - "127.0.0.1:13100:3100"
+    volumes:
+      - ./docker/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - /usr/bin/loki
+        - -version
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - lab
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    user: "473:473"
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --disable-reporting
+      - /etc/alloy/config.alloy
+    depends_on:
+      loki:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - order-service-logs:/var/log/opsswarm:ro
+      - alloy-data:/var/lib/alloy/data
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - lab
+
   verification-worker:
     <<: *opsswarm-runtime
     init: true
@@ -211,5 +269,8 @@ networks:
     driver: bridge
 
 volumes:
+  alloy-data:
   control-db-data:
+  loki-data:
+  order-service-logs:
   prometheus-data:

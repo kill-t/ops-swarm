@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证，以及 Prometheus 只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十八个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证、Prometheus 只读调查数据源，以及结构化日志与 Loki 只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -66,6 +66,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [真实 Redis 与受控故障代理](docs/architecture/35-real-redis-fault-proxy.md)
 - [Prometheus 指标与恢复验证](docs/architecture/36-prometheus-recovery-verification.md)
 - [Prometheus 只读调查数据源](docs/architecture/37-prometheus-investigation-data-source.md)
+- [结构化日志与 Loki 只读调查数据源](docs/architecture/38-structured-logs-and-loki-investigation.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -79,7 +80,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 7. 人工审批、白名单执行器和幂等操作。
 8. 恢复验证、失败恢复与时间线 UI。
 9. 评测集以及单 Agent、多 Agent 对比。
-10. 继续接入 Loki、OpenTelemetry、GitHub 或 MCP 工具。
+10. 继续接入变更记录、OpenTelemetry、GitHub 或 MCP 工具。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -198,12 +199,18 @@ $env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_callin
 uv run python -m opsswarm.worker.main
 ```
 
-当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus 指标已接入独立只读调查数据源，但在 Loki 和变更适配器完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
+当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus 指标与 Loki 日志已经接入各自的独立只读调查数据源，但在变更适配器和统一现场数据源完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
 
 不调用模型、直接验证 Agent 指标工具与真实 Prometheus 的只读链路：
 
 ```powershell
 uv run python -m opsswarm.investigation.prometheus_smoke --lookback-minutes 15
+```
+
+不调用模型、直接验证 Agent 日志工具与真实 Loki 的只读链路：
+
+```powershell
+uv run python -m opsswarm.investigation.loki_smoke --lookback-minutes 15
 ```
 
 ## Evidence Board
@@ -402,7 +409,7 @@ Invoke-RestMethod http://127.0.0.1:18001/health
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出，`verification-worker` 会作为常驻容器自动领取到期验证任务；`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL 与 Prometheus 命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出，`verification-worker` 会作为常驻容器自动领取到期验证任务；`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 ## 测试与检查
 

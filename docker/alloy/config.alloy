@@ -1,0 +1,47 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.source.file "order_service" {
+  targets = [
+    {
+      __path__ = "/var/log/opsswarm/order-service.jsonl",
+      service  = "order-service",
+      source   = "fault-lab",
+    },
+  ]
+  forward_to = [loki.process.order_service.receiver]
+}
+
+loki.process "order_service" {
+  stage.json {
+    expressions = {
+      event_time = "timestamp",
+    }
+    drop_malformed = true
+  }
+
+  stage.timestamp {
+    source            = "event_time"
+    format            = "RFC3339"
+    action_on_failure = "skip"
+  }
+
+  forward_to = [loki.relabel.order_service.receiver]
+}
+
+loki.relabel "order_service" {
+  rule {
+    action = "labeldrop"
+    regex  = "filename"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

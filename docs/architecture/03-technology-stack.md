@@ -98,16 +98,16 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 恢复验证复用 HTTPX2，但只向项目内 Prometheus 发送代码中预注册的三条只读查询。响应由 Pydantic 校验，并额外验证唯一序列、标签、值域和样本新鲜度；PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。Prometheus 适配器继续实现同一 `VerificationAdapter` 契约，没有改变领域终态语义。
 
-调查指标同样复用 HTTPX2，但使用独立 `InvestigationDataSource` 适配器。它先执行固定 `up` 查询，再执行固定 `query_range`，把每条序列最多 121 个点压缩为一条规范化 Evidence。实时调查结果不计算冻结场景的准确率，评测仍通过 `FrozenScenarioDataSource` 运行。
+调查指标和日志同样复用 HTTPX2，但使用各自独立的 `InvestigationDataSource` 适配器。指标适配器先执行固定 `up`，再执行固定 `query_range`，把每条序列最多 121 个点压缩为一条 Evidence；日志适配器执行固定 LogQL，对最多 100 条 JSON 日志做标签、类型和双时间戳校验，再按故障聚合。实时调查结果不计算冻结场景的准确率，评测仍通过 `FrozenScenarioDataSource` 运行。
 
 ## 5. 可观测性
 
 | 技术 | 目标 |
 | --- | --- |
-| structlog | 结构化 JSON 日志和统一上下文字段 |
+| structlog 26 | 故障服务有限字段 JSON 事件日志 |
 | Prometheus 3.13 LTS、prometheus-client | 故障服务指标抓取与固定恢复查询 |
 | OpenTelemetry | 跨 API、Worker、Agent 节点和工具调用的 trace |
-| Loki | 本地演练服务日志查询目标 |
+| Loki 3.7、Grafana Alloy 1.19 | 本地日志存储、固定文件采集与只读调查查询 |
 | LangSmith | 可选查看模型输入输出和图执行，不保存业务唯一事实 |
 
 日志和 trace 使用 `incident_id`、`run_id`、`work_item_id` 和 `trace_id` 关联。密钥、审批令牌和原始敏感数据不得写入日志。
@@ -119,7 +119,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 容器编排 | Docker Compose | 阶段 1 |
 | 被管服务 | gateway-service、order-service | 阶段 1 起逐步增加 |
 | 故障依赖 | PostgreSQL 17、Redis 7.4、redis-py 6 | 数据库切片、真实 Redis 切片 |
-| 遥测 | Prometheus 3.13 LTS；后续 Loki | Prometheus 恢复验证切片、日志切片 |
+| 遥测 | Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 | 指标恢复验证与日志调查切片 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
 | 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |

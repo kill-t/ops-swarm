@@ -3,6 +3,10 @@
 from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.evaluation import compare_investigation_modes, evaluate_investigation
+from opsswarm.investigation.loki import (
+    LokiInvestigationSettings,
+    LokiOnlyInvestigationDataSource,
+)
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -47,6 +51,8 @@ __all__ = [
     "InvestigationRunStatus",
     "InvestigationRunResult",
     "LangGraphParallelInvestigator",
+    "LokiInvestigationSettings",
+    "LokiOnlyInvestigationDataSource",
     "MultiAgentInvestigationResult",
     "PrometheusInvestigationSettings",
     "PrometheusOnlyInvestigationDataSource",

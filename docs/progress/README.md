@@ -78,3 +78,4 @@
 - [35 - 真实 Redis 与受控故障代理](35-real-redis-fault-proxy.md)
 - [36 - Prometheus 指标与恢复验证](36-prometheus-recovery-verification.md)
 - [37 - Prometheus 只读调查数据源](37-prometheus-investigation-data-source.md)
+- [38 - 结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md)
