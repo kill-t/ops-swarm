@@ -6,11 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from opsswarm.fault_lab.app import create_app
+from opsswarm.fault_lab.controller import FaultController
 
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    with TestClient(create_app()) as test_client:
+    with TestClient(create_app(FaultController())) as test_client:
         yield test_client
 
 

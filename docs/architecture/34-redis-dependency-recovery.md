@@ -4,7 +4,7 @@
 
 本切片让第三个 MVP 故障 `redis_unavailable` 具备与版本回归、数据库连接池错误相同的受控闭环：确定性故障、带证据计划、人工审批、白名单执行和持久恢复验证。
 
-当前 Redis 是 `order-service` 故障实验室中的确定性依赖状态，不是真实 Redis 进程或集群。这样可以先验证业务状态、授权、幂等和失败恢复；系统没有 Docker Socket、任意 Shell、任意 URL 或生产 Redis 权限。真实 Redis 与网络故障代理留给后续集成切片。
+本切片先使用 `order-service` 进程内确定性依赖状态验证业务状态、授权、幂等和失败恢复。该临时实现已经由 [真实 Redis 与受控故障代理](35-real-redis-fault-proxy.md) 替代；系统仍没有 Docker Socket、任意 Shell、任意 URL 或生产 Redis 权限。
 
 ## 2. 端到端流程
 
@@ -126,14 +126,14 @@ redis_unavailable_ratio < 0.01
 - 控制面使用真实 PostgreSQL 验证调查、计划、审批、执行、验证运行和样本完整落库。
 - 迁移测试从空库降级、重新升级并执行 ORM 元数据一致性检查。
 
-## 9. 当前限制与下一步
+## 9. 本切片交付时的限制与后续状态
 
-- Redis 可用性仍是进程内确定性模型，服务重启会回到安全默认值。
-- 尚未启动真实 `redis:7` 容器，也没有模拟网络分区、超时和主从切换。
+- 第 34 个切片交付时，Redis 可用性仍是进程内确定性模型；第 35 个切片已改为真实 Redis 与固定代理。
+- 第 35 个切片已支持确定性完全断连，但仍没有模拟延迟、丢包和主从切换。
 - 调查工具仍读取冻结场景，不是 Loki、Prometheus 或真实 Redis 遥测。
 - 浏览器作战室仍只读，没有可信身份与状态变更按钮。
 
-下一步先把该确定性契约接到真实 Compose Redis 和固定故障代理：Docker Desktop 中应出现独立 Redis 容器，订单服务通过受控代理访问它，执行器仍只调用固定恢复接口而不接触 Docker Socket。完成真实依赖闭环后，再补结构化日志、Prometheus 指标和 OpenTelemetry trace。
+上述真实 Redis 与固定故障代理已在第 35 个切片落地：Docker Desktop 会出现独立 Redis 与代理容器，订单服务通过代理执行真实 `PING`，执行器仍只调用固定恢复接口而不接触 Docker Socket。后续再补结构化日志、Prometheus 指标和 OpenTelemetry trace。
 
 ## 10. 面试表达
 

@@ -116,13 +116,15 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | --- | --- | --- |
 | 容器编排 | Docker Compose | 阶段 1 |
 | 被管服务 | gateway-service、order-service | 阶段 1 起逐步增加 |
-| 故障依赖 | PostgreSQL 17、Redis 7.x | 对应故障切片引入 |
+| 故障依赖 | PostgreSQL 17、Redis 7.4、redis-py 6 | 数据库切片、真实 Redis 切片 |
 | 遥测 | Prometheus、Loki | 先提供简化数据，再接真实服务 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
 | 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |
 
 首个 UI 切片已经使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4 和 Vue Router 5。开发服务器通过同源 `/api` 代理连接本机控制面，不因此扩大 FastAPI CORS。当前 `vue-tsc` 与 TypeScript 7 的编译器入口不兼容，因此锁定经过类型检查和生产构建验证的 TypeScript 6；升级必须再次通过相同验收。
+
+Redis 只属于故障演练环境，不承担控制面队列或业务事实存储。订单服务通过 redis-py 经项目内固定 TCP 代理访问 Redis 7.4；代理仅控制连通性并主动清理已有连接，不解析命令，也不拥有 Docker Socket。
 
 ## 7. 未选择的方案
 

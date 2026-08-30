@@ -1,6 +1,8 @@
 """order-service 故障演练 API。"""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, Path
@@ -27,6 +29,11 @@ from opsswarm.fault_lab.models import (
     RedisDependencyErrorResponse,
     RedisDependencyStatus,
     RedisDependencyUpdate,
+)
+from opsswarm.fault_lab.redis_dependency import (
+    LocalRedisDependencyBackend,
+    RedisDependencyBackend,
+    RemoteRedisDependencyBackend,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,22 +62,42 @@ def _to_database_pool_status(snapshot: FaultSnapshot) -> DatabasePoolStatus:
     )
 
 
-def _to_redis_dependency_status(snapshot: FaultSnapshot) -> RedisDependencyStatus:
+def _to_redis_dependency_status(available: bool) -> RedisDependencyStatus:
     return RedisDependencyStatus(
-        available=snapshot.redis_available,
-        redis_unavailable_ratio=snapshot.redis_unavailable_ratio,
-        status="healthy" if snapshot.redis_available else "unavailable",
+        available=available,
+        redis_unavailable_ratio=0.0 if available else 1.0,
+        status="healthy" if available else "unavailable",
     )
 
 
-def create_app(controller: FaultController | None = None) -> FastAPI:
-    """创建可注入独立故障状态的 FastAPI 应用。"""
+def create_app(
+    controller: FaultController | None = None,
+    *,
+    redis_backend: RedisDependencyBackend | None = None,
+) -> FastAPI:
+    """创建故障演练应用；生产入口默认访问真实 Redis。"""
 
     fault_controller = controller if controller is not None else FaultController()
+    dependency_backend = redis_backend
+    if dependency_backend is None:
+        dependency_backend = (
+            LocalRedisDependencyBackend(fault_controller)
+            if controller is not None
+            else RemoteRedisDependencyBackend()
+        )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await dependency_backend.close()
+
     app = FastAPI(
         title="OpsSwarm Fault Lab - order-service",
         version=__version__,
         description="仅用于本地 Docker Compose 的确定性故障演练服务。",
+        lifespan=lifespan,
     )
 
     @app.get("/health", response_model=HealthResponse, tags=["系统"])
@@ -90,7 +117,7 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
         },
         tags=["订单"],
     )
-    def get_order(order_id: OrderId) -> OrderResponse | JSONResponse:
+    async def get_order(order_id: OrderId) -> OrderResponse | JSONResponse:
         snapshot = fault_controller.snapshot()
         if snapshot.release_500_enabled:
             logger.warning("故障注入触发 order_id=%s fault=release_500", order_id)
@@ -117,7 +144,7 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
                 content=database_error.model_dump(mode="json"),
             )
 
-        if not snapshot.redis_available:
+        if not await dependency_backend.is_available():
             logger.warning("故障注入触发 order_id=%s fault=redis_unavailable", order_id)
             redis_error = RedisDependencyErrorResponse(
                 message="Redis 依赖不可用，订单接口模拟连接失败",
@@ -198,8 +225,8 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
         response_model=RedisDependencyStatus,
         tags=["依赖控制"],
     )
-    def get_redis_dependency() -> RedisDependencyStatus:
-        return _to_redis_dependency_status(fault_controller.snapshot())
+    async def get_redis_dependency() -> RedisDependencyStatus:
+        return _to_redis_dependency_status(await dependency_backend.is_available())
 
     @app.put(
         "/__admin/dependencies/redis",
@@ -212,11 +239,11 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
         },
         tags=["依赖控制"],
     )
-    def update_redis_dependency(
+    async def update_redis_dependency(
         request: RedisDependencyUpdate,
     ) -> RedisDependencyStatus | JSONResponse:
         try:
-            snapshot = fault_controller.set_redis_available(
+            available = await dependency_backend.set_available(
                 available=request.available,
                 expected_available=request.expected_available,
             )
@@ -232,6 +259,6 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
             request.expected_available,
             request.available,
         )
-        return _to_redis_dependency_status(snapshot)
+        return _to_redis_dependency_status(available)
 
     return app

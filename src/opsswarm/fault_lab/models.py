@@ -19,6 +19,13 @@ class HealthResponse(StrictModel):
     status: Literal["healthy"] = "healthy"
 
 
+class RedisProxyHealthResponse(StrictModel):
+    """Redis 故障代理进程健康检查响应。"""
+
+    service: Literal["redis-proxy"] = "redis-proxy"
+    status: Literal["healthy"] = "healthy"
+
+
 class FaultUpdate(StrictModel):
     """故障开关更新请求。"""
 

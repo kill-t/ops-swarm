@@ -41,11 +41,80 @@ services:
     networks:
       - control
 
+  lab-redis:
+    image: redis:7.4.5-alpine
+    user: redis
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    read_only: true
+    tmpfs:
+      - /data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - lab
+
+  redis-proxy:
+    <<: *opsswarm-runtime
+    init: true
+    command:
+      - python
+      - -m
+      - opsswarm.fault_lab.redis_proxy
+    environment:
+      OPSSWARM_REDIS_PROXY_BACKEND_HOST: lab-redis
+    depends_on:
+      lab-redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:16379:6379"
+      - "127.0.0.1:18474:8474"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8474/health', timeout=2).read()"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - lab
+
   order-service:
     <<: *opsswarm-runtime
     init: true
     ports:
       - "127.0.0.1:18001:8000"
+    environment:
+      OPSSWARM_FAULT_LAB_REDIS_URL: redis://redis-proxy:6379/0
+      OPSSWARM_FAULT_LAB_REDIS_PROXY_ADMIN_URL: http://redis-proxy:8474
+    depends_on:
+      redis-proxy:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
