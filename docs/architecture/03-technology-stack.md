@@ -98,6 +98,8 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 恢复验证复用 HTTPX2，但只向项目内 Prometheus 发送代码中预注册的三条只读查询。响应由 Pydantic 校验，并额外验证唯一序列、标签、值域和样本新鲜度；PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。Prometheus 适配器继续实现同一 `VerificationAdapter` 契约，没有改变领域终态语义。
 
+调查指标同样复用 HTTPX2，但使用独立 `InvestigationDataSource` 适配器。它先执行固定 `up` 查询，再执行固定 `query_range`，把每条序列最多 121 个点压缩为一条规范化 Evidence。实时调查结果不计算冻结场景的准确率，评测仍通过 `FrozenScenarioDataSource` 运行。
+
 ## 5. 可观测性
 
 | 技术 | 目标 |

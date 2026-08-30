@@ -40,7 +40,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 - `log`、`metric` 或 `change` 类型。
 - 数据来源、简短摘要、UTC 观察时间和结构化属性。
 
-`InvestigationDataSource` 是框架无关的只读协议。当前 `FrozenScenarioDataSource` 返回固定证据；后续 Loki、Prometheus 和变更平台适配器实现同一协议，不需要修改 Agent 的业务输入。
+`InvestigationDataSource` 是框架无关的只读协议。`FrozenScenarioDataSource` 为评测返回固定证据；`PrometheusOnlyInvestigationDataSource` 已能返回真实指标 Evidence，但日志和变更端口仍明确为空。后续 Loki 与变更平台适配器实现同一协议，不需要修改 Agent 的业务输入。
 
 ### 3.2 结构化结论
 
@@ -87,7 +87,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 
 - 当前只有一个故障场景，指标只能证明管线和判分可重复，不能代表模型泛化能力。
 - 调查运行、结构化结果和评测指标已经持久化；Agent 内部节点级进度尚未 checkpoint。
-- 当前数据源是冻结证据，不是 Prometheus、Loki 或真实变更平台。
+- 持久调查 Worker 仍使用冻结证据；真实 Prometheus 目前只接入指标工具冒烟，Loki 和变更平台尚未接入。
 - 当前 Agent loop 没有 checkpoint、并行调查节点和质疑循环；保存基线后才使用 LangGraph 增加这些能力。
 - Token、成本、耗时和模型版本只有真实模型评测才有意义，后续作为显式端到端评测记录。
 

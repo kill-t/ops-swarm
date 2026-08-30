@@ -98,11 +98,11 @@ Invoke-WebRequest http://127.0.0.1:18001/metrics
 
 - 三个 Gauge 是确定性故障快照，不是生产流量的窗口聚合；
 - Prometheus 只抓取 `order-service`，尚未采集 API、Worker、PostgreSQL 或 Redis Exporter；
-- 调查工具仍读取冻结指标证据，尚未实现真实 Prometheus `InvestigationDataSource`；
+- Prometheus 调查适配器已在后续切片实现，但持久调查 Worker 仍等待 Loki 与变更数据源形成完整现场证据链；
 - 尚未接入 Alertmanager、Grafana、Loki 和 OpenTelemetry；
 - Prometheus 只适用于本地演练，不具备生产鉴权、高可用和长期存储。
 
-下一步优先实现只读 Prometheus 调查数据源：把受限服务名和回看分钟转换为预注册查询，输出规范化 Evidence，而不是让 Agent 自由生成 PromQL。冻结评测数据继续作为单/多 Agent 公平基线。
+只读 Prometheus 调查数据源见 [Prometheus 只读调查数据源](37-prometheus-investigation-data-source.md)：它把受限服务名和回看分钟转换为固定查询并输出规范化 Evidence，冻结评测数据继续作为单/多 Agent 公平基线。
 
 ## 9. 面试表达
 

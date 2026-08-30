@@ -26,6 +26,10 @@ from opsswarm.investigation.models import (
     WorkItemStatus,
 )
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
+from opsswarm.investigation.prometheus import (
+    PrometheusInvestigationSettings,
+    PrometheusOnlyInvestigationDataSource,
+)
 
 __all__ = [
     "EvidenceKind",
@@ -44,6 +48,8 @@ __all__ = [
     "InvestigationRunResult",
     "LangGraphParallelInvestigator",
     "MultiAgentInvestigationResult",
+    "PrometheusInvestigationSettings",
+    "PrometheusOnlyInvestigationDataSource",
     "Recommendation",
     "RootCause",
     "SingleAgentInvestigator",

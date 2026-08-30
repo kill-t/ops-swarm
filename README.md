@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十六个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理，以及 Prometheus 指标与恢复验证。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十七个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证，以及 Prometheus 只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -65,6 +65,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Redis 不可用确定性处置闭环](docs/architecture/34-redis-dependency-recovery.md)
 - [真实 Redis 与受控故障代理](docs/architecture/35-real-redis-fault-proxy.md)
 - [Prometheus 指标与恢复验证](docs/architecture/36-prometheus-recovery-verification.md)
+- [Prometheus 只读调查数据源](docs/architecture/37-prometheus-investigation-data-source.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -197,7 +198,13 @@ $env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_callin
 uv run python -m opsswarm.worker.main
 ```
 
-当前两种处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路，不代表真实监控系统已经接入。
+当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus 指标已接入独立只读调查数据源，但在 Loki 和变更适配器完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
+
+不调用模型、直接验证 Agent 指标工具与真实 Prometheus 的只读链路：
+
+```powershell
+uv run python -m opsswarm.investigation.prometheus_smoke --lookback-minutes 15
+```
 
 ## Evidence Board
 

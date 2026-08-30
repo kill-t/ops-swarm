@@ -64,5 +64,20 @@ class InvestigationToolBudgetExceeded(InvestigationError):
     """模型尝试调用只读工具的次数超过显式预算。"""
 
 
+class InvestigationDataSourceFailure(InvestigationError):
+    """只读调查数据源未能返回可验证的规范化观察。"""
+
+    def __init__(
+        self,
+        *,
+        error_code: str,
+        message: str,
+        http_status: int | None = None,
+    ) -> None:
+        self.error_code = error_code
+        self.http_status = http_status
+        super().__init__(message)
+
+
 class GraphThreadIdMismatch(InvestigationError):
     """业务运行已经关联到另一个不符合确定性规则的图线程。"""

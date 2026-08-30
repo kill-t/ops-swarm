@@ -115,9 +115,9 @@ docker compose exec -T lab-redis redis-cli ping
 - 当前只模拟完全断连，不模拟延迟、丢包、带宽限制、只读副本或主从切换；
 - Redis 无鉴权，仅存在于本地演练私网，不能照搬到生产部署；
 - 代理状态保存在单进程内存中，不支持多副本；
-- 恢复验证已在第 36 个切片接入真实 Prometheus 指标；调查证据仍来自冻结评测场景，尚未采集真实 Redis 日志。
+- 恢复验证已在第 36 个切片接入真实 Prometheus 指标，第 37 个切片又接入了 Agent 指标工具；持久调查仍等待真实 Redis 日志与变更证据。
 
-第 36 个切片已为故障实验室增加真实 Prometheus 并切换恢复验证。后续应实现受限的 Prometheus 调查数据源，再补结构化日志、Loki 与 OpenTelemetry，同时保留固定执行器与业务审计边界。
+第 36 个切片已为故障实验室增加真实 Prometheus 并切换恢复验证，第 37 个切片实现了受限 Prometheus 调查数据源。后续补结构化日志、Loki、变更记录与 OpenTelemetry，同时保留固定执行器与业务审计边界。
 
 ## 9. 面试表达
 
