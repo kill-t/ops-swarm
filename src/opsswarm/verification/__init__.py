@@ -8,15 +8,19 @@ from opsswarm.verification.errors import (
     VerificationProbeFailure,
     VerificationRunCompleted,
     VerificationRunNotFound,
+    VerificationWorkItemLeaseLost,
+    VerificationWorkItemNotFound,
 )
 from opsswarm.verification.models import (
     VerificationFailure,
     VerificationObservation,
     VerificationSampleStatus,
     VerificationStatus,
+    VerificationWorkItemError,
+    VerificationWorkItemStatus,
     sample_status,
 )
-from opsswarm.verification.settings import VerificationSettings
+from opsswarm.verification.settings import VerificationSettings, VerificationWorkerSettings
 
 __all__ = [
     "FaultLabVerificationAdapter",
@@ -32,5 +36,10 @@ __all__ = [
     "VerificationSampleStatus",
     "VerificationSettings",
     "VerificationStatus",
+    "VerificationWorkItemError",
+    "VerificationWorkItemLeaseLost",
+    "VerificationWorkItemNotFound",
+    "VerificationWorkItemStatus",
+    "VerificationWorkerSettings",
     "sample_status",
 ]

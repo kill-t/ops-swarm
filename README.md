@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十二个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练，以及配置回滚受控执行与恢复验证。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证，以及持久恢复验证调度 Worker。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -61,6 +61,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [数据库连接池配置回滚计划模板](docs/architecture/30-database-pool-configuration-plan.md)
 - [数据库连接池确定性故障演练](docs/architecture/31-database-pool-fault-lab.md)
 - [配置回滚受控执行与恢复验证](docs/architecture/32-configuration-execution-and-verification.md)
+- [持久恢复验证调度 Worker](docs/architecture/33-persistent-verification-scheduler.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -241,9 +242,9 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 `POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行。版本回滚冻结 `http_5xx_ratio < 0.01`，配置回滚冻结 `database_pool_saturation < 0.8`；两者都要求 60 秒窗口内至少 3 个成功样本，不会让单个 HTTP 请求阻塞 60 秒。
 
-调用方使用 `POST /api/v1/verification-runs/{run_id}/samples` 触发一次与动作绑定的固定只读探针，只能提交幂等键，不能提交观测数值。每个样本都保存信号、阈值、HTTP 状态和服务器 UTC 时间；同键重试不重复探测。任一失败样本或探针错误会使验证失败并把 Incident 返回 `investigating`。只有成功样本数量与观察窗口都满足时，验证才通过并原子迁移到 `resolved`。
+验证运行创建时会在同一事务中投递 `verification_work_items`。常驻 Worker 默认按冻结窗口自动调用动作绑定的固定只读探针；三样本、60 秒规则安排在约 0、30、60 秒。每个调度轮次使用稳定幂等键，样本已落库但 Worker 尚未结算时，租约到期重领不会重复探测。
 
-测试使用可注入服务器时钟推进 60 秒窗口，不降低业务规则，也不让测试真实等待。实际演练可在窗口内分三次触发采样；后续调度器可以自动触发相同接口和仓储语义。
+`POST /api/v1/verification-runs/{run_id}/samples` 继续保留为本地诊断和幂等重放接口，客户端仍不能提交观测数值。`GET /api/v1/verification-runs/{run_id}/work-item` 可以只读查看下一次采样时间、领取状态、尝试次数和有限错误，但不暴露租约令牌。测试使用可注入服务器时钟推进 60 秒窗口，不降低业务规则，也不让测试真实等待。
 
 ## Incident 领域状态机
 
@@ -385,12 +386,13 @@ Invoke-RestMethod `
 ### Docker Compose 运行
 
 ```powershell
-docker compose up --build -d --wait
+docker compose up --build -d
+docker compose ps -a
 Invoke-RestMethod http://127.0.0.1:18001/health
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，两者都在服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出，`verification-worker` 会作为常驻容器自动领取到期验证任务。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，两者都在服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 ## 测试与检查
 

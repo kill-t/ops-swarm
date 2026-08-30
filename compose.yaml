@@ -1,3 +1,6 @@
+x-opsswarm-runtime: &opsswarm-runtime
+  image: ops-swarm-runtime:local
+
 services:
   control-db:
     image: postgres:17.6-alpine
@@ -21,10 +24,25 @@ services:
     networks:
       - control
 
-  order-service:
+  control-migrate:
+    <<: *opsswarm-runtime
     build:
       context: .
       dockerfile: docker/fault-lab.Dockerfile
+    command:
+      - alembic
+      - upgrade
+      - head
+    environment:
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+    depends_on:
+      control-db:
+        condition: service_healthy
+    networks:
+      - control
+
+  order-service:
+    <<: *opsswarm-runtime
     init: true
     ports:
       - "127.0.0.1:18001:8000"
@@ -46,6 +64,37 @@ services:
       retries: 5
       start_period: 5s
     networks:
+      - lab
+
+  verification-worker:
+    <<: *opsswarm-runtime
+    init: true
+    command:
+      - python
+      - -m
+      - opsswarm.verification.main
+    restart: unless-stopped
+    environment:
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+      OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_VERIFICATION_WORKER_POLL_INTERVAL_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_POLL_INTERVAL_SECONDS:-1}
+      OPSSWARM_VERIFICATION_WORKER_LEASE_DURATION_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_LEASE_DURATION_SECONDS:-15}
+      OPSSWARM_VERIFICATION_WORKER_BASE_RETRY_DELAY_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_BASE_RETRY_DELAY_SECONDS:-2}
+      OPSSWARM_VERIFICATION_WORKER_MAX_RETRY_DELAY_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_MAX_RETRY_DELAY_SECONDS:-60}
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+      order-service:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control
       - lab
 
 networks:

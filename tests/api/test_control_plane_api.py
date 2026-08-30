@@ -866,6 +866,16 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
         "required_successful_samples": 3,
     }
     verification_run_id = verification_body["verification_run"]["id"]
+    verification_work = await control_client.get(
+        f"/api/v1/verification-runs/{verification_run_id}/work-item"
+    )
+    assert verification_work.status_code == 200
+    verification_work_body = verification_work.json()
+    assert verification_work_body["id"] == verification_run_id
+    assert verification_work_body["status"] == "pending"
+    assert verification_work_body["next_sample_sequence"] == 1
+    assert verification_work_body["attempt_count"] == 0
+    assert "lease_token" not in verification_work_body
 
     duplicate_verification = await control_client.post(
         f"/api/v1/operation-executions/{execution_id}/verification-runs",

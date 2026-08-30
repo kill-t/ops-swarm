@@ -30,6 +30,14 @@ class VerificationSampleStatus(StrEnum):
     ERROR = "error"
 
 
+class VerificationWorkItemStatus(StrEnum):
+    """恢复验证调度任务的持久生命周期。"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+
+
 class StrictVerificationModel(BaseModel):
     """恢复验证不可变值对象的共同约束。"""
 
@@ -50,6 +58,13 @@ class VerificationFailure(StrictVerificationModel):
     error_code: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_]+$")
     message: str = Field(min_length=1, max_length=500)
     http_status: int | None = Field(default=None, ge=100, le=599)
+
+
+class VerificationWorkItemError(StrictVerificationModel):
+    """调度 Worker 自身失败时保存的有限错误摘要。"""
+
+    error_code: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_]+$")
+    message: str = Field(min_length=1, max_length=500)
 
 
 def sample_status(

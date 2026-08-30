@@ -25,6 +25,9 @@ flowchart LR
     worker --> adapters[只读工具适配器]
     adapters --> lab[Docker Compose 故障环境]
 
+    verification_worker[恢复验证 Worker] -->|领取到期验证任务| app_db
+    verification_worker -->|固定只读探针| lab
+
     api --> executor[白名单执行器]
     executor -->|批准后的受控动作| lab
     executor --> app_db
@@ -47,7 +50,7 @@ API 与 Worker 是两个独立进程，但共享同一个 Python 包中的领域
 | Planning | 根因结论、处置计划、风险标记 | 直接执行计划 |
 | Approval | 审批请求、决定、审批有效期 | 调用模型代替人工审批 |
 | Execution | 白名单、参数校验、幂等执行、审计 | 任意 Shell 和未登记动作 |
-| Verification | 恢复判据、验证结果、失败回流 | 主观判定系统已恢复 |
+| Verification | 恢复判据、持久调度、验证结果和失败回流 | 主观判定系统已恢复 |
 | Evaluation | 故障真值、运行指标、单/多 Agent 对比 | 影响线上调查状态 |
 | Platform | 配置、数据库、任务租约、事件与可观测性 | 承载领域决策 |
 | Web UI | Incident 路由、只读快照、可重放时间线与人机交互 | 保存业务唯一事实或绕过 API 操作环境 |
@@ -107,7 +110,7 @@ sequenceDiagram
 
 恢复规则随 `action_step` 生成，并在验证运行创建时再次冻结到业务库。当前固定探针把合法订单 2xx 映射为 5xx 比例 `0.0`，把任意 5xx 映射为 `1.0`；客户端只能提交样本幂等键，不能提交观测值。
 
-验证不会让 API 请求等待完整观察窗口。调用方或后续调度器在不同观察时点触发短采样，PostgreSQL 保存进度。至少 3 个健康样本且首末跨度达到 60 秒才通过；瞬时连续请求即使样本数足够，也保持 `running`。
+验证不会让 API 请求等待完整观察窗口。验证运行与调度任务在同一事务创建，独立 Worker 使用租约在不同观察时点触发短采样，PostgreSQL 保存下一次到期时间和样本进度。至少 3 个健康样本且首末跨度达到 60 秒才通过；瞬时连续请求即使样本数足够，也保持 `running`。
 
 ## 5. LangChain 与 LangGraph 边界
 
@@ -190,6 +193,7 @@ LangGraph 1.x 用于：
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 为成功操作创建唯一的持久恢复验证 |
 | `GET /api/v1/verification-runs/{run_id}` | 查询冻结规则、验证进度、终态和样本 |
 | `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次与动作绑定的固定只读探针 |
+| `GET /api/v1/verification-runs/{run_id}/work-item` | 只读查询自动采样的到期时间、租约状态和有限错误 |
 | `GET /api/v1/incidents/{id}/events` | 按递增事件号查询时间线 |
 | `GET /api/v1/incidents/{id}/stream` | 从 PostgreSQL 补发并持续推送 SSE 时间线 |
 | `GET /api/v1/evaluation-runs` | 按全局运行序号倒序分页查询评测聚合历史 |
@@ -224,3 +228,5 @@ LangGraph 1.x 用于：
 | 恢复验证失败 | 保存验证证据并返回 `investigating` |
 | API 在观察窗口中重启 | 已有运行与样本保存在 PostgreSQL，按新幂等键继续采样 |
 | 相同样本命令重试 | 运行内幂等键返回原样本，不重复调用探针 |
+| 验证 Worker 在样本落库后崩溃 | 租约到期后重领同一任务与同一调度幂等键，只结算一次样本 |
+| 验证 Worker 内部失败 | 保存脱敏错误并指数退避，不伪造恢复失败结论 |

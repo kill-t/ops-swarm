@@ -45,6 +45,7 @@ from opsswarm.control_plane.schemas import (
     StartInvestigationResponse,
     VerificationRunResponse,
     VerificationSampleRequest,
+    VerificationWorkItemResponse,
 )
 from opsswarm.control_plane.sse import IncidentEventStream
 from opsswarm.evaluation.persistence import EvaluationStore
@@ -660,6 +661,20 @@ def create_router(clock: Clock) -> APIRouter:
         service: VerificationServiceDependency,
     ) -> VerificationRunResponse:
         return VerificationRunResponse.from_stored(await service.get(run_id))
+
+    @router.get(
+        "/api/v1/verification-runs/{run_id}/work-item",
+        response_model=VerificationWorkItemResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["恢复验证"],
+    )
+    async def get_verification_work_item(
+        run_id: UUID,
+        service: VerificationServiceDependency,
+    ) -> VerificationWorkItemResponse:
+        """只读返回下一次采样时间、领取状态和有限错误。"""
+
+        return VerificationWorkItemResponse.from_stored(await service.get_work_item(run_id))
 
     @router.post(
         "/api/v1/verification-runs/{run_id}/samples",

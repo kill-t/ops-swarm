@@ -88,10 +88,15 @@ from opsswarm.planning.persistence import (
     StoredActionPlan,
     StoredActionStep,
 )
-from opsswarm.verification import VerificationSampleStatus, VerificationStatus
+from opsswarm.verification import (
+    VerificationSampleStatus,
+    VerificationStatus,
+    VerificationWorkItemStatus,
+)
 from opsswarm.verification.persistence import (
     StoredVerificationRun,
     StoredVerificationSample,
+    StoredVerificationWorkItem,
     VerificationRunCreation,
     VerificationSampleOutcome,
 )
@@ -634,6 +639,48 @@ class CreateVerificationRunResponse(StrictApiModel):
         return cls(
             created=creation.created,
             verification_run=VerificationRunResponse.from_stored(creation.run),
+        )
+
+
+class VerificationWorkItemResponse(StrictApiModel):
+    """不暴露租约令牌的恢复验证调度状态。"""
+
+    id: UUID
+    verification_run_id: UUID
+    status: VerificationWorkItemStatus
+    next_sample_sequence: int
+    available_at: datetime
+    locked_by: str | None
+    locked_until: datetime | None
+    attempt_count: int
+    consecutive_failure_count: int
+    last_error_code: str | None
+    last_error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+    @classmethod
+    def from_stored(cls, stored: StoredVerificationWorkItem) -> Self:
+        return cls(
+            id=stored.id,
+            verification_run_id=stored.verification_run_id,
+            status=stored.status,
+            next_sample_sequence=stored.next_sample_sequence,
+            available_at=stored.available_at,
+            locked_by=stored.locked_by,
+            locked_until=stored.locked_until,
+            attempt_count=stored.attempt_count,
+            consecutive_failure_count=stored.consecutive_failure_count,
+            last_error_code=(
+                stored.last_error.error_code if stored.last_error is not None else None
+            ),
+            last_error_message=(
+                stored.last_error.message if stored.last_error is not None else None
+            ),
+            created_at=stored.created_at,
+            updated_at=stored.updated_at,
+            completed_at=stored.completed_at,
         )
 
 

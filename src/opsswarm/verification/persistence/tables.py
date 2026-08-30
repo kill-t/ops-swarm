@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -127,6 +128,76 @@ class VerificationRunRow(Base):
     last_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_code: Mapped[str | None] = mapped_column(String(100))
     failure_message: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class VerificationWorkItemRow(Base):
+    """驱动一次验证运行持续采样的可恢复租约任务。"""
+
+    __tablename__ = "verification_work_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed')",
+            name="ck_verification_work_items_status",
+        ),
+        CheckConstraint(
+            "next_sample_sequence >= 1 AND attempt_count >= 0 AND consecutive_failure_count >= 0",
+            name="ck_verification_work_items_counts",
+        ),
+        CheckConstraint(
+            "(last_error_code IS NULL AND last_error_message IS NULL) OR "
+            "(last_error_code IS NOT NULL AND last_error_message IS NOT NULL)",
+            name="ck_verification_work_items_error_shape",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND locked_by IS NOT NULL AND locked_until IS NOT NULL "
+            "AND lease_token IS NOT NULL AND locked_until > updated_at) OR "
+            "(status <> 'running' AND locked_by IS NULL AND locked_until IS NULL "
+            "AND lease_token IS NULL)",
+            name="ck_verification_work_items_lease_shape",
+        ),
+        CheckConstraint(
+            "(status = 'completed' AND completed_at IS NOT NULL) OR "
+            "(status <> 'completed' AND completed_at IS NULL)",
+            name="ck_verification_work_items_completion_shape",
+        ),
+        CheckConstraint(
+            "created_at <= updated_at AND created_at <= available_at "
+            "AND (completed_at IS NULL OR completed_at >= created_at)",
+            name="ck_verification_work_items_time_order",
+        ),
+        Index(
+            "ix_verification_work_items_pending_claim",
+            "available_at",
+            "created_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index(
+            "ix_verification_work_items_expired_lease",
+            "locked_until",
+            postgresql_where=text("status = 'running'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    verification_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("verification_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    next_sample_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_by: Mapped[str | None] = mapped_column(String(100))
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    consecutive_failure_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_message: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

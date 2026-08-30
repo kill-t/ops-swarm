@@ -75,11 +75,13 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 ### 2.5 逐次恢复验证语义
 
-验证运行 POST 只接受 `expected_incident_version`。目标操作必须为 `succeeded`，Incident 必须处于 `verifying`；服务端从操作关联步骤读取并冻结验证规则。同操作重复请求返回原运行，即使调用方仍携带旧版本，也不会创建第二个验证。
+验证运行 POST 只接受 `expected_incident_version`。目标操作必须为 `succeeded`，Incident 必须处于 `verifying`；服务端从操作关联步骤读取并冻结验证规则，并在同一事务创建唯一 `verification_work_item`。同操作重复请求返回原运行，即使调用方仍携带旧版本，也不会创建第二个验证或调度任务。
 
 样本 POST 只接受 8～100 字符的 `idempotency_key`，不接受观测值、状态码、URL 或时间。服务端固定探针完成只读请求后，以服务器 UTC 时间追加样本。同键已存在时返回 `200`、`created=false`、`probe_performed=false`；并发竞争可能已经执行只读探针，但数据库仍只保存一个同键样本，响应通过 `probe_performed` 如实表达本次是否发起了探测。
 
-一个 5xx 数值样本或探针错误会形成 `failed` 运行并把 Incident 返回 `investigating`，这属于成功持久化的业务判定，因此样本接口仍返回 `201`，不会伪装成传输层失败。健康样本只有在数量和 60 秒窗口都满足时才使运行 `passed`、Incident `resolved`。GET 返回全部样本，当前计划最多要求 100 个成功样本；后续高流量场景再增加分页。
+常驻验证 Worker 默认通过 PostgreSQL 租约自动触发样本；手动样本 POST 仍保留给本地诊断和幂等验证。一个 5xx 数值样本或探针错误会形成 `failed` 运行并把 Incident 返回 `investigating`，这属于成功持久化的业务判定，因此样本接口仍返回 `201`，不会伪装成传输层失败。健康样本只有在数量和 60 秒窗口都满足时才使运行 `passed`、Incident `resolved`。GET 返回全部样本，当前计划最多要求 100 个成功样本；后续高流量场景再增加分页。
+
+`GET /api/v1/verification-runs/{run_id}/work-item` 返回调度状态、下次样本序号、到期时间、Worker 标识、租约到期时间、尝试次数和有限错误。响应永不包含 `lease_token`；该接口只读，客户端不能提前调度、延长租约或改写失败。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -168,6 +170,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `execution_lease_lost` | `409` | 当前执行实例的租约已过期或被接管 |
 | `operation_execution_failed` | `502` | 受控适配器失败，失败事实和 Incident 回流已落库 |
 | `verification_run_not_found` | `404` | 恢复验证运行不存在 |
+| `verification_work_item_not_found` | `404` | 恢复验证调度任务不存在 |
 | `operation_execution_not_verifiable` | `409` | 操作未成功、Incident 不在验证状态或目标不受支持 |
 | `verification_run_completed` | `409` | 已结束运行不能使用新的幂等键追加样本 |
 | `unsupported_verification_rule` | `409` | 当前验证器不支持步骤冻结的信号或比较符 |

@@ -14,6 +14,8 @@ from opsswarm.verification.models import (
     VerificationFailure,
     VerificationSampleStatus,
     VerificationStatus,
+    VerificationWorkItemError,
+    VerificationWorkItemStatus,
 )
 
 
@@ -137,6 +139,61 @@ class StoredVerificationRun(StrictVerificationModel):
         return self
 
 
+class StoredVerificationWorkItem(StrictVerificationModel):
+    """恢复验证 Worker 可以领取和重放的持久调度状态。"""
+
+    id: UUID
+    verification_run_id: UUID
+    status: VerificationWorkItemStatus
+    next_sample_sequence: int = Field(ge=1)
+    available_at: datetime
+    locked_by: str | None = None
+    locked_until: datetime | None = None
+    lease_token: UUID | None = None
+    attempt_count: int = Field(ge=0)
+    consecutive_failure_count: int = Field(ge=0)
+    last_error: VerificationWorkItemError | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+    @field_validator("available_at", "locked_until", "created_at", "updated_at", "completed_at")
+    @classmethod
+    def normalize_work_time(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("调度任务时间必须包含时区")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_work_lifecycle(self) -> Self:
+        if self.updated_at < self.created_at or self.available_at < self.created_at:
+            raise ValueError("调度任务时间顺序无效")
+        has_full_lease = (
+            self.locked_by is not None
+            and self.locked_until is not None
+            and self.lease_token is not None
+        )
+        has_any_lease = (
+            self.locked_by is not None
+            or self.locked_until is not None
+            or self.lease_token is not None
+        )
+        if self.status is VerificationWorkItemStatus.RUNNING:
+            if not has_full_lease or self.completed_at is not None:
+                raise ValueError("running 调度任务必须且只能包含完整租约")
+            return self
+        if has_any_lease:
+            raise ValueError("非 running 调度任务不能保留租约")
+        if self.status is VerificationWorkItemStatus.COMPLETED:
+            if self.completed_at is None:
+                raise ValueError("completed 调度任务必须包含完成时间")
+        elif self.completed_at is not None:
+            raise ValueError("pending 调度任务不能提前完成")
+        return self
+
+
 @dataclass(frozen=True, slots=True)
 class VerificationRunCreation:
     """区分首次创建和按执行记录幂等读取。"""
@@ -162,3 +219,11 @@ class VerificationSampleOutcome:
     sample: StoredVerificationSample
     created: bool
     probe_performed: bool
+
+
+def scheduled_sample_idempotency_key(work_item_id: UUID, sample_sequence: int) -> str:
+    """为一次可重领调度生成稳定且满足 API 约束的样本幂等键。"""
+
+    if sample_sequence < 1:
+        raise ValueError("sample_sequence 必须大于等于 1")
+    return f"verification-scheduler-{work_item_id.hex}-{sample_sequence}"

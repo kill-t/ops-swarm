@@ -76,6 +76,7 @@ from opsswarm.verification import (
     VerificationError,
     VerificationRunCompleted,
     VerificationRunNotFound,
+    VerificationWorkItemNotFound,
 )
 from opsswarm.verification.persistence import VerificationStore
 from opsswarm.verification.service import VerificationService
@@ -559,6 +560,13 @@ def create_app(
                 error_code="verification_run_not_found",
                 message=str(error),
                 details={"run_id": str(error.run_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, VerificationWorkItemNotFound):
+            response = ApiErrorResponse(
+                error_code="verification_work_item_not_found",
+                message=str(error),
+                details={"work_item_id": str(error.work_item_id)},
             )
             http_status = status.HTTP_404_NOT_FOUND
         elif isinstance(error, OperationExecutionNotVerifiable):

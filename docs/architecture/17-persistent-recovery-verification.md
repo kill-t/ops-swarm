@@ -4,7 +4,7 @@
 
 本切片让 `verifying` 成为可持久化、可恢复、可审计的业务过程。验证只消费成功操作及其步骤中已经冻结的规则，不允许模型或客户端在验证时降低阈值、减少样本数或伪造观测值。
 
-版本回滚规则是 `http_5xx_ratio < 0.01`，配置回滚规则是 `database_pool_saturation < 0.8`；两者都要求观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；调用方逐次触发固定只读探针，运行进度和每个样本先写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
+版本回滚规则是 `http_5xx_ratio < 0.01`，配置回滚规则是 `database_pool_saturation < 0.8`；两者都要求观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；后续切片已经增加持久验证 Worker，自动逐次触发固定只读探针，运行进度、调度状态和每个样本都写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
 
 ## 2. 为什么采用逐次采样
 
@@ -12,21 +12,21 @@
 
 ```mermaid
 sequenceDiagram
-    participant Caller as 调用方或后续调度器
+    participant Caller as 调用方
     participant API as 控制面
     participant DB as PostgreSQL
+    participant Worker as 验证 Worker
     participant Probe as 动作绑定的固定只读探针
 
     Caller->>API: 为成功 operation 创建 verification_run
-    API->>DB: 校验 succeeded、verifying 和版本，冻结规则
+    API->>DB: 校验并同事务创建 run 与 work_item
     loop 每个观察时点
-        Caller->>API: 使用幂等键请求一个样本
-        API->>DB: 检查运行与同键样本
-        API->>Probe: GET 固定订单端点
-        Probe-->>API: 200 或 5xx
-        API->>DB: 追加样本并重算数量与时间窗口
+        Worker->>DB: 领取到期租约任务
+        Worker->>Probe: 使用稳定幂等键执行固定探针
+        Probe-->>Worker: 受校验状态
+        Worker->>DB: 追加或读取同键样本并安排下次到期时间
     end
-    API->>DB: 通过则 resolved，失败则 investigating
+    Worker->>DB: 通过则 resolved，失败则 investigating
 ```
 
 测试通过可注入服务器时钟模拟观察间隔；生产规则仍为真实 60 秒，没有为了测试而缩短。
@@ -52,17 +52,18 @@ sequenceDiagram
 
 ## 5. 数据与 API
 
-`verification_runs` 唯一绑定成功执行记录，保存 Incident、步骤、执行前版本、冻结规则、成功样本计数、观察时间和终态摘要。`verification_samples` 是只追加明细，保存运行内幂等键、连续序号、判定、数值或错误、HTTP 状态和服务器观测时间。
+`verification_runs` 唯一绑定成功执行记录，保存 Incident、步骤、执行前版本、冻结规则、成功样本计数、观察时间和终态摘要。`verification_samples` 是只追加明细，保存运行内幂等键、连续序号、判定、数值或错误、HTTP 状态和服务器观测时间。`verification_work_items` 保存唯一调度任务、下一次到期时间、租约、调度序号、尝试次数和有限错误。
 
 | 方法与路径 | 成功语义 |
 | --- | --- |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同操作幂等读取 `200` |
 | `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 |
+| `GET /api/v1/verification-runs/{run_id}/work-item` | 返回不含租约令牌的自动采样状态 |
 | `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` |
 
 ## 6. 当前限制与下一步
 
-- 采样由调用方显式触发，没有定时调度 Worker；运行可以长期停留在 `running`，但进度不会丢失。
+- 自动采样由 Compose 中的常驻 Worker 触发；手动样本接口仍用于本地诊断。
 - 当前支持固定订单探针和连接池状态探针，没有 Prometheus 区间查询或多信号组合。
 - 单个请求代表一个 0 或 1 的 5xx 样本，不是生产流量的统计分位。
 - 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。
@@ -72,4 +73,4 @@ sequenceDiagram
 
 ## 7. 面试表达
 
-我没有用三次瞬时请求冒充 60 秒持续恢复，也没有让 API 阻塞等待。验证规则从已执行步骤冻结到业务库，服务端固定探针逐次采样，客户端只能提供幂等键。每个样本包含服务器时间、阈值和原始 HTTP 状态；达到样本数且覆盖完整窗口才通过。失败样本、运行终态、Incident 状态和时间线原子提交。探针是只读操作，所以崩溃后允许安全重读；数据库行锁只用于最终追加和判定，不跨越网络调用。
+我没有用三次瞬时请求冒充 60 秒持续恢复，也没有让 API 阻塞等待。验证规则从已执行步骤冻结到业务库，验证运行和调度任务同事务创建，独立 Worker 按数据库到期时间逐次采样。每个调度轮次使用稳定幂等键；样本落库后即使 Worker 崩溃，租约接管也只会读取原样本。达到样本数且覆盖完整窗口才通过，失败样本、运行终态、Incident 状态和时间线原子提交。探针是只读操作，数据库行锁只用于领取和最终判定，不跨越网络调用。

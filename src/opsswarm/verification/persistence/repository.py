@@ -3,9 +3,9 @@
 import re
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.execution import ExecutionStatus, OperationExecutionNotFound
@@ -22,25 +22,36 @@ from opsswarm.verification.errors import (
     UnsupportedVerificationRule,
     VerificationRunCompleted,
     VerificationRunNotFound,
+    VerificationWorkItemLeaseLost,
+    VerificationWorkItemNotFound,
 )
 from opsswarm.verification.models import (
     VerificationFailure,
     VerificationObservation,
     VerificationSampleStatus,
     VerificationStatus,
+    VerificationWorkItemError,
+    VerificationWorkItemStatus,
     sample_status,
 )
 from opsswarm.verification.persistence.records import (
     PreparedVerificationSample,
     StoredVerificationRun,
     StoredVerificationSample,
+    StoredVerificationWorkItem,
     VerificationRunCreation,
+    scheduled_sample_idempotency_key,
 )
-from opsswarm.verification.persistence.tables import VerificationRunRow, VerificationSampleRow
+from opsswarm.verification.persistence.tables import (
+    VerificationRunRow,
+    VerificationSampleRow,
+    VerificationWorkItemRow,
+)
 
 RELEASE_VERIFIER_NAME = "local_order_http_5xx_ratio_v1"
 CONFIGURATION_VERIFIER_NAME = "local_database_pool_saturation_v1"
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
+_WORKER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,99}$")
 
 
 class VerificationStore:
@@ -136,6 +147,25 @@ class VerificationStore:
                 completed_at=None,
             )
             session.add(run_row)
+            session.add(
+                VerificationWorkItemRow(
+                    id=run_row.id,
+                    verification_run_id=run_row.id,
+                    status=VerificationWorkItemStatus.PENDING.value,
+                    next_sample_sequence=1,
+                    available_at=run_row.created_at,
+                    locked_by=None,
+                    locked_until=None,
+                    lease_token=None,
+                    attempt_count=0,
+                    consecutive_failure_count=0,
+                    last_error_code=None,
+                    last_error_message=None,
+                    created_at=run_row.created_at,
+                    updated_at=run_row.created_at,
+                    completed_at=None,
+                )
+            )
             await session.flush()
             return VerificationRunCreation(
                 run=await _load_stored_run(session, run_row),
@@ -340,6 +370,162 @@ class VerificationStore:
                 raise VerificationRunNotFound(run_id)
             return await _load_stored_run(session, row)
 
+    async def get_work_item(self, run_id: UUID) -> StoredVerificationWorkItem:
+        """读取验证运行唯一的调度任务，不暴露为可修改对象。"""
+
+        async with self._session_factory() as session:
+            row = await session.scalar(
+                select(VerificationWorkItemRow).where(
+                    VerificationWorkItemRow.verification_run_id == run_id
+                )
+            )
+            if row is None:
+                raise VerificationWorkItemNotFound(run_id)
+            return _stored_work_item(row)
+
+    async def claim_next_work_item(
+        self,
+        *,
+        worker_id: str,
+        occurred_at: datetime,
+        lease_duration: timedelta,
+    ) -> StoredVerificationWorkItem | None:
+        """并发安全领取一个到期任务，并接管已经过期的租约。"""
+
+        worker_id = _normalize_worker_id(worker_id)
+        occurred_at = _normalize_time(occurred_at)
+        if not timedelta(seconds=1) <= lease_duration <= timedelta(minutes=5):
+            raise ValueError("lease_duration 必须在 1 秒到 5 分钟之间")
+        async with self._session_factory() as session, session.begin():
+            row = await session.scalar(
+                select(VerificationWorkItemRow)
+                .where(
+                    or_(
+                        and_(
+                            VerificationWorkItemRow.status
+                            == VerificationWorkItemStatus.PENDING.value,
+                            VerificationWorkItemRow.available_at <= occurred_at,
+                        ),
+                        and_(
+                            VerificationWorkItemRow.status
+                            == VerificationWorkItemStatus.RUNNING.value,
+                            VerificationWorkItemRow.locked_until <= occurred_at,
+                        ),
+                    )
+                )
+                .order_by(
+                    VerificationWorkItemRow.available_at,
+                    VerificationWorkItemRow.created_at,
+                )
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+            if row is None:
+                return None
+            row.status = VerificationWorkItemStatus.RUNNING.value
+            row.locked_by = worker_id
+            row.locked_until = occurred_at + lease_duration
+            row.lease_token = uuid4()
+            row.attempt_count += 1
+            row.updated_at = occurred_at
+            await session.flush()
+            return _stored_work_item(row)
+
+    async def settle_work_item(
+        self,
+        work_item_id: UUID,
+        *,
+        lease_token: UUID,
+        occurred_at: datetime,
+    ) -> StoredVerificationWorkItem:
+        """确认同键样本已落库，并完成任务或安排下一次采样。"""
+
+        occurred_at = _normalize_time(occurred_at)
+        async with self._session_factory() as session, session.begin():
+            work_row = await _locked_work_item(session, work_item_id)
+            _require_valid_work_lease(
+                work_row,
+                lease_token=lease_token,
+                occurred_at=occurred_at,
+            )
+            run_row = cast(
+                VerificationRunRow | None,
+                await session.scalar(
+                    select(VerificationRunRow)
+                    .where(VerificationRunRow.id == work_row.verification_run_id)
+                    .with_for_update()
+                ),
+            )
+            if run_row is None:
+                raise VerificationRunNotFound(work_row.verification_run_id)
+            if run_row.status != VerificationStatus.RUNNING.value:
+                _complete_work_item(work_row, occurred_at=max(occurred_at, run_row.updated_at))
+                await session.flush()
+                return _stored_work_item(work_row)
+
+            idempotency_key = scheduled_sample_idempotency_key(
+                work_row.id,
+                work_row.next_sample_sequence,
+            )
+            sample_row = await session.scalar(
+                select(VerificationSampleRow).where(
+                    VerificationSampleRow.verification_run_id == run_row.id,
+                    VerificationSampleRow.idempotency_key == idempotency_key,
+                )
+            )
+            if sample_row is None:
+                raise RuntimeError("调度任务对应的恢复样本尚未持久化")
+            if sample_row.status != VerificationSampleStatus.PASSED.value:
+                raise RuntimeError("失败或错误样本必须已经使验证运行进入终态")
+
+            settled_at = max(occurred_at, run_row.updated_at, sample_row.observed_at)
+            work_row.status = VerificationWorkItemStatus.PENDING.value
+            work_row.next_sample_sequence += 1
+            work_row.available_at = max(
+                settled_at,
+                _next_sample_at(run_row),
+            )
+            work_row.locked_by = None
+            work_row.locked_until = None
+            work_row.lease_token = None
+            work_row.consecutive_failure_count = 0
+            work_row.updated_at = settled_at
+            await session.flush()
+            return _stored_work_item(work_row)
+
+    async def retry_work_item(
+        self,
+        work_item_id: UUID,
+        *,
+        lease_token: UUID,
+        occurred_at: datetime,
+        error: VerificationWorkItemError,
+        retry_delay: timedelta,
+    ) -> StoredVerificationWorkItem:
+        """保存有限错误并延迟重试，不因 Worker 故障伪造恢复失败。"""
+
+        occurred_at = _normalize_time(occurred_at)
+        if not timedelta(0) <= retry_delay <= timedelta(hours=1):
+            raise ValueError("retry_delay 必须在 0 到 1 小时之间")
+        async with self._session_factory() as session, session.begin():
+            row = await _locked_work_item(session, work_item_id)
+            _require_valid_work_lease(
+                row,
+                lease_token=lease_token,
+                occurred_at=occurred_at,
+            )
+            row.status = VerificationWorkItemStatus.PENDING.value
+            row.available_at = occurred_at + retry_delay
+            row.locked_by = None
+            row.locked_until = None
+            row.lease_token = None
+            row.consecutive_failure_count += 1
+            row.last_error_code = error.error_code
+            row.last_error_message = error.message
+            row.updated_at = occurred_at
+            await session.flush()
+            return _stored_work_item(row)
+
 
 async def _complete_run(
     session: AsyncSession,
@@ -489,6 +675,84 @@ def _stored_sample(row: VerificationSampleRow) -> StoredVerificationSample:
     )
 
 
+def _stored_work_item(row: VerificationWorkItemRow) -> StoredVerificationWorkItem:
+    return StoredVerificationWorkItem(
+        id=row.id,
+        verification_run_id=row.verification_run_id,
+        status=VerificationWorkItemStatus(row.status),
+        next_sample_sequence=row.next_sample_sequence,
+        available_at=row.available_at,
+        locked_by=row.locked_by,
+        locked_until=row.locked_until,
+        lease_token=row.lease_token,
+        attempt_count=row.attempt_count,
+        consecutive_failure_count=row.consecutive_failure_count,
+        last_error=(
+            VerificationWorkItemError(
+                error_code=row.last_error_code,
+                message=row.last_error_message,
+            )
+            if row.last_error_code is not None and row.last_error_message is not None
+            else None
+        ),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        completed_at=row.completed_at,
+    )
+
+
+async def _locked_work_item(
+    session: AsyncSession,
+    work_item_id: UUID,
+) -> VerificationWorkItemRow:
+    row = cast(
+        VerificationWorkItemRow | None,
+        await session.scalar(
+            select(VerificationWorkItemRow)
+            .where(VerificationWorkItemRow.id == work_item_id)
+            .with_for_update()
+        ),
+    )
+    if row is None:
+        raise VerificationWorkItemNotFound(work_item_id)
+    return row
+
+
+def _require_valid_work_lease(
+    row: VerificationWorkItemRow,
+    *,
+    lease_token: UUID,
+    occurred_at: datetime,
+) -> None:
+    if (
+        row.status != VerificationWorkItemStatus.RUNNING.value
+        or row.lease_token != lease_token
+        or row.locked_until is None
+        or row.locked_until <= occurred_at
+    ):
+        raise VerificationWorkItemLeaseLost(row.id)
+
+
+def _complete_work_item(row: VerificationWorkItemRow, *, occurred_at: datetime) -> None:
+    row.status = VerificationWorkItemStatus.COMPLETED.value
+    row.locked_by = None
+    row.locked_until = None
+    row.lease_token = None
+    row.updated_at = occurred_at
+    row.completed_at = occurred_at
+
+
+def _next_sample_at(row: VerificationRunRow) -> datetime:
+    if row.first_success_at is None or row.successful_sample_count < 1:
+        raise RuntimeError("运行中的调度任务缺少首个成功样本")
+    window_seconds = row.observation_window_seconds
+    if row.successful_sample_count >= row.required_successful_samples:
+        return row.first_success_at + timedelta(seconds=window_seconds)
+    divisor = max(row.required_successful_samples - 1, 1)
+    interval_seconds = (window_seconds + divisor - 1) // divisor
+    return row.first_success_at + timedelta(seconds=interval_seconds * row.successful_sample_count)
+
+
 def _rule_from_row(row: VerificationRunRow) -> VerificationRule:
     return VerificationRule(
         signal=row.signal,
@@ -505,6 +769,15 @@ def _normalize_idempotency_key(value: str) -> str:
     normalized = value.strip()
     if _IDEMPOTENCY_PATTERN.fullmatch(normalized) is None:
         raise ValueError("idempotency_key 格式无效")
+    return normalized
+
+
+def _normalize_worker_id(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("worker_id 必须是字符串")
+    normalized = value.strip()
+    if _WORKER_ID_PATTERN.fullmatch(normalized) is None:
+        raise ValueError("worker_id 格式无效")
     return normalized
 
 

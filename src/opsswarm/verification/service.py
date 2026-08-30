@@ -9,6 +9,7 @@ from opsswarm.verification.errors import VerificationProbeFailure
 from opsswarm.verification.models import VerificationFailure
 from opsswarm.verification.persistence import (
     StoredVerificationRun,
+    StoredVerificationWorkItem,
     VerificationRunCreation,
     VerificationSampleOutcome,
     VerificationStore,
@@ -97,3 +98,8 @@ class VerificationService:
 
     async def get(self, run_id: UUID) -> StoredVerificationRun:
         return await self._store.get(run_id)
+
+    async def get_work_item(self, run_id: UUID) -> StoredVerificationWorkItem:
+        """返回调度状态，供控制面只读观测下一次采样和租约。"""
+
+        return await self._store.get_work_item(run_id)

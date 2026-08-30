@@ -13,6 +13,18 @@ class VerificationRunNotFound(VerificationError):
         super().__init__(f"恢复验证运行不存在：{run_id}")
 
 
+class VerificationWorkItemNotFound(VerificationError):
+    def __init__(self, work_item_id: UUID) -> None:
+        self.work_item_id = work_item_id
+        super().__init__(f"恢复验证调度任务不存在：{work_item_id}")
+
+
+class VerificationWorkItemLeaseLost(VerificationError):
+    def __init__(self, work_item_id: UUID) -> None:
+        self.work_item_id = work_item_id
+        super().__init__(f"恢复验证调度任务租约已经失效：{work_item_id}")
+
+
 class OperationExecutionNotVerifiable(VerificationError):
     def __init__(self, execution_id: UUID, *, reason_code: str, message: str) -> None:
         self.execution_id = execution_id
