@@ -63,3 +63,10 @@ class UnsafeConfigurationRollbackTarget(PlanningError):
 
     def __init__(self) -> None:
         super().__init__("变更证据缺少有效的数据库连接池配置前后值，不能安全生成回滚计划")
+
+
+class UnsafeDependencyRestoreTarget(PlanningError):
+    """证据没有证明白名单依赖当前处于不可用状态。"""
+
+    def __init__(self) -> None:
+        super().__init__("证据没有明确证明 Redis 当前不可用，不能安全生成依赖恢复计划")

@@ -16,7 +16,7 @@
 | `database-pool-misconfiguration-v1` | `database_pool_misconfiguration` | 连接池超时日志、连接池饱和指标 | `continue_investigation` |
 | `redis-unavailable-v1` | `redis_unavailable` | Redis 连接失败日志、Redis 健康失败指标 | `continue_investigation` |
 
-数据库连接池和 Redis 场景虽然都带有变更上下文，但当前没有对应白名单处置模板，因此期望建议保持继续调查，不能为了追求“自动修复率”让模型编造未授权动作。
+v1 数据集冻结时，数据库连接池和 Redis 尚无对应白名单处置模板，因此期望建议保持继续调查；后续 v2 契约与确定性模板已另行演进，但不会改写 v1 历史真值。
 
 ## 3. 版本与内容完整性
 

@@ -1,4 +1,4 @@
-"""只允许版本回滚和数据库连接池配置回滚的本地适配器。"""
+"""只允许版本、配置和 Redis 依赖恢复的本地适配器。"""
 
 from typing import Protocol
 
@@ -11,10 +11,14 @@ from opsswarm.fault_lab.models import (
     DatabasePoolConflictResponse,
     DatabasePoolStatus,
     FaultStatus,
+    RedisAvailabilityConflictResponse,
+    RedisDependencyStatus,
 )
 from opsswarm.planning import (
     ActionType,
     ConfigurationKey,
+    DependencyName,
+    RestoreDependencyParameters,
     RollbackConfigurationParameters,
     RollbackReleaseParameters,
     TargetType,
@@ -29,7 +33,7 @@ class OperationAdapter(Protocol):
 
 
 class FaultLabOperationAdapter:
-    """把两种白名单动作映射到各自固定的本地 HTTP 路径。"""
+    """把三种白名单动作映射到各自固定的本地 HTTP 路径。"""
 
     def __init__(
         self,
@@ -43,10 +47,17 @@ class FaultLabOperationAdapter:
     async def execute(self, step: StoredActionStep) -> OperationResult:
         """执行固定本地动作；不拼接计划提供的 URL 或命令。"""
 
-        if step.target_type is not TargetType.SERVICE or step.target_name != "order-service":
+        valid_service_target = (
+            step.target_type is TargetType.SERVICE and step.target_name == "order-service"
+        )
+        valid_redis_target = (
+            step.target_type is TargetType.DEPENDENCY
+            and step.target_name == DependencyName.REDIS.value
+        )
+        if not valid_service_target and not valid_redis_target:
             raise OperationAdapterFailure(
                 error_code="operation_not_whitelisted",
-                message="执行器只允许操作本地 order-service",
+                message="执行器只允许操作本地 order-service 或 Redis 演练依赖",
             )
         try:
             async with httpx2.AsyncClient(
@@ -55,9 +66,13 @@ class FaultLabOperationAdapter:
                 transport=self._transport,
                 trust_env=False,
             ) as client:
-                if step.action_type is ActionType.ROLLBACK_RELEASE and isinstance(
-                    step.parameters,
-                    RollbackReleaseParameters,
+                if (
+                    step.action_type is ActionType.ROLLBACK_RELEASE
+                    and isinstance(
+                        step.parameters,
+                        RollbackReleaseParameters,
+                    )
+                    and valid_service_target
                 ):
                     return await self._rollback_release(
                         client,
@@ -68,11 +83,22 @@ class FaultLabOperationAdapter:
                     step.action_type is ActionType.ROLLBACK_CONFIGURATION
                     and isinstance(step.parameters, RollbackConfigurationParameters)
                     and step.parameters.key is ConfigurationKey.DATABASE_POOL_SIZE
+                    and valid_service_target
                 ):
                     return await self._rollback_database_pool(
                         client,
                         parameters=step.parameters,
                         service_name=step.target_name,
+                    )
+                if (
+                    step.action_type is ActionType.RESTORE_DEPENDENCY
+                    and isinstance(step.parameters, RestoreDependencyParameters)
+                    and step.parameters.dependency is DependencyName.REDIS
+                    and valid_redis_target
+                ):
+                    return await self._restore_redis_dependency(
+                        client,
+                        parameters=step.parameters,
                     )
                 raise OperationAdapterFailure(
                     error_code="operation_not_whitelisted",
@@ -179,6 +205,53 @@ class FaultLabOperationAdapter:
             already_at_target=False,
         )
 
+    async def _restore_redis_dependency(
+        self,
+        client: httpx2.AsyncClient,
+        *,
+        parameters: RestoreDependencyParameters,
+    ) -> OperationResult:
+        current_response = await client.get("/__admin/dependencies/redis")
+        current_response.raise_for_status()
+        current = RedisDependencyStatus.model_validate(current_response.json())
+        if current.available is parameters.target_available:
+            return _redis_result(
+                parameters=parameters,
+                status=current,
+                already_at_target=True,
+            )
+        if current.available is not parameters.expected_available:
+            raise OperationAdapterFailure(
+                error_code="dependency_current_state_mismatch",
+                message="Redis 当前可用性与计划审批状态不一致",
+            )
+
+        update_response = await client.put(
+            "/__admin/dependencies/redis",
+            json={
+                "expected_available": parameters.expected_available,
+                "available": parameters.target_available,
+            },
+        )
+        if update_response.status_code == 409:
+            RedisAvailabilityConflictResponse.model_validate(update_response.json())
+            raise OperationAdapterFailure(
+                error_code="dependency_current_state_mismatch",
+                message="Redis 当前可用性与计划审批状态不一致",
+            )
+        update_response.raise_for_status()
+        updated = RedisDependencyStatus.model_validate(update_response.json())
+        if updated.available is not parameters.target_available:
+            raise OperationAdapterFailure(
+                error_code="dependency_restore_not_confirmed",
+                message="故障演练服务未确认 Redis 已恢复可用",
+            )
+        return _redis_result(
+            parameters=parameters,
+            status=updated,
+            already_at_target=False,
+        )
+
 
 def _configuration_result(
     *,
@@ -196,5 +269,23 @@ def _configuration_result(
             "database_pool_saturation": status.database_pool_saturation,
             "already_at_target": already_at_target,
             "service": service_name,
+        }
+    )
+
+
+def _redis_result(
+    *,
+    parameters: RestoreDependencyParameters,
+    status: RedisDependencyStatus,
+    already_at_target: bool,
+) -> OperationResult:
+    return OperationResult(
+        output={
+            "dependency": parameters.dependency.value,
+            "expected_available": parameters.expected_available,
+            "target_available": parameters.target_available,
+            "available": status.available,
+            "redis_unavailable_ratio": status.redis_unavailable_ratio,
+            "already_at_target": already_at_target,
         }
     )

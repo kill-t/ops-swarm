@@ -4,7 +4,7 @@
 
 本切片把已经通过质疑的根因转换为可持久化、可审查、可绑定审批版本的结构化处置计划。后续能力映射又要求根因与调查建议成对匹配，解决“建议回滚”仍是一段文本、风险可以被模型随意填写、并发请求可能生成重复计划的问题。
 
-当前为 `release_500_regression` 提供 `rollback_release` 模板，并为 `database_pool_misconfiguration` 提供 `rollback_configuration` 模板。两者生成时都为 `draft`，计划本身不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限；配置动作只有经过人工审批后，才可能由固定比较并设置执行器处理。
+当前为 `release_500_regression`、`database_pool_misconfiguration` 和 `redis_unavailable` 分别提供 `rollback_release`、`rollback_configuration` 与 `restore_dependency` 模板。三者生成时都为 `draft`，计划本身不调用故障开关，也不拥有 Shell、SQL 或 Docker 权限；只有经过人工审批后，固定执行器才可能处理动作。
 
 ## 2. 为什么计划生成独立于调查事务
 
@@ -45,17 +45,21 @@ flowchart LR
 
 数据库连接池配置回滚只允许 `database_pool_size`，参数为 `current_value` 和 `target_value`，值域为 1～1000 且不能相同；验证规则冻结为连接池饱和度在 60 秒窗口内至少 3 次低于 80%。
 
-版本参数从最新一条已完成部署证据的 `to_version` 和 `from_version` 提取，客户端和模型不能直接覆盖。
+Redis 依赖恢复只允许 `dependency + redis`，参数严格冻结为 `expected_available=false` 与 `target_available=true`；验证规则要求不可用比例在 60 秒窗口内至少 3 次低于 1%。
+
+版本和配置参数从已提交变更证据提取；Redis 计划还要求健康指标明确为不可用。客户端和模型不能直接覆盖这些参数。
 
 ## 4. 风险策略
 
-`action-risk-v2` 把版本回滚和运行配置回滚固定判定为：
+`action-risk-v3` 把版本回滚、运行配置回滚和 Redis 依赖恢复固定判定为：
 
 - `risk_level=high`；
 - `requires_human_approval=true`；
-- 规则码 `rollback_changes_running_version`。
+- 版本回滚规则码 `rollback_changes_running_version`；
+- 配置回滚规则码 `rollback_changes_runtime_configuration`；
+- Redis 恢复规则码 `restore_changes_dependency_state`。
 
-配置回滚使用规则码 `rollback_changes_runtime_configuration`。历史 `action-risk-v1` 版本回滚计划继续按原版本重算，不因当前策略升级而失效。
+历史 `action-risk-v1` 与 `action-risk-v2` 计划继续按原版本重算，不因当前策略升级而失效。
 
 安全边界分三层：
 
@@ -92,7 +96,7 @@ erDiagram
 
 ## 7. 当前限制与下一步
 
-- 版本回滚和数据库连接池配置回滚已具备确定性模板；Redis 依赖恢复仍未建立计划与执行链路。
+- 三类 MVP 根因都已具备确定性模板；新增根因仍必须先建立证据规则、严格参数和白名单执行器。
 - 当前没有模型生成候选计划，先以安全模板建立评测基线。
 - 只生成版本 1，尚无人工修改和新版本命令。
 - 已有审批决定和固定白名单执行器，但审计中的人工身份尚无登录认证与角色授权，因此仍只适用于本地演练。

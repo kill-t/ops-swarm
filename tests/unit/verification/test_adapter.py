@@ -10,7 +10,11 @@ from pydantic import ValidationError
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
-from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import (
+    DATABASE_POOL_SCENARIO_V2,
+    REDIS_UNAVAILABLE_SCENARIO_V2,
+    RELEASE_500_SCENARIO,
+)
 from opsswarm.planning import propose_action_plan
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import (
@@ -48,6 +52,21 @@ def configuration_rollback_step() -> StoredActionStep:
     )
     return StoredActionStep(
         id=UUID("00000000-0000-0000-0000-000000000402"),
+        created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
+        **plan.steps[0].model_dump(),
+    )
+
+
+def redis_restore_step() -> StoredActionStep:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.REDIS_UNAVAILABLE,
+        recommendation=Recommendation.RESTORE_DEPENDENCY,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=REDIS_UNAVAILABLE_SCENARIO_V2.evidence,
+    )
+    return StoredActionStep(
+        id=UUID("00000000-0000-0000-0000-000000000403"),
         created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
         **plan.steps[0].model_dump(),
     )
@@ -123,6 +142,42 @@ async def test_probe_reads_saturated_database_pool_as_failed_sample() -> None:
 
     assert observation.value == 1.0
     assert sample_status(configuration_rollback_step().verification, observation) is (
+        VerificationSampleStatus.FAILED
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_reads_healthy_redis_as_zero_unavailable_ratio() -> None:
+    controller = FaultController(redis_available=True)
+    adapter = FaultLabVerificationAdapter(
+        VerificationSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    observation = await adapter.observe(redis_restore_step())
+
+    assert observation == VerificationObservation(
+        signal="redis_unavailable_ratio",
+        value=0.0,
+        http_status=200,
+    )
+    assert sample_status(redis_restore_step().verification, observation) is (
+        VerificationSampleStatus.PASSED
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_reads_unavailable_redis_as_failed_sample() -> None:
+    controller = FaultController(redis_available=False)
+    adapter = FaultLabVerificationAdapter(
+        VerificationSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    observation = await adapter.observe(redis_restore_step())
+
+    assert observation.value == 1.0
+    assert sample_status(redis_restore_step().verification, observation) is (
         VerificationSampleStatus.FAILED
     )
 

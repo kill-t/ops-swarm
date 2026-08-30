@@ -82,3 +82,37 @@ class DatabasePoolConflictResponse(StrictModel):
     message: str
     expected_value: int
     actual_value: int
+
+
+class RedisDependencyUpdate(StrictModel):
+    """Redis 依赖可用性比较并设置请求。"""
+
+    available: bool = Field(strict=True)
+    expected_available: bool | None = Field(default=None, strict=True)
+
+
+class RedisDependencyStatus(StrictModel):
+    """Redis 依赖的确定性演练状态。"""
+
+    dependency: Literal["redis"] = "redis"
+    available: bool
+    redis_unavailable_ratio: float = Field(ge=0, le=1)
+    status: Literal["healthy", "unavailable"]
+
+
+class RedisDependencyErrorResponse(StrictModel):
+    """Redis 不可用时的结构化订单错误。"""
+
+    error_code: Literal["redis_connection_unavailable"] = "redis_connection_unavailable"
+    message: str
+    order_id: str
+    dependency: Literal["redis"] = "redis"
+
+
+class RedisAvailabilityConflictResponse(StrictModel):
+    """比较并设置发现 Redis 可用性已经改变。"""
+
+    error_code: Literal["redis_availability_conflict"] = "redis_availability_conflict"
+    message: str
+    expected_available: bool
+    actual_available: bool

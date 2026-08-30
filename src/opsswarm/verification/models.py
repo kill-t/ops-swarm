@@ -10,6 +10,7 @@ SUPPORTED_VERIFICATION_SIGNALS = frozenset(
     {
         "http_5xx_ratio",
         "database_pool_saturation",
+        "redis_unavailable_ratio",
     }
 )
 

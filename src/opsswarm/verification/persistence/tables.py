@@ -33,12 +33,15 @@ class VerificationRunRow(Base):
         CheckConstraint(
             "verifier_name IN ("
             "'local_order_http_5xx_ratio_v1', "
-            "'local_database_pool_saturation_v1'"
+            "'local_database_pool_saturation_v1', "
+            "'local_redis_unavailable_ratio_v1'"
             ")",
             name="ck_verification_runs_verifier",
         ),
         CheckConstraint(
-            "signal IN ('http_5xx_ratio', 'database_pool_saturation') AND operator = 'less_than'",
+            "signal IN ("
+            "'http_5xx_ratio', 'database_pool_saturation', 'redis_unavailable_ratio'"
+            ") AND operator = 'less_than'",
             name="ck_verification_runs_rule_kind",
         ),
         CheckConstraint(
@@ -214,7 +217,7 @@ class VerificationSampleRow(Base):
         ),
         CheckConstraint("sequence >= 1", name="ck_verification_samples_sequence"),
         CheckConstraint(
-            "signal IN ('http_5xx_ratio', 'database_pool_saturation')",
+            "signal IN ('http_5xx_ratio', 'database_pool_saturation', 'redis_unavailable_ratio')",
             name="ck_verification_samples_signal",
         ),
         CheckConstraint(

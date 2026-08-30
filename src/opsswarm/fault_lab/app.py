@@ -11,6 +11,7 @@ from opsswarm.fault_lab.controller import (
     DatabasePoolValueConflict,
     FaultController,
     FaultSnapshot,
+    RedisAvailabilityConflict,
 )
 from opsswarm.fault_lab.models import (
     DatabasePoolConflictResponse,
@@ -22,6 +23,10 @@ from opsswarm.fault_lab.models import (
     FaultUpdate,
     HealthResponse,
     OrderResponse,
+    RedisAvailabilityConflictResponse,
+    RedisDependencyErrorResponse,
+    RedisDependencyStatus,
+    RedisDependencyUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +55,14 @@ def _to_database_pool_status(snapshot: FaultSnapshot) -> DatabasePoolStatus:
     )
 
 
+def _to_redis_dependency_status(snapshot: FaultSnapshot) -> RedisDependencyStatus:
+    return RedisDependencyStatus(
+        available=snapshot.redis_available,
+        redis_unavailable_ratio=snapshot.redis_unavailable_ratio,
+        status="healthy" if snapshot.redis_available else "unavailable",
+    )
+
+
 def create_app(controller: FaultController | None = None) -> FastAPI:
     """创建可注入独立故障状态的 FastAPI 应用。"""
 
@@ -69,8 +82,10 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
         response_model=OrderResponse,
         responses={
             500: {
-                "model": FaultErrorResponse | DatabasePoolErrorResponse,
-                "description": "版本故障或数据库连接池故障已启用",
+                "model": (
+                    FaultErrorResponse | DatabasePoolErrorResponse | RedisDependencyErrorResponse
+                ),
+                "description": "版本、数据库连接池或 Redis 依赖故障已启用",
             }
         },
         tags=["订单"],
@@ -100,6 +115,17 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
             return JSONResponse(
                 status_code=500,
                 content=database_error.model_dump(mode="json"),
+            )
+
+        if not snapshot.redis_available:
+            logger.warning("故障注入触发 order_id=%s fault=redis_unavailable", order_id)
+            redis_error = RedisDependencyErrorResponse(
+                message="Redis 依赖不可用，订单接口模拟连接失败",
+                order_id=order_id,
+            )
+            return JSONResponse(
+                status_code=500,
+                content=redis_error.model_dump(mode="json"),
             )
 
         return OrderResponse(order_id=order_id)
@@ -166,5 +192,46 @@ def create_app(controller: FaultController | None = None) -> FastAPI:
             snapshot.database_pool_saturation,
         )
         return _to_database_pool_status(snapshot)
+
+    @app.get(
+        "/__admin/dependencies/redis",
+        response_model=RedisDependencyStatus,
+        tags=["依赖控制"],
+    )
+    def get_redis_dependency() -> RedisDependencyStatus:
+        return _to_redis_dependency_status(fault_controller.snapshot())
+
+    @app.put(
+        "/__admin/dependencies/redis",
+        response_model=RedisDependencyStatus,
+        responses={
+            409: {
+                "model": RedisAvailabilityConflictResponse,
+                "description": "Redis 当前可用性与调用方预期不一致",
+            }
+        },
+        tags=["依赖控制"],
+    )
+    def update_redis_dependency(
+        request: RedisDependencyUpdate,
+    ) -> RedisDependencyStatus | JSONResponse:
+        try:
+            snapshot = fault_controller.set_redis_available(
+                available=request.available,
+                expected_available=request.expected_available,
+            )
+        except RedisAvailabilityConflict as error:
+            conflict = RedisAvailabilityConflictResponse(
+                message=str(error),
+                expected_available=error.expected_available,
+                actual_available=error.actual_available,
+            )
+            return JSONResponse(status_code=409, content=conflict.model_dump(mode="json"))
+        logger.info(
+            "更新演练依赖 dependency=redis expected_available=%s available=%s",
+            request.expected_available,
+            request.available,
+        )
+        return _to_redis_dependency_status(snapshot)
 
     return app

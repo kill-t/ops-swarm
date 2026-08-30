@@ -15,6 +15,7 @@ class FaultSnapshot:
 
     release_500_enabled: bool
     database_pool_size: int
+    redis_available: bool
 
     @property
     def database_pool_saturation(self) -> float:
@@ -40,14 +41,27 @@ class FaultSnapshot:
 
         return self.database_pool_waiters > 0
 
+    @property
+    def redis_unavailable_ratio(self) -> float:
+        """用确定性 0/1 数值表达 Redis 当前不可用比例。"""
+
+        return 0.0 if self.redis_available else 1.0
+
 
 class FaultController:
     """管理演练服务的进程内故障与配置状态。"""
 
-    def __init__(self, *, database_pool_size: int = DEFAULT_DATABASE_POOL_SIZE) -> None:
+    def __init__(
+        self,
+        *,
+        database_pool_size: int = DEFAULT_DATABASE_POOL_SIZE,
+        redis_available: bool = True,
+    ) -> None:
         _validate_database_pool_size(database_pool_size)
+        _validate_redis_availability(redis_available)
         self._release_500_enabled = False
         self._database_pool_size = database_pool_size
+        self._redis_available = redis_available
         self._lock = Lock()
 
     def snapshot(self) -> FaultSnapshot:
@@ -83,10 +97,31 @@ class FaultController:
             self._database_pool_size = value
             return self._snapshot_unlocked()
 
+    def set_redis_available(
+        self,
+        *,
+        available: bool,
+        expected_available: bool | None = None,
+    ) -> FaultSnapshot:
+        """以可选当前状态条件原子设置 Redis 依赖可用性。"""
+
+        _validate_redis_availability(available)
+        if expected_available is not None:
+            _validate_redis_availability(expected_available)
+        with self._lock:
+            if expected_available is not None and self._redis_available is not expected_available:
+                raise RedisAvailabilityConflict(
+                    expected_available=expected_available,
+                    actual_available=self._redis_available,
+                )
+            self._redis_available = available
+            return self._snapshot_unlocked()
+
     def _snapshot_unlocked(self) -> FaultSnapshot:
         return FaultSnapshot(
             release_500_enabled=self._release_500_enabled,
             database_pool_size=self._database_pool_size,
+            redis_available=self._redis_available,
         )
 
 
@@ -101,6 +136,11 @@ def _validate_database_pool_size(value: int) -> None:
         raise ValueError("database_pool_size 必须是 1～1000 的整数")
 
 
+def _validate_redis_availability(value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValueError("redis_available 必须是布尔值")
+
+
 class DatabasePoolValueConflict(Exception):
     """连接池配置不再等于调用方预期的当前值。"""
 
@@ -108,3 +148,12 @@ class DatabasePoolValueConflict(Exception):
         self.expected_value = expected_value
         self.actual_value = actual_value
         super().__init__(f"database_pool_size 已从预期值 {expected_value} 变为 {actual_value}")
+
+
+class RedisAvailabilityConflict(Exception):
+    """Redis 可用性不再等于调用方审批过的预期状态。"""
+
+    def __init__(self, *, expected_available: bool, actual_available: bool) -> None:
+        self.expected_available = expected_available
+        self.actual_available = actual_available
+        super().__init__(f"redis_available 已从预期值 {expected_available} 变为 {actual_available}")

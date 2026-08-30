@@ -53,7 +53,7 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 ### 2.2 处置计划生成语义
 
-计划 POST 没有可由客户端指定的动作参数；服务端只从已提交 Evidence Board 提取白名单参数。调查必须为 `succeeded`、主假设必须为 `supported`，且证据必须包含明确的发布前后版本。相同假设版本重复或并发调用返回同一计划，调用方通过 `created` 区分首次创建。
+计划 POST 没有可由客户端指定的动作参数；服务端只从已提交 Evidence Board 提取白名单参数。调查必须为 `succeeded`、主假设必须为 `supported`；回滚模板要求明确的变更前后值，Redis 恢复模板要求健康指标明确为不可用。相同假设版本重复或并发调用返回同一计划，调用方通过 `created` 区分首次创建。
 
 计划生成响应是 `draft`，包含风险策略版本、逐步骤风险理由和恢复判据。创建或读取计划本身不会迁移 Incident，也不执行动作。当前 API 没有身份认证，只能在 localhost/Compose 私网演练。
 
@@ -149,6 +149,7 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `unsupported_planning_root_cause` | `409` | 当前没有该根因的白名单计划模板 |
 | `unsafe_rollback_target` | `409` | 证据无法确定安全回滚目标 |
 | `unsafe_configuration_rollback_target` | `409` | 证据无法确定白名单配置的安全前后值 |
+| `unsafe_dependency_restore_target` | `409` | 证据没有明确证明 Redis 当前不可用 |
 | `approval_action_plan_not_found` | `404` | 要提交审批的计划不存在 |
 | `approval_request_not_found` | `404` | 审批请求不存在 |
 | `action_plan_not_current` | `409` | 目标计划已被更新版本替代 |

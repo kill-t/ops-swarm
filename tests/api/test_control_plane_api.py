@@ -36,6 +36,7 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import (
     DATABASE_POOL_SCENARIO_V2,
+    REDIS_UNAVAILABLE_SCENARIO_V2,
     RELEASE_500_SCENARIO,
     InvestigationScenario,
 )
@@ -65,6 +66,17 @@ class ApiOperationAdapter:
                     "database_pool_saturation": 0.2,
                     "already_at_target": False,
                     "service": step.target_name,
+                }
+            )
+        if step.action_type is ActionType.RESTORE_DEPENDENCY:
+            return OperationResult(
+                output={
+                    "dependency": "redis",
+                    "expected_available": False,
+                    "target_available": True,
+                    "available": True,
+                    "redis_unavailable_ratio": 0.0,
+                    "already_at_target": False,
                 }
             )
         return OperationResult(
@@ -718,7 +730,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert plan_body["action_plan"]["status"] == "draft"
     assert plan_body["action_plan"]["risk_level"] == "high"
     assert plan_body["action_plan"]["requires_human_approval"] is True
-    assert plan_body["action_plan"]["risk_policy_version"] == "action-risk-v2"
+    assert plan_body["action_plan"]["risk_policy_version"] == "action-risk-v3"
     assert plan_body["action_plan"]["created_at"] == body["hypotheses"][0]["created_at"]
     assert plan_body["action_plan"]["steps"][0]["action_type"] == "rollback_release"
     assert plan_body["action_plan"]["steps"][0]["parameters"] == {
@@ -1002,7 +1014,7 @@ async def test_database_configuration_plan_runs_through_controlled_verification(
     plan = created_plan.json()["action_plan"]
     assert plan["risk_level"] == "high"
     assert plan["requires_human_approval"] is True
-    assert plan["risk_policy_version"] == "action-risk-v2"
+    assert plan["risk_policy_version"] == "action-risk-v3"
     assert plan["steps"][0]["action_type"] == "rollback_configuration"
     assert plan["steps"][0]["parameters"] == {
         "key": "database_pool_size",
@@ -1083,6 +1095,119 @@ async def test_database_configuration_plan_runs_through_controlled_verification(
         )
     assert approval_count == 1
     assert execution_count == 1
+
+
+async def test_redis_dependency_plan_runs_through_controlled_verification(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload(
+            "alert-redis-capability",
+            fingerprint="order-service:redis-unavailable-capability",
+        ),
+    )
+    incident_id = created.json()["incident"]["id"]
+    started = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "验证 Redis 依赖恢复能力边界",
+        },
+    )
+    run_id = started.json()["investigation"]["id"]
+    await complete_scenario_investigation(
+        database_session_factory,
+        run_id=run_id,
+        scenario=REDIS_UNAVAILABLE_SCENARIO_V2,
+        worker_id="api-redis-capability-worker",
+    )
+
+    capability = await control_client.get(
+        f"/api/v1/investigations/{run_id}/action-plans/capability"
+    )
+    assert capability.status_code == 200
+    assert capability.json()["status"] == "available"
+    assert capability.json()["action_type"] == "restore_dependency"
+    assert capability.json()["template_version"] == "restore-redis-dependency-v1"
+
+    created_plan = await control_client.post(f"/api/v1/investigations/{run_id}/action-plans")
+    assert created_plan.status_code == 201
+    plan = created_plan.json()["action_plan"]
+    assert plan["risk_policy_version"] == "action-risk-v3"
+    assert plan["steps"][0]["action_type"] == "restore_dependency"
+    assert plan["steps"][0]["target_type"] == "dependency"
+    assert plan["steps"][0]["target_name"] == "redis"
+    assert plan["steps"][0]["parameters"] == {
+        "dependency": "redis",
+        "expected_available": False,
+        "target_available": True,
+    }
+    assert plan["steps"][0]["verification"]["signal"] == "redis_unavailable_ratio"
+
+    approval = await control_client.post(
+        f"/api/v1/action-plans/{plan['id']}/approval-requests",
+        json={
+            "expected_incident_version": 2,
+            "actor_id": "engineer-001",
+            "reason": "审查 Redis 依赖恢复草案",
+        },
+    )
+    assert approval.status_code == 201
+    approval_request_id = approval.json()["approval_request"]["id"]
+    approved = await control_client.post(
+        f"/api/v1/approval-requests/{approval_request_id}/actions/approve",
+        json={
+            "expected_incident_version": 3,
+            "actor_id": "engineer-002",
+            "reason": "确认 Redis 当前状态和恢复规则",
+        },
+    )
+    assert approved.status_code == 200
+
+    execution = await control_client.post(
+        f"/api/v1/action-steps/{plan['steps'][0]['id']}/executions",
+        json={
+            "idempotency_key": "api-redis-execution-001",
+            "expected_incident_version": 4,
+        },
+    )
+    assert execution.status_code == 201
+    operation = execution.json()["operation_execution"]
+    assert operation["status"] == "succeeded"
+    assert operation["executor_name"] == "local_fault_lab_redis_dependency_v1"
+    assert operation["result"]["dependency"] == "redis"
+    assert operation["result"]["available"] is True
+
+    verification = await control_client.post(
+        f"/api/v1/operation-executions/{operation['id']}/verification-runs",
+        json={"expected_incident_version": 5},
+    )
+    assert verification.status_code == 201
+    verification_run = verification.json()["verification_run"]
+    assert verification_run["verifier_name"] == "local_redis_unavailable_ratio_v1"
+    assert verification_run["rule"] == {
+        "signal": "redis_unavailable_ratio",
+        "operator": "less_than",
+        "threshold": 0.01,
+        "observation_window_seconds": 60,
+        "required_successful_samples": 3,
+    }
+
+    sample = await control_client.post(
+        f"/api/v1/verification-runs/{verification_run['id']}/samples",
+        json={"idempotency_key": "api-redis-verification-001"},
+    )
+    assert sample.status_code == 201
+    assert sample.json()["sample"]["signal"] == "redis_unavailable_ratio"
+    assert sample.json()["sample"]["observed_value"] == 0.0
+    assert sample.json()["sample"]["status"] == "passed"
+
+    incident = await control_client.get(f"/api/v1/incidents/{incident_id}")
+    assert incident.json()["status"] == "verifying"
+    assert incident.json()["version"] == 5
 
 
 async def test_start_investigation_rejects_unknown_mode(

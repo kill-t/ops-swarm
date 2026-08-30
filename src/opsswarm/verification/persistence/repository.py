@@ -50,6 +50,7 @@ from opsswarm.verification.persistence.tables import (
 
 RELEASE_VERIFIER_NAME = "local_order_http_5xx_ratio_v1"
 CONFIGURATION_VERIFIER_NAME = "local_database_pool_saturation_v1"
+REDIS_VERIFIER_NAME = "local_redis_unavailable_ratio_v1"
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
 _WORKER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,99}$")
 
@@ -581,22 +582,36 @@ async def _load_verified_step(
 
 
 def _validate_supported_rule(execution_id: UUID, step: StoredActionStep) -> None:
-    if step.target_type is not TargetType.SERVICE or step.target_name != "order-service":
-        raise OperationExecutionNotVerifiable(
-            execution_id,
-            reason_code="verification_target_not_whitelisted",
-            message="当前恢复验证只支持 order-service 白名单回滚步骤",
-        )
     rule = step.verification
-    expected_signal = {
-        ActionType.ROLLBACK_RELEASE: "http_5xx_ratio",
-        ActionType.ROLLBACK_CONFIGURATION: "database_pool_saturation",
+    expected_contract = {
+        ActionType.ROLLBACK_RELEASE: (
+            TargetType.SERVICE,
+            "order-service",
+            "http_5xx_ratio",
+        ),
+        ActionType.ROLLBACK_CONFIGURATION: (
+            TargetType.SERVICE,
+            "order-service",
+            "database_pool_saturation",
+        ),
+        ActionType.RESTORE_DEPENDENCY: (
+            TargetType.DEPENDENCY,
+            "redis",
+            "redis_unavailable_ratio",
+        ),
     }.get(step.action_type)
-    if expected_signal is None:
+    if expected_contract is None:
         raise OperationExecutionNotVerifiable(
             execution_id,
             reason_code="verification_action_not_whitelisted",
             message="当前恢复验证不支持该动作类型",
+        )
+    expected_target_type, expected_target_name, expected_signal = expected_contract
+    if step.target_type is not expected_target_type or step.target_name != expected_target_name:
+        raise OperationExecutionNotVerifiable(
+            execution_id,
+            reason_code="verification_target_not_whitelisted",
+            message="恢复验证步骤目标不在白名单中",
         )
     if rule.signal != expected_signal or rule.operator is not VerificationOperator.LESS_THAN:
         raise UnsupportedVerificationRule(
@@ -610,6 +625,8 @@ def _verifier_name(step: StoredActionStep) -> str:
         return RELEASE_VERIFIER_NAME
     if step.action_type is ActionType.ROLLBACK_CONFIGURATION:
         return CONFIGURATION_VERIFIER_NAME
+    if step.action_type is ActionType.RESTORE_DEPENDENCY:
+        return REDIS_VERIFIER_NAME
     raise ValueError(f"没有动作 {step.action_type.value} 的恢复验证器")
 
 

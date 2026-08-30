@@ -19,12 +19,19 @@ class ActionType(StrEnum):
 
     ROLLBACK_RELEASE = "rollback_release"
     ROLLBACK_CONFIGURATION = "rollback_configuration"
+    RESTORE_DEPENDENCY = "restore_dependency"
 
 
 class ConfigurationKey(StrEnum):
     """第一版允许回滚的运行配置键白名单。"""
 
     DATABASE_POOL_SIZE = "database_pool_size"
+
+
+class DependencyName(StrEnum):
+    """允许执行恢复动作的依赖白名单。"""
+
+    REDIS = "redis"
 
 
 class ActionPlanCapabilityStatus(StrEnum):
@@ -88,6 +95,7 @@ class TargetType(StrEnum):
     """动作目标类别。"""
 
     SERVICE = "service"
+    DEPENDENCY = "dependency"
 
 
 class RiskLevel(StrEnum):
@@ -150,7 +158,23 @@ class RollbackConfigurationParameters(StrictPlanningModel):
         return self
 
 
-ActionParameters = RollbackReleaseParameters | RollbackConfigurationParameters
+class RestoreDependencyParameters(StrictPlanningModel):
+    """Redis 依赖恢复唯一允许的布尔状态迁移。"""
+
+    dependency: DependencyName
+    expected_available: bool = Field(strict=True)
+    target_available: bool = Field(strict=True)
+
+    @model_validator(mode="after")
+    def require_unavailable_to_available(self) -> Self:
+        if self.expected_available or not self.target_available:
+            raise ValueError("依赖恢复只允许把 redis 从不可用恢复为可用")
+        return self
+
+
+ActionParameters = (
+    RollbackReleaseParameters | RollbackConfigurationParameters | RestoreDependencyParameters
+)
 
 
 class VerificationRule(StrictPlanningModel):
@@ -206,6 +230,7 @@ class ActionStep(StrictPlanningModel):
         expected_type = {
             ActionType.ROLLBACK_RELEASE: RollbackReleaseParameters,
             ActionType.ROLLBACK_CONFIGURATION: RollbackConfigurationParameters,
+            ActionType.RESTORE_DEPENDENCY: RestoreDependencyParameters,
         }[self.action_type]
         if not isinstance(self.parameters, expected_type):
             raise ValueError("动作类型与参数模型不匹配")

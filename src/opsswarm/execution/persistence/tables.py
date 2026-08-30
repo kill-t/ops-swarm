@@ -35,7 +35,8 @@ class OperationExecutionRow(Base):
         CheckConstraint(
             "executor_name IN ("
             "'local_fault_lab_release_500_v1', "
-            "'local_fault_lab_database_pool_v1'"
+            "'local_fault_lab_database_pool_v1', "
+            "'local_fault_lab_redis_dependency_v1'"
             ")",
             name="ck_operation_executions_executor",
         ),

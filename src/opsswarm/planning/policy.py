@@ -5,6 +5,7 @@ from opsswarm.planning.models import (
     ActionPlan,
     ActionStep,
     ActionType,
+    RestoreDependencyParameters,
     RiskDecision,
     RiskLevel,
     RollbackConfigurationParameters,
@@ -13,7 +14,8 @@ from opsswarm.planning.models import (
 
 RISK_POLICY_VERSION_V1 = "action-risk-v1"
 RISK_POLICY_VERSION_V2 = "action-risk-v2"
-RISK_POLICY_VERSION = RISK_POLICY_VERSION_V2
+RISK_POLICY_VERSION_V3 = "action-risk-v3"
+RISK_POLICY_VERSION = RISK_POLICY_VERSION_V3
 
 
 def classify_action_risk(
@@ -24,7 +26,11 @@ def classify_action_risk(
 ) -> RiskDecision:
     """根据动作和经过白名单校验的参数确定风险，不采信模型自报等级。"""
 
-    if policy_version not in {RISK_POLICY_VERSION_V1, RISK_POLICY_VERSION_V2}:
+    if policy_version not in {
+        RISK_POLICY_VERSION_V1,
+        RISK_POLICY_VERSION_V2,
+        RISK_POLICY_VERSION_V3,
+    }:
         raise ValueError(f"风险策略不支持版本：{policy_version}")
     if action_type is ActionType.ROLLBACK_RELEASE and isinstance(
         parameters, RollbackReleaseParameters
@@ -40,7 +46,7 @@ def classify_action_risk(
             ),
         )
     if (
-        policy_version == RISK_POLICY_VERSION_V2
+        policy_version in {RISK_POLICY_VERSION_V2, RISK_POLICY_VERSION_V3}
         and action_type is ActionType.ROLLBACK_CONFIGURATION
         and isinstance(parameters, RollbackConfigurationParameters)
     ):
@@ -53,6 +59,18 @@ def classify_action_risk(
                 f"回滚会把 {parameters.key.value} 从 {parameters.current_value} 改为 "
                 f"{parameters.target_value}，必须由工程师审批。"
             ),
+        )
+    if (
+        policy_version == RISK_POLICY_VERSION_V3
+        and action_type is ActionType.RESTORE_DEPENDENCY
+        and isinstance(parameters, RestoreDependencyParameters)
+    ):
+        return RiskDecision(
+            risk_level=RiskLevel.HIGH,
+            requires_human_approval=True,
+            policy_version=policy_version,
+            rule_code="restore_changes_dependency_state",
+            rationale="恢复 Redis 会改变运行依赖状态，必须由工程师审批。",
         )
     raise ValueError(f"风险策略不支持动作：{action_type}")
 

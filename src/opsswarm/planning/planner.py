@@ -16,6 +16,7 @@ from opsswarm.planning.errors import (
     ActionPlanCapabilityUnavailable,
     HypothesisNotSupported,
     UnsafeConfigurationRollbackTarget,
+    UnsafeDependencyRestoreTarget,
     UnsafeRollbackTarget,
 )
 from opsswarm.planning.models import (
@@ -24,6 +25,8 @@ from opsswarm.planning.models import (
     ActionStep,
     ActionType,
     ConfigurationKey,
+    DependencyName,
+    RestoreDependencyParameters,
     RollbackConfigurationParameters,
     RollbackReleaseParameters,
     TargetType,
@@ -57,6 +60,8 @@ def propose_action_plan(
         step, summary = _release_rollback_step(service_name, evidence_items)
     elif capability.action_type is ActionType.ROLLBACK_CONFIGURATION:
         step, summary = _configuration_rollback_step(service_name, evidence_items)
+    elif capability.action_type is ActionType.RESTORE_DEPENDENCY:
+        step, summary = _redis_restore_step(evidence_items)
     else:
         raise RuntimeError("可用计划能力没有对应的确定性模板实现")
 
@@ -145,6 +150,44 @@ def _configuration_rollback_step(
             f"将 {service_name} 的 {parameters.key.value} 从 {parameters.current_value} "
             f"回滚到 {parameters.target_value}，随后验证连接池饱和度持续低于 80%。"
         ),
+    )
+
+
+def _redis_restore_step(
+    evidence_items: Sequence[EvidenceObservation],
+) -> tuple[ActionStep, str]:
+    if not any(
+        item.kind is EvidenceKind.METRIC and item.attributes.get("redis_healthy") is False
+        for item in evidence_items
+    ):
+        raise UnsafeDependencyRestoreTarget()
+    parameters = RestoreDependencyParameters(
+        dependency=DependencyName.REDIS,
+        expected_available=False,
+        target_available=True,
+    )
+    risk = classify_action_risk(ActionType.RESTORE_DEPENDENCY, parameters)
+    step = ActionStep(
+        step_order=1,
+        action_type=ActionType.RESTORE_DEPENDENCY,
+        target_type=TargetType.DEPENDENCY,
+        target_name=DependencyName.REDIS.value,
+        parameters=parameters,
+        risk_level=risk.risk_level,
+        requires_human_approval=risk.requires_human_approval,
+        risk_rule_code=risk.rule_code,
+        risk_rationale=risk.rationale,
+        verification=VerificationRule(
+            signal="redis_unavailable_ratio",
+            operator=VerificationOperator.LESS_THAN,
+            threshold=0.01,
+            observation_window_seconds=60,
+            required_successful_samples=3,
+        ),
+    )
+    return (
+        step,
+        "将本地 Redis 依赖从不可用恢复为可用，随后验证不可用比例持续低于 1%。",
     )
 
 

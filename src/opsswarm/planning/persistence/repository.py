@@ -26,11 +26,13 @@ from opsswarm.investigation.persistence.tables import (
 from opsswarm.planning.capabilities import assess_action_plan_capability
 from opsswarm.planning.errors import ActionPlanNotFound, ActionPlanNotReady
 from opsswarm.planning.models import (
+    ActionParameters,
     ActionPlan,
     ActionPlanCapability,
     ActionPlanStatus,
     ActionStep,
     ActionType,
+    RestoreDependencyParameters,
     RiskLevel,
     RollbackConfigurationParameters,
     RollbackReleaseParameters,
@@ -298,11 +300,13 @@ def _action_step(row: ActionStepRow) -> ActionStep:
 def _action_parameters(
     action_type: ActionType,
     parameters: dict[str, object],
-) -> RollbackReleaseParameters | RollbackConfigurationParameters:
+) -> ActionParameters:
     if action_type is ActionType.ROLLBACK_RELEASE:
         return RollbackReleaseParameters.model_validate(parameters)
     if action_type is ActionType.ROLLBACK_CONFIGURATION:
         return RollbackConfigurationParameters.model_validate(parameters)
+    if action_type is ActionType.RESTORE_DEPENDENCY:
+        return RestoreDependencyParameters.model_validate(parameters)
     raise ValueError(f"未知处置动作参数：{action_type.value}")
 
 

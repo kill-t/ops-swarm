@@ -9,17 +9,23 @@ from opsswarm.investigation.models import (
     Recommendation,
     RootCause,
 )
-from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import (
+    DATABASE_POOL_SCENARIO_V2,
+    REDIS_UNAVAILABLE_SCENARIO_V2,
+    RELEASE_500_SCENARIO,
+)
 from opsswarm.planning import (
-    ActionPlanCapabilityUnavailable,
     ActionPlanStatus,
     ActionType,
     ConfigurationKey,
+    DependencyName,
     HypothesisNotSupported,
+    RestoreDependencyParameters,
     RiskLevel,
     RollbackConfigurationParameters,
     RollbackReleaseParameters,
     UnsafeConfigurationRollbackTarget,
+    UnsafeDependencyRestoreTarget,
     UnsafeRollbackTarget,
     propose_action_plan,
 )
@@ -60,7 +66,7 @@ def test_supported_database_pool_hypothesis_generates_configuration_rollback_dra
     assert plan.status is ActionPlanStatus.DRAFT
     assert plan.risk_level is RiskLevel.HIGH
     assert plan.requires_human_approval is True
-    assert plan.risk_policy_version == "action-risk-v2"
+    assert plan.risk_policy_version == "action-risk-v3"
     step = plan.steps[0]
     assert step.action_type is ActionType.ROLLBACK_CONFIGURATION
     assert isinstance(step.parameters, RollbackConfigurationParameters)
@@ -143,12 +149,53 @@ def test_release_plan_requires_explicit_previous_and_current_versions() -> None:
         )
 
 
-def test_recommendation_without_whitelisted_template_is_rejected() -> None:
-    with pytest.raises(ActionPlanCapabilityUnavailable, match="尚无经过验证"):
+def test_supported_redis_hypothesis_generates_dependency_restore_draft() -> None:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.REDIS_UNAVAILABLE,
+        recommendation=Recommendation.RESTORE_DEPENDENCY,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=REDIS_UNAVAILABLE_SCENARIO_V2.evidence,
+    )
+
+    assert plan.status is ActionPlanStatus.DRAFT
+    assert plan.risk_level is RiskLevel.HIGH
+    assert plan.risk_policy_version == "action-risk-v3"
+    step = plan.steps[0]
+    assert step.action_type is ActionType.RESTORE_DEPENDENCY
+    assert step.target_name == "redis"
+    assert isinstance(step.parameters, RestoreDependencyParameters)
+    assert step.parameters.dependency is DependencyName.REDIS
+    assert step.parameters.expected_available is False
+    assert step.parameters.target_available is True
+    assert step.verification.signal == "redis_unavailable_ratio"
+    assert step.verification.threshold == 0.01
+
+
+def test_redis_plan_requires_explicit_unhealthy_metric() -> None:
+    evidence = tuple(
+        item
+        for item in REDIS_UNAVAILABLE_SCENARIO_V2.evidence
+        if item.kind is not EvidenceKind.METRIC
+    )
+
+    with pytest.raises(UnsafeDependencyRestoreTarget, match="Redis 当前不可用"):
         propose_action_plan(
             service_name="order-service",
             root_cause=RootCause.REDIS_UNAVAILABLE,
             recommendation=Recommendation.RESTORE_DEPENDENCY,
             hypothesis_status=HypothesisStatus.SUPPORTED,
-            evidence_items=RELEASE_500_SCENARIO.evidence,
+            evidence_items=evidence,
+        )
+
+
+@pytest.mark.parametrize("invalid_value", [0, 1, "true"])
+def test_dependency_parameters_require_strict_boolean_values(invalid_value: object) -> None:
+    with pytest.raises(ValidationError):
+        RestoreDependencyParameters.model_validate(
+            {
+                "dependency": "redis",
+                "expected_available": invalid_value,
+                "target_available": True,
+            }
         )

@@ -1,6 +1,7 @@
 """OpsSwarm 结构化处置计划与确定性风险策略。"""
 
 from opsswarm.planning.capabilities import (
+    RESTORE_REDIS_TEMPLATE_VERSION,
     ROLLBACK_CONFIGURATION_TEMPLATE_VERSION,
     ROLLBACK_RELEASE_TEMPLATE_VERSION,
     assess_action_plan_capability,
@@ -12,6 +13,7 @@ from opsswarm.planning.errors import (
     HypothesisNotSupported,
     PlanningError,
     UnsafeConfigurationRollbackTarget,
+    UnsafeDependencyRestoreTarget,
     UnsafeRollbackTarget,
     UnsupportedPlanningRootCause,
 )
@@ -26,6 +28,8 @@ from opsswarm.planning.models import (
     ActionStep,
     ActionType,
     ConfigurationKey,
+    DependencyName,
+    RestoreDependencyParameters,
     RiskDecision,
     RiskLevel,
     RollbackConfigurationParameters,
@@ -39,6 +43,7 @@ from opsswarm.planning.policy import (
     RISK_POLICY_VERSION,
     RISK_POLICY_VERSION_V1,
     RISK_POLICY_VERSION_V2,
+    RISK_POLICY_VERSION_V3,
     validate_action_plan_policy,
 )
 
@@ -46,8 +51,10 @@ __all__ = [
     "RISK_POLICY_VERSION",
     "RISK_POLICY_VERSION_V1",
     "RISK_POLICY_VERSION_V2",
+    "RISK_POLICY_VERSION_V3",
     "ROLLBACK_CONFIGURATION_TEMPLATE_VERSION",
     "ROLLBACK_RELEASE_TEMPLATE_VERSION",
+    "RESTORE_REDIS_TEMPLATE_VERSION",
     "ActionPlan",
     "ActionPlanCapability",
     "ActionPlanCapabilityReason",
@@ -60,14 +67,17 @@ __all__ = [
     "ActionStep",
     "ActionType",
     "ConfigurationKey",
+    "DependencyName",
     "HypothesisNotSupported",
     "PlanningError",
     "RiskDecision",
     "RiskLevel",
     "RollbackConfigurationParameters",
     "RollbackReleaseParameters",
+    "RestoreDependencyParameters",
     "TargetType",
     "UnsafeConfigurationRollbackTarget",
+    "UnsafeDependencyRestoreTarget",
     "UnsafeRollbackTarget",
     "UnsupportedPlanningRootCause",
     "VerificationOperator",

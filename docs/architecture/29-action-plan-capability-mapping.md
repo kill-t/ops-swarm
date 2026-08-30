@@ -48,12 +48,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | `release_500_regression` | `rollback_release` | `rollback_release` | `rollback-release-v1` |
 | `database_pool_misconfiguration` | `rollback_configuration` | `rollback_configuration` | `rollback-configuration-database-pool-v1` |
-
-以下语义已识别但没有执行模板：
-
-| 根因 | 建议 | 原因码 |
-| --- | --- | --- |
-| `redis_unavailable` | `restore_dependency` | `template_not_implemented` |
+| `redis_unavailable` | `restore_dependency` | `restore_dependency` | `restore-redis-dependency-v1` |
 
 系统禁止建议借用其他根因模板。例如数据库配置错误却建议 `rollback_release` 时返回 `recommendation_root_cause_mismatch`，不会尝试从变更证据拼出发布回滚计划。
 
@@ -107,9 +102,9 @@ GET /api/v1/investigations/{run_id}/action-plans/capability
 
 ## 7. 当前限制与下一步
 
-- 配置回滚已具备完整本地审批、执行和验证链路，依赖恢复仍没有计划模板。
+- 配置回滚和 Redis 依赖恢复都已具备完整本地审批、执行和验证链路。
 - 能力尚未加入 Incident 作战室聚合投影，当前通过独立 API 查询。
-- 数据库连接池故障实验室、执行适配器和恢复探针已经接入；下一步应补充自动采样调度或推进 Redis 依赖恢复模板。
+- 数据库连接池与 Redis 故障实验室、执行适配器、恢复探针和自动采样调度都已接入。
 
 ## 8. 面试表达
 

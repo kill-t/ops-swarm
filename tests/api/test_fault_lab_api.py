@@ -71,6 +71,18 @@ def test_database_pool_configuration_is_healthy_by_default(client: TestClient) -
     }
 
 
+def test_redis_dependency_is_healthy_by_default(client: TestClient) -> None:
+    response = client.get("/__admin/dependencies/redis")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "dependency": "redis",
+        "available": True,
+        "redis_unavailable_ratio": 0.0,
+        "status": "healthy",
+    }
+
+
 def test_database_pool_misconfiguration_fails_orders_and_safe_value_recovers(
     client: TestClient,
 ) -> None:
@@ -151,6 +163,56 @@ def test_database_pool_compare_and_set_rejects_invalid_expected_value(
     assert response.status_code == 422
 
 
+def test_redis_unavailable_fails_orders_and_restore_recovers(client: TestClient) -> None:
+    unavailable = client.put(
+        "/__admin/dependencies/redis",
+        json={"available": False},
+    )
+    failed_order = client.get("/orders/order-001")
+    restored = client.put(
+        "/__admin/dependencies/redis",
+        json={"expected_available": False, "available": True},
+    )
+    recovered_order = client.get("/orders/order-001")
+
+    assert unavailable.json()["status"] == "unavailable"
+    assert unavailable.json()["redis_unavailable_ratio"] == 1.0
+    assert failed_order.status_code == 500
+    assert failed_order.json() == {
+        "error_code": "redis_connection_unavailable",
+        "message": "Redis 依赖不可用，订单接口模拟连接失败",
+        "order_id": "order-001",
+        "dependency": "redis",
+    }
+    assert restored.json()["status"] == "healthy"
+    assert recovered_order.status_code == 200
+
+
+def test_redis_compare_and_set_rejects_stale_state(client: TestClient) -> None:
+    response = client.put(
+        "/__admin/dependencies/redis",
+        json={"expected_available": False, "available": True},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error_code": "redis_availability_conflict",
+        "message": "redis_available 已从预期值 False 变为 True",
+        "expected_available": False,
+        "actual_available": True,
+    }
+
+
+@pytest.mark.parametrize("value", [0, 1, "true"])
+def test_redis_update_rejects_non_boolean_values(client: TestClient, value: object) -> None:
+    response = client.put(
+        "/__admin/dependencies/redis",
+        json={"available": value},
+    )
+
+    assert response.status_code == 422
+
+
 def test_release_fault_has_stable_precedence_over_pool_fault(client: TestClient) -> None:
     client.put("/__admin/configuration/database-pool", json={"value": 5})
     client.put("/__admin/faults/release-500", json={"enabled": True})
@@ -159,6 +221,16 @@ def test_release_fault_has_stable_precedence_over_pool_fault(client: TestClient)
 
     assert response.status_code == 500
     assert response.json()["error_code"] == "release_500"
+
+
+def test_pool_fault_has_stable_precedence_over_redis_fault(client: TestClient) -> None:
+    client.put("/__admin/configuration/database-pool", json={"value": 5})
+    client.put("/__admin/dependencies/redis", json={"available": False})
+
+    response = client.get("/orders/order-001")
+
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "database_pool_timeout"
 
 
 def test_fault_update_rejects_unknown_fields(client: TestClient) -> None:

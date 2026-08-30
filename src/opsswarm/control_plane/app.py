@@ -64,6 +64,7 @@ from opsswarm.planning import (
     HypothesisNotSupported,
     PlanningError,
     UnsafeConfigurationRollbackTarget,
+    UnsafeDependencyRestoreTarget,
     UnsafeRollbackTarget,
     UnsupportedPlanningRootCause,
 )
@@ -367,6 +368,11 @@ def create_app(
         elif isinstance(error, UnsafeConfigurationRollbackTarget):
             response = ApiErrorResponse(
                 error_code="unsafe_configuration_rollback_target",
+                message=str(error),
+            )
+        elif isinstance(error, UnsafeDependencyRestoreTarget):
+            response = ApiErrorResponse(
+                error_code="unsafe_dependency_restore_target",
                 message=str(error),
             )
         else:

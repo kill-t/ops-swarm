@@ -37,10 +37,12 @@ from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
 
 RELEASE_EXECUTOR_NAME = "local_fault_lab_release_500_v1"
 CONFIGURATION_EXECUTOR_NAME = "local_fault_lab_database_pool_v1"
+REDIS_EXECUTOR_NAME = "local_fault_lab_redis_dependency_v1"
 _EXECUTABLE_ACTION_TYPES = frozenset(
     {
         ActionType.ROLLBACK_RELEASE,
         ActionType.ROLLBACK_CONFIGURATION,
+        ActionType.RESTORE_DEPENDENCY,
     }
 )
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
@@ -364,6 +366,8 @@ def _executor_name(action_type: ActionType) -> str:
         return RELEASE_EXECUTOR_NAME
     if action_type is ActionType.ROLLBACK_CONFIGURATION:
         return CONFIGURATION_EXECUTOR_NAME
+    if action_type is ActionType.RESTORE_DEPENDENCY:
+        return REDIS_EXECUTOR_NAME
     raise ValueError(f"没有动作 {action_type.value} 的确定性执行器")
 
 

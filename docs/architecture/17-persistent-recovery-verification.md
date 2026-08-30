@@ -4,7 +4,7 @@
 
 本切片让 `verifying` 成为可持久化、可恢复、可审计的业务过程。验证只消费成功操作及其步骤中已经冻结的规则，不允许模型或客户端在验证时降低阈值、减少样本数或伪造观测值。
 
-版本回滚规则是 `http_5xx_ratio < 0.01`，配置回滚规则是 `database_pool_saturation < 0.8`；两者都要求观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；后续切片已经增加持久验证 Worker，自动逐次触发固定只读探针，运行进度、调度状态和每个样本都写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
+版本回滚规则是 `http_5xx_ratio < 0.01`，配置回滚规则是 `database_pool_saturation < 0.8`，Redis 恢复规则是 `redis_unavailable_ratio < 0.01`；三者都要求观察窗口 60 秒、至少 3 个成功样本。API 不在单次请求中等待 60 秒；后续切片已经增加持久验证 Worker，自动逐次触发固定只读探针，运行进度、调度状态和每个样本都写 PostgreSQL。LangChain 和 LangGraph 不参与恢复判定。
 
 ## 2. 为什么采用逐次采样
 
@@ -33,12 +33,13 @@ sequenceDiagram
 
 ## 3. 服务端探针与判定
 
-`local_order_http_5xx_ratio_v1` 只访问固定订单路径；`local_database_pool_saturation_v1` 只访问固定连接池状态路径。两者都只允许本机或 Compose 服务名，不接受客户端 URL、订单 ID、信号值或 HTTP 状态；地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
+`local_order_http_5xx_ratio_v1`、`local_database_pool_saturation_v1` 与 `local_redis_unavailable_ratio_v1` 分别只访问固定订单、连接池或 Redis 状态路径。三者都只允许本机或 Compose 服务名，不接受客户端 URL、订单 ID、信号值或 HTTP 状态；地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
 
 - 合法 2xx 且响应符合 `OrderResponse`：样本值为 `0.0`。
 - 任意 5xx：样本值为 `1.0`。
 - 超时、网络失败、无效响应或其他状态：保存 `error` 样本。
 - 配置状态响应有效：直接读取 `database_pool_saturation`，由冻结的 `< 0.8` 判据评分。
+- Redis 状态响应有效：可用映射为 `0.0`，不可用映射为 `1.0`，由冻结的 `< 0.01` 判据评分。
 
 数值按计划冻结的 `less_than` 规则比较。任一 `failed` 或 `error` 样本立即终止运行并触发 `fail_verification`；健康样本达到 3 个后仍必须满足 `last_observed_at - first_success_at >= 60 秒`，才能触发 `confirm_recovery`。
 

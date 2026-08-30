@@ -2,6 +2,7 @@
 
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
 from opsswarm.planning import (
+    RESTORE_REDIS_TEMPLATE_VERSION,
     ROLLBACK_CONFIGURATION_TEMPLATE_VERSION,
     ROLLBACK_RELEASE_TEMPLATE_VERSION,
     ActionPlanCapabilityReason,
@@ -41,19 +42,19 @@ def test_database_pool_configuration_recommendation_exposes_available_template()
     assert capability.reason_code is ActionPlanCapabilityReason.TEMPLATE_AVAILABLE
 
 
-def test_recognized_recommendation_without_template_is_explicitly_unsupported() -> None:
+def test_redis_restore_recommendation_exposes_available_template() -> None:
     capability = assess_action_plan_capability(
         root_cause=RootCause.REDIS_UNAVAILABLE,
         recommendation=Recommendation.RESTORE_DEPENDENCY,
         hypothesis_status=HypothesisStatus.SUPPORTED,
     )
 
-    assert capability.status is ActionPlanCapabilityStatus.UNSUPPORTED
-    assert capability.action_type is None
-    assert capability.template_version is None
+    assert capability.status is ActionPlanCapabilityStatus.AVAILABLE
+    assert capability.action_type is ActionType.RESTORE_DEPENDENCY
+    assert capability.template_version == RESTORE_REDIS_TEMPLATE_VERSION
     assert capability.requires_human_approval is True
-    assert capability.can_create is False
-    assert capability.reason_code is ActionPlanCapabilityReason.TEMPLATE_NOT_IMPLEMENTED
+    assert capability.can_create is True
+    assert capability.reason_code is ActionPlanCapabilityReason.TEMPLATE_AVAILABLE
 
 
 def test_continue_investigation_does_not_create_action_plan() -> None:

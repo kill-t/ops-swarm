@@ -2,7 +2,11 @@
 
 import pytest
 
-from opsswarm.fault_lab.controller import DatabasePoolValueConflict, FaultController
+from opsswarm.fault_lab.controller import (
+    DatabasePoolValueConflict,
+    FaultController,
+    RedisAvailabilityConflict,
+)
 
 
 def test_release_500_is_disabled_by_default() -> None:
@@ -18,6 +22,13 @@ def test_database_pool_uses_safe_default_capacity() -> None:
     assert snapshot.database_pool_saturation == 0.2
     assert snapshot.database_pool_waiters == 0
     assert snapshot.database_pool_saturated is False
+
+
+def test_redis_dependency_is_available_by_default() -> None:
+    snapshot = FaultController().snapshot()
+
+    assert snapshot.redis_available is True
+    assert snapshot.redis_unavailable_ratio == 0.0
 
 
 def test_release_500_can_be_enabled_and_disabled() -> None:
@@ -74,9 +85,40 @@ def test_database_pool_compare_and_set_updates_matching_value() -> None:
     assert updated.database_pool_size == 50
 
 
+def test_redis_compare_and_set_restores_matching_unavailable_state() -> None:
+    controller = FaultController(redis_available=False)
+
+    restored = controller.set_redis_available(
+        available=True,
+        expected_available=False,
+    )
+
+    assert restored.redis_available is True
+    assert restored.redis_unavailable_ratio == 0.0
+
+
+def test_redis_compare_and_set_rejects_drift_without_overwriting() -> None:
+    controller = FaultController(redis_available=True)
+
+    with pytest.raises(RedisAvailabilityConflict) as captured:
+        controller.set_redis_available(available=True, expected_available=False)
+
+    assert captured.value.expected_available is False
+    assert captured.value.actual_available is True
+    assert controller.snapshot().redis_available is True
+
+
 @pytest.mark.parametrize("value", [0, 1001, True])
 def test_database_pool_rejects_non_whitelisted_values(value: int) -> None:
     controller = FaultController()
 
     with pytest.raises(ValueError, match="1～1000"):
         controller.set_database_pool_size(value=value)
+
+
+@pytest.mark.parametrize("value", [0, 1, "true"])
+def test_redis_rejects_non_boolean_values(value: object) -> None:
+    controller = FaultController()
+
+    with pytest.raises(ValueError, match="布尔值"):
+        controller.set_redis_available(available=value)  # type: ignore[arg-type]

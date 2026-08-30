@@ -46,6 +46,7 @@ _EXECUTABLE_ACTION_TYPES = frozenset(
     {
         ActionType.ROLLBACK_RELEASE,
         ActionType.ROLLBACK_CONFIGURATION,
+        ActionType.RESTORE_DEPENDENCY,
     }
 )
 

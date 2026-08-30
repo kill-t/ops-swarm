@@ -74,3 +74,4 @@
 - [31 - 数据库连接池确定性故障演练](31-database-pool-fault-lab.md)
 - [32 - 配置回滚受控执行与恢复验证](32-configuration-execution-and-verification.md)
 - [33 - 持久恢复验证调度 Worker](33-persistent-verification-scheduler.md)
+- [34 - Redis 不可用确定性处置闭环](34-redis-dependency-recovery.md)

@@ -16,7 +16,11 @@ from opsswarm.execution import (
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController, FaultSnapshot
 from opsswarm.investigation.models import HypothesisStatus, Recommendation, RootCause
-from opsswarm.investigation.scenarios import DATABASE_POOL_SCENARIO_V2, RELEASE_500_SCENARIO
+from opsswarm.investigation.scenarios import (
+    DATABASE_POOL_SCENARIO_V2,
+    REDIS_UNAVAILABLE_SCENARIO_V2,
+    RELEASE_500_SCENARIO,
+)
 from opsswarm.planning import propose_action_plan
 from opsswarm.planning.persistence import StoredActionStep
 
@@ -46,6 +50,21 @@ def configuration_rollback_step() -> StoredActionStep:
     )
     return StoredActionStep(
         id=UUID("00000000-0000-0000-0000-000000000302"),
+        created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
+        **plan.steps[0].model_dump(),
+    )
+
+
+def redis_restore_step() -> StoredActionStep:
+    plan = propose_action_plan(
+        service_name="order-service",
+        root_cause=RootCause.REDIS_UNAVAILABLE,
+        recommendation=Recommendation.RESTORE_DEPENDENCY,
+        hypothesis_status=HypothesisStatus.SUPPORTED,
+        evidence_items=REDIS_UNAVAILABLE_SCENARIO_V2.evidence,
+    )
+    return StoredActionStep(
+        id=UUID("00000000-0000-0000-0000-000000000303"),
         created_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
         **plan.steps[0].model_dump(),
     )
@@ -161,6 +180,68 @@ async def test_adapter_treats_configuration_already_at_target_as_safe_replay() -
 
     assert result.output["already_at_target"] is True
     assert result.output["current_value"] == 50
+
+
+@pytest.mark.asyncio
+async def test_adapter_restores_redis_with_compare_and_set() -> None:
+    controller = FaultController(redis_available=False)
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    result = await adapter.execute(redis_restore_step())
+
+    assert controller.snapshot().redis_available is True
+    assert result.output == {
+        "dependency": "redis",
+        "expected_available": False,
+        "target_available": True,
+        "available": True,
+        "redis_unavailable_ratio": 0.0,
+        "already_at_target": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_adapter_treats_redis_already_available_as_safe_replay() -> None:
+    controller = FaultController(redis_available=True)
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    result = await adapter.execute(redis_restore_step())
+
+    assert result.output["already_at_target"] is True
+    assert result.output["available"] is True
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_redis_changed_between_read_and_write() -> None:
+    class DriftingRedisController(FaultController):
+        def __init__(self) -> None:
+            super().__init__(redis_available=False)
+            self._drifted = False
+
+        def snapshot(self) -> FaultSnapshot:
+            snapshot = super().snapshot()
+            if not self._drifted:
+                self._drifted = True
+                self.set_redis_available(available=True)
+            return snapshot
+
+    controller = DriftingRedisController()
+    adapter = FaultLabOperationAdapter(
+        ExecutionSettings(fault_lab_base_url="http://order-service"),
+        transport=httpx2.ASGITransport(app=create_app(controller)),
+    )
+
+    with pytest.raises(OperationAdapterFailure, match="计划审批状态") as captured:
+        await adapter.execute(redis_restore_step())
+
+    assert captured.value.error_code == "dependency_current_state_mismatch"
+    assert controller.snapshot().redis_available is True
 
 
 @pytest.mark.parametrize(

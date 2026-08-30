@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-本切片把“计划已获批准”推进为一次可审计、可恢复的本地操作。控制面只允许执行已批准计划中的具体步骤：版本回滚关闭 `order-service` 的 `release_500`，配置回滚通过固定管理接口把 `database_pool_size` 从计划当前值比较并设置为目标值。
+本切片把“计划已获批准”推进为一次可审计、可恢复的本地操作。控制面只允许执行已批准计划中的具体步骤：版本回滚关闭 `order-service` 的 `release_500`，配置回滚通过固定管理接口比较并设置 `database_pool_size`；后续 Redis 切片在相同边界内增加固定依赖恢复动作。
 
 LLM、LangChain 和 LangGraph 都不参与授权或执行。请求不能提供 Shell、SQL、URL、HTTP 方法或任意动作参数；执行器也不读取计划中的地址来拼接请求。操作成功只把 Incident 从 `mitigating` 推进到 `verifying`，随后由独立的[逐次恢复验证](17-persistent-recovery-verification.md)判断是否真正恢复。
 
@@ -37,14 +37,15 @@ sequenceDiagram
 
 ## 3. 白名单和网络边界
 
-当前两个执行器名称分别为 `local_fault_lab_release_500_v1` 和 `local_fault_lab_database_pool_v1`。共同只接受 `service + order-service`，各自进一步限制为：
+当前三个执行器名称分别为 `local_fault_lab_release_500_v1`、`local_fault_lab_database_pool_v1` 和 `local_fault_lab_redis_dependency_v1`。前两个只接受 `service + order-service`，Redis 执行器只接受 `dependency + redis`；各自进一步限制为：
 
 - `rollback_release`：固定路径 `/__admin/faults/release-500` 和固定请求体 `{"enabled": false}`；
 - `rollback_configuration`：只允许 `database_pool_size`，固定路径 `/__admin/configuration/database-pool`，请求体只能来自计划的严格整数当前值与目标值。
+- `restore_dependency`：只允许 `redis`，固定路径 `/__admin/dependencies/redis`，请求体只能来自计划冻结的严格布尔预期值与目标值。
 
 基础地址只能是明文 HTTP 的 `127.0.0.1`、`localhost` 或 Compose 服务名 `order-service`，不能包含用户信息、路径、查询参数或片段。请求关闭环境代理继承，默认超时 3 秒、配置上限 10 秒。返回值经过 Pydantic 校验并限制为 16 KiB，异常只落库有限的稳定错误码和中文摘要。
 
-版本动作采用“设置为关闭”，不采用“切换开关”。配置动作先读取当前值：等于目标值时按崩溃重放成功；等于计划当前值时使用原子 `expected_value` 比较并设置；为其他值时以 `configuration_current_value_mismatch` 拒绝覆盖。两种动作都具备安全重放语义。
+版本动作采用“设置为关闭”，不采用“切换开关”。配置和 Redis 动作先读取当前状态：等于目标时按崩溃重放成功；等于计划预期时使用原子比较并设置；状态漂移时拒绝覆盖。三种动作都具备安全重放语义。
 
 ## 4. 幂等、租约与一致性
 

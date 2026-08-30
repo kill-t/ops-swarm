@@ -10,6 +10,7 @@ from opsswarm.planning.models import (
 
 ROLLBACK_RELEASE_TEMPLATE_VERSION = "rollback-release-v1"
 ROLLBACK_CONFIGURATION_TEMPLATE_VERSION = "rollback-configuration-database-pool-v1"
+RESTORE_REDIS_TEMPLATE_VERSION = "restore-redis-dependency-v1"
 
 _EXPECTED_RECOMMENDATION_BY_ROOT_CAUSE = {
     RootCause.RELEASE_500_REGRESSION: Recommendation.ROLLBACK_RELEASE,
@@ -93,6 +94,30 @@ def assess_action_plan_capability(
                 "数据库连接池配置回滚模板可用，且主根因假设已经通过确定性质疑。"
                 if can_create
                 else "数据库连接池配置回滚模板可用，但主根因假设尚未通过确定性质疑。"
+            ),
+        )
+
+    if (
+        root_cause is RootCause.REDIS_UNAVAILABLE
+        and recommendation is Recommendation.RESTORE_DEPENDENCY
+    ):
+        can_create = hypothesis_status is HypothesisStatus.SUPPORTED
+        return _capability(
+            root_cause=root_cause,
+            recommendation=recommendation,
+            hypothesis_status=hypothesis_status,
+            status=ActionPlanCapabilityStatus.AVAILABLE,
+            action_type=ActionType.RESTORE_DEPENDENCY,
+            template_version=RESTORE_REDIS_TEMPLATE_VERSION,
+            reason_code=(
+                ActionPlanCapabilityReason.TEMPLATE_AVAILABLE
+                if can_create
+                else ActionPlanCapabilityReason.HYPOTHESIS_NOT_SUPPORTED
+            ),
+            explanation=(
+                "Redis 依赖恢复模板可用，且主根因假设已经通过确定性质疑。"
+                if can_create
+                else "Redis 依赖恢复模板可用，但主根因假设尚未通过确定性质疑。"
             ),
         )
 

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十三个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证，以及持久恢复验证调度 Worker。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付三十四个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker，以及 Redis 不可用确定性处置闭环。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -62,6 +62,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [数据库连接池确定性故障演练](docs/architecture/31-database-pool-fault-lab.md)
 - [配置回滚受控执行与恢复验证](docs/architecture/32-configuration-execution-and-verification.md)
 - [持久恢复验证调度 Worker](docs/architecture/33-persistent-verification-scheduler.md)
+- [Redis 不可用确定性处置闭环](docs/architecture/34-redis-dependency-recovery.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -77,7 +78,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 接入真实 Prometheus、Docker、GitHub 或 MCP 工具。
 
-阶段 1 已使用“新版本触发大量 500”场景打通完整处置链路，并把数据库连接池配置错误、Redis 不可用加入 `opsswarm-mvp-investigation-v1` 评测集。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给后续评测面板；所有环境读写仍只允许本地故障演练环境。
+阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板；所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -216,11 +217,11 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 ## 版本化处置计划
 
-`GET /api/v1/investigations/{run_id}/action-plans/capability` 会先把调查根因与建议成对映射为 `available`、`unsupported` 或 `not_applicable`。当前版本回归使用 `rollback-release-v1`，数据库连接池配置错误使用 `rollback-configuration-database-pool-v1`；Redis 依赖恢复仍明确返回模板尚未实现。
+`GET /api/v1/investigations/{run_id}/action-plans/capability` 会先把调查根因与建议成对映射为 `available`、`unsupported` 或 `not_applicable`。当前版本回归使用 `rollback-release-v1`，数据库连接池配置错误使用 `rollback-configuration-database-pool-v1`，Redis 不可用使用 `restore-redis-dependency-v1`。
 
-`POST /api/v1/investigations/{run_id}/action-plans` 只消费已经成功提交的调查、`supported` 主假设、匹配的可用模板和规范化变更证据。当前确定性模板从变更证据提取当前版本和目标版本；相同假设并发重复请求只会生成一个版本。
+`POST /api/v1/investigations/{run_id}/action-plans` 只消费已经成功提交的调查、`supported` 主假设、匹配的可用模板和规范化证据。回滚模板从变更证据提取当前值和目标值；Redis 模板还要求指标证据明确显示当前不可用。相同假设并发重复请求只会生成一个版本。
 
-新计划使用 `action-risk-v2` 把版本回滚和配置回滚固定判为 `high` 且必须人工审批，读取时仍兼容历史 `action-risk-v1` 版本回滚计划。Pydantic 限制动作和参数形状，风险策略在写入及读取时重算，PostgreSQL 还禁止高风险计划把审批要求设为假。两个动作都必须经过精确版本审批，配置回滚还会在环境写入前复核计划中的当前值。
+新计划使用 `action-risk-v3` 把版本回滚、配置回滚和 Redis 依赖恢复固定判为 `high` 且必须人工审批，读取时仍兼容历史 `action-risk-v1`、`action-risk-v2` 计划。Pydantic 限制动作和参数形状，风险策略在写入及读取时重算，PostgreSQL 还禁止高风险计划把审批要求设为假。三个动作都必须经过精确版本审批，配置和依赖动作还会在环境写入前复核计划中的当前状态。
 
 ## 精确版本审批请求
 
@@ -232,7 +233,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 ## 确定性白名单执行
 
-`POST /api/v1/action-steps/{step_id}/executions` 不接受 Shell、URL 或动作参数，只接受幂等键和期望 Incident 版本。适配器把 `rollback_release` 映射为关闭固定版本故障，把 `rollback_configuration + database_pool_size` 映射为固定配置端点的比较并设置；配置已经漂移时拒绝覆盖，已经位于目标值时按安全重放成功。
+`POST /api/v1/action-steps/{step_id}/executions` 不接受 Shell、URL 或动作参数，只接受幂等键和期望 Incident 版本。适配器把 `rollback_release` 映射为关闭固定版本故障，把 `rollback_configuration + database_pool_size` 与 `restore_dependency + redis` 分别映射为固定管理端点的比较并设置；状态已经漂移时拒绝覆盖，已经位于目标值时按安全重放成功。
 
 执行记录先以 15 秒租约写入 PostgreSQL，再调用最长 3 秒的本地 HTTP 适配器，最后以有效租约提交成功或失败终态。同一幂等键重复请求不会重复执行；进程中断后只能用相同键在租约过期后接管。外部动作使用“设置为关闭”而非“切换”，因此物理重放仍保持相同效果。
 
@@ -240,7 +241,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/evidence-
 
 ## 逐次恢复验证
 
-`POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行。版本回滚冻结 `http_5xx_ratio < 0.01`，配置回滚冻结 `database_pool_saturation < 0.8`；两者都要求 60 秒窗口内至少 3 个成功样本，不会让单个 HTTP 请求阻塞 60 秒。
+`POST /api/v1/operation-executions/{execution_id}/verification-runs` 为成功操作创建唯一验证运行。版本回滚冻结 `http_5xx_ratio < 0.01`，配置回滚冻结 `database_pool_saturation < 0.8`，Redis 恢复冻结 `redis_unavailable_ratio < 0.01`；三个规则都要求 60 秒窗口内至少 3 个成功样本，不会让单个 HTTP 请求阻塞 60 秒。
 
 验证运行创建时会在同一事务中投递 `verification_work_items`。常驻 Worker 默认按冻结窗口自动调用动作绑定的固定只读探针；三样本、60 秒规则安排在约 0、30、60 秒。每个调度轮次使用稳定幂等键，样本已落库但 Worker 尚未结算时，租约到期重领不会重复探测。
 
@@ -392,7 +393,7 @@ Invoke-RestMethod http://127.0.0.1:18001/health
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出，`verification-worker` 会作为常驻容器自动领取到期验证任务。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，两者都在服务重启后重置。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出，`verification-worker` 会作为常驻容器自动领取到期验证任务。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除持久数据卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 演练依赖默认可用；三种状态都在服务重启后回到安全默认值。管理接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 ## 测试与检查
 

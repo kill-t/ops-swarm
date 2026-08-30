@@ -248,7 +248,7 @@ erDiagram
 
 ### 4.12 action_steps
 
-每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。动作约束允许 `rollback_release` 和 `rollback_configuration`：前者保存当前版本与目标版本，后者只允许 `database_pool_size` 及 1～1000 范围内的当前值和目标值。具体参数形状由 Pydantic 在写入和读取时重验；两种动作都保持高风险人工审批要求。
+每个步骤保存稳定 UUID、连续顺序、白名单动作、目标类型与名称、严格参数 JSONB、风险规则码与理由，以及结构化恢复验证 JSONB。动作约束允许 `rollback_release`、`rollback_configuration` 和 `restore_dependency`：前两者保存经过白名单校验的版本或连接池前后值，依赖恢复只允许 `dependency=redis` 与严格 `false → true` 状态。具体参数形状由 Pydantic 在写入和读取时重验；三个动作都保持高风险人工审批要求。
 
 数据库检查约束保证 JSONB 为对象、顺序大于零，并禁止 `high` 或 `critical` 步骤及计划把 `requires_human_approval` 设为假。风险仍由应用策略重算；数据库约束是最后一道完整性保护，不承担业务推理。
 
@@ -293,7 +293,7 @@ erDiagram
 | 进度 | 成功样本计数、首个成功时间、最后观察时间、创建与更新时间 |
 | 终态 | 完成时间，以及失败时的稳定错误码和最多 500 字摘要 |
 
-同一成功操作最多创建一个运行，网络重试返回原记录。数据库只允许 `http_5xx_ratio` 或 `database_pool_saturation` 使用 `less_than`，验证器名称分别为 `local_order_http_5xx_ratio_v1` 与 `local_database_pool_saturation_v1`；阈值限定 0～1，窗口 10～3600 秒，所需样本 1～100。
+同一成功操作最多创建一个运行，网络重试返回原记录。数据库只允许 `http_5xx_ratio`、`database_pool_saturation` 或 `redis_unavailable_ratio` 使用 `less_than`，验证器名称分别为 `local_order_http_5xx_ratio_v1`、`local_database_pool_saturation_v1` 与 `local_redis_unavailable_ratio_v1`；阈值限定 0～1，窗口 10～3600 秒，所需样本 1～100。
 
 `passed` 必须同时满足成功样本数和 `last_observed_at - first_success_at >= observation_window_seconds`，数据库检查约束阻止应用绕过时间窗口。`failed` 必须有完整错误，`running` 不得提前写终态。最终样本、运行终态、Incident 迁移和时间线事件在同一事务提交。
 

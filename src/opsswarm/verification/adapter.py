@@ -1,13 +1,15 @@
-"""只读取固定订单或连接池状态端点的本地恢复验证适配器。"""
+"""只读取固定订单、连接池或 Redis 状态端点的本地恢复验证适配器。"""
 
 from typing import Protocol
 
 import httpx2
 
-from opsswarm.fault_lab.models import DatabasePoolStatus, OrderResponse
+from opsswarm.fault_lab.models import DatabasePoolStatus, OrderResponse, RedisDependencyStatus
 from opsswarm.planning import (
     ActionType,
     ConfigurationKey,
+    DependencyName,
+    RestoreDependencyParameters,
     RollbackConfigurationParameters,
     RollbackReleaseParameters,
     TargetType,
@@ -39,10 +41,17 @@ class FaultLabVerificationAdapter:
     async def observe(self, step: StoredActionStep) -> VerificationObservation:
         """访问固定探针路径；请求目标不接受计划或客户端提供的 URL。"""
 
-        if step.target_type is not TargetType.SERVICE or step.target_name != "order-service":
+        valid_service_target = (
+            step.target_type is TargetType.SERVICE and step.target_name == "order-service"
+        )
+        valid_redis_target = (
+            step.target_type is TargetType.DEPENDENCY
+            and step.target_name == DependencyName.REDIS.value
+        )
+        if not valid_service_target and not valid_redis_target:
             raise VerificationProbeFailure(
                 error_code="verification_not_whitelisted",
-                message="恢复探针只允许读取本地 order-service",
+                message="恢复探针只允许读取本地 order-service 或 Redis 演练依赖",
             )
         try:
             async with httpx2.AsyncClient(
@@ -55,6 +64,7 @@ class FaultLabVerificationAdapter:
                     step.action_type is ActionType.ROLLBACK_RELEASE
                     and isinstance(step.parameters, RollbackReleaseParameters)
                     and step.verification.signal == "http_5xx_ratio"
+                    and valid_service_target
                 ):
                     return await self._observe_http_5xx_ratio(client)
                 if (
@@ -62,8 +72,17 @@ class FaultLabVerificationAdapter:
                     and isinstance(step.parameters, RollbackConfigurationParameters)
                     and step.parameters.key is ConfigurationKey.DATABASE_POOL_SIZE
                     and step.verification.signal == "database_pool_saturation"
+                    and valid_service_target
                 ):
                     return await self._observe_database_pool_saturation(client)
+                if (
+                    step.action_type is ActionType.RESTORE_DEPENDENCY
+                    and isinstance(step.parameters, RestoreDependencyParameters)
+                    and step.parameters.dependency is DependencyName.REDIS
+                    and step.verification.signal == "redis_unavailable_ratio"
+                    and valid_redis_target
+                ):
+                    return await self._observe_redis_unavailable_ratio(client)
                 raise VerificationProbeFailure(
                     error_code="verification_not_whitelisted",
                     message="恢复探针不支持该动作、参数或信号组合",
@@ -140,5 +159,30 @@ class FaultLabVerificationAdapter:
         return VerificationObservation(
             signal="database_pool_saturation",
             value=status.database_pool_saturation,
+            http_status=response.status_code,
+        )
+
+    async def _observe_redis_unavailable_ratio(
+        self,
+        client: httpx2.AsyncClient,
+    ) -> VerificationObservation:
+        response = await client.get("/__admin/dependencies/redis")
+        if not 200 <= response.status_code < 300:
+            raise VerificationProbeFailure(
+                error_code="verification_probe_unexpected_status",
+                message="Redis 恢复探针返回了非预期状态",
+                http_status=response.status_code,
+            )
+        try:
+            status = RedisDependencyStatus.model_validate(response.json())
+        except (ValueError, TypeError) as error:
+            raise VerificationProbeFailure(
+                error_code="verification_probe_invalid_response",
+                message="Redis 恢复探针返回了无效响应",
+                http_status=response.status_code,
+            ) from error
+        return VerificationObservation(
+            signal="redis_unavailable_ratio",
+            value=status.redis_unavailable_ratio,
             http_status=response.status_code,
         )

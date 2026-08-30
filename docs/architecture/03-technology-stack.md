@@ -92,7 +92,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 根因质疑使用版本化纯 Python 规则，不增加第二个 LLM 裁判。LangGraph 负责把规则节点放入可恢复序列，Pydantic 校验输出结构，PostgreSQL 保存假设和逐证据关系；业务规则仍可在毫秒级纯单元测试中覆盖。
 
-处置计划当前使用确定性模板建立安全基线：Pydantic 只接受白名单动作和各自的精确参数模型，纯 Python 版本化风险策略重算风险；新计划使用 `action-risk-v2`，读取时仍支持历史 `action-risk-v1`。PostgreSQL 保存不可变版本并用检查约束阻止高风险动作绕过审批。审批请求与决定使用 SQLAlchemy 事务和 PostgreSQL 行锁同步计划、Incident 与时间线，以 SHA-256 检测内容漂移，并通过数据库检查约束保证终态审计完整；LangChain 和 LangGraph 都不参与审批有效性判断。未来 LangChain 可以生成相同 `ActionPlan` 契约的候选计划，但不能替代风险策略或审批。
+处置计划当前使用确定性模板建立安全基线：Pydantic 只接受白名单动作和各自的精确参数模型，纯 Python 版本化风险策略重算风险；新计划使用 `action-risk-v3`，读取时仍支持历史 `action-risk-v1` 与 `action-risk-v2`。PostgreSQL 保存不可变版本并用检查约束阻止高风险动作绕过审批。审批请求与决定使用 SQLAlchemy 事务和 PostgreSQL 行锁同步计划、Incident 与时间线，以 SHA-256 检测内容漂移，并通过数据库检查约束保证终态审计完整；LangChain 和 LangGraph 都不参与审批有效性判断。未来 LangChain 可以生成相同 `ActionPlan` 契约的候选计划，但不能替代风险策略或审批。
 
 白名单执行使用 HTTPX2 访问固定本地管理路径，并以 Pydantic 校验有限响应。SQLAlchemy/PostgreSQL 在环境操作前保存全局幂等键与短租约，完成时用新读取的 UTC 时间重新校验租约，再原子提交执行终态、Incident 迁移和时间线。该设计承认数据库与 HTTP 之间没有分布式事务，通过幂等的目标状态设置实现安全重放，而不是错误宣称物理恰好一次。
 
