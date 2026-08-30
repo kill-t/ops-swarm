@@ -20,11 +20,18 @@ from opsswarm.verification.models import (
     VerificationWorkItemStatus,
     sample_status,
 )
-from opsswarm.verification.settings import VerificationSettings, VerificationWorkerSettings
+from opsswarm.verification.prometheus_adapter import PrometheusVerificationAdapter
+from opsswarm.verification.settings import (
+    PrometheusVerificationSettings,
+    VerificationSettings,
+    VerificationWorkerSettings,
+)
 
 __all__ = [
     "FaultLabVerificationAdapter",
     "OperationExecutionNotVerifiable",
+    "PrometheusVerificationAdapter",
+    "PrometheusVerificationSettings",
     "UnsupportedVerificationRule",
     "VerificationAdapter",
     "VerificationError",

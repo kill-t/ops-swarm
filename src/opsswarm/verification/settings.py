@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_FAULT_LAB_BASE_URL = "http://127.0.0.1:18001"
 ALLOWED_FAULT_LAB_HOSTS = frozenset({"127.0.0.1", "localhost", "order-service"})
+DEFAULT_PROMETHEUS_BASE_URL = "http://127.0.0.1:19090"
+ALLOWED_PROMETHEUS_HOSTS = frozenset({"127.0.0.1", "localhost", "prometheus"})
 
 
 class VerificationSettings(BaseSettings):
@@ -31,6 +33,31 @@ class VerificationSettings(BaseSettings):
             raise ValueError("恢复探针地址不能包含用户信息")
         if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
             raise ValueError("恢复探针地址不能包含路径、查询参数或片段")
+        return normalized
+
+
+class PrometheusVerificationSettings(BaseSettings):
+    """限制恢复验证只能查询项目内 Prometheus。"""
+
+    model_config = SettingsConfigDict(env_prefix="OPSSWARM_VERIFIER_", extra="ignore")
+
+    prometheus_base_url: str = Field(default=DEFAULT_PROMETHEUS_BASE_URL, min_length=1)
+    request_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
+    max_sample_age_seconds: float = Field(default=10.0, gt=0, le=60)
+
+    @field_validator("prometheus_base_url")
+    @classmethod
+    def restrict_prometheus_url(cls, value: str) -> str:
+        normalized = value.rstrip("/")
+        parsed = urlsplit(normalized)
+        if parsed.scheme != "http":
+            raise ValueError("Prometheus 地址只允许 http")
+        if parsed.hostname not in ALLOWED_PROMETHEUS_HOSTS:
+            raise ValueError("Prometheus 地址只允许 localhost、127.0.0.1 或 prometheus")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("Prometheus 地址不能包含用户信息")
+        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            raise ValueError("Prometheus 地址不能包含路径、查询参数或片段")
         return normalized
 
 

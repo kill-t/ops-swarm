@@ -34,7 +34,10 @@ class VerificationRunRow(Base):
             "verifier_name IN ("
             "'local_order_http_5xx_ratio_v1', "
             "'local_database_pool_saturation_v1', "
-            "'local_redis_unavailable_ratio_v1'"
+            "'local_redis_unavailable_ratio_v1', "
+            "'prometheus_order_http_5xx_ratio_v1', "
+            "'prometheus_database_pool_saturation_v1', "
+            "'prometheus_redis_unavailable_ratio_v1'"
             ")",
             name="ck_verification_runs_verifier",
         ),

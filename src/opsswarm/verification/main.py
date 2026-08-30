@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta
 from opsswarm.database import Database, DatabaseSettings
 from opsswarm.database.asyncio_compat import create_selector_event_loop
 from opsswarm.verification import (
-    FaultLabVerificationAdapter,
-    VerificationSettings,
+    PrometheusVerificationAdapter,
+    PrometheusVerificationSettings,
     VerificationWorkerSettings,
 )
 from opsswarm.verification.persistence import VerificationStore
@@ -48,7 +48,7 @@ async def run(*, once: bool) -> bool | None:
     store = VerificationStore(database.session_factory)
     service = VerificationService(
         store,
-        FaultLabVerificationAdapter(VerificationSettings()),
+        PrometheusVerificationAdapter(PrometheusVerificationSettings()),
         clock=utc_now,
     )
     worker = VerificationWorker(

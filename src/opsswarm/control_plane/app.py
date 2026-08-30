@@ -70,8 +70,8 @@ from opsswarm.planning import (
 )
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.verification import (
-    FaultLabVerificationAdapter,
     OperationExecutionNotVerifiable,
+    PrometheusVerificationAdapter,
     UnsupportedVerificationRule,
     VerificationAdapter,
     VerificationError,
@@ -136,7 +136,7 @@ def create_app(
                 (
                     verification_adapter
                     if verification_adapter is not None
-                    else FaultLabVerificationAdapter()
+                    else PrometheusVerificationAdapter()
                 ),
                 clock=clock,
             )
@@ -163,7 +163,7 @@ def create_app(
             (
                 verification_adapter
                 if verification_adapter is not None
-                else FaultLabVerificationAdapter()
+                else PrometheusVerificationAdapter()
             ),
             clock=clock,
         )

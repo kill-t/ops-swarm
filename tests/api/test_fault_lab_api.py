@@ -22,6 +22,19 @@ def test_health_endpoint(client: TestClient) -> None:
     assert response.json() == {"service": "order-service", "status": "healthy"}
 
 
+def test_metrics_endpoint_exposes_live_fault_state(client: TestClient) -> None:
+    client.put("/__admin/dependencies/redis", json={"available": False})
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert (
+        'opsswarm_fault_lab_redis_unavailable_ratio{service="order-service"} 1.0' in response.text
+    )
+    assert 'opsswarm_fault_lab_http_5xx_ratio{service="order-service"} 1.0' in response.text
+
+
 def test_order_endpoint_is_healthy_by_default(client: TestClient) -> None:
     response = client.get("/orders/order-001")
 

@@ -76,3 +76,4 @@
 - [33 - 持久恢复验证调度 Worker](33-persistent-verification-scheduler.md)
 - [34 - Redis 不可用确定性处置闭环](34-redis-dependency-recovery.md)
 - [35 - 真实 Redis 与受控故障代理](35-real-redis-fault-proxy.md)
+- [36 - Prometheus 指标与恢复验证](36-prometheus-recovery-verification.md)

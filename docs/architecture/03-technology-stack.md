@@ -96,14 +96,14 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 白名单执行使用 HTTPX2 访问固定本地管理路径，并以 Pydantic 校验有限响应。SQLAlchemy/PostgreSQL 在环境操作前保存全局幂等键与短租约，完成时用新读取的 UTC 时间重新校验租约，再原子提交执行终态、Incident 迁移和时间线。该设计承认数据库与 HTTP 之间没有分布式事务，通过幂等的目标状态设置实现安全重放，而不是错误宣称物理恰好一次。
 
-恢复验证复用 HTTPX2，但只发送固定只读订单请求。运行规则与每个样本由 Pydantic 校验并持久化，PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入的 UTC 时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。后续接入 Prometheus 时继续实现同一 `VerificationAdapter` 契约，不改变领域终态语义。
+恢复验证复用 HTTPX2，但只向项目内 Prometheus 发送代码中预注册的三条只读查询。响应由 Pydantic 校验，并额外验证唯一序列、标签、值域和样本新鲜度；PostgreSQL 行锁只覆盖最终样本追加和 Incident 判定，不跨越网络调用。测试通过依赖注入时钟覆盖 60 秒窗口，无需真实等待，也不修改正式规则。Prometheus 适配器继续实现同一 `VerificationAdapter` 契约，没有改变领域终态语义。
 
 ## 5. 可观测性
 
 | 技术 | 目标 |
 | --- | --- |
 | structlog | 结构化 JSON 日志和统一上下文字段 |
-| Prometheus Client | API、Worker、工具、任务与评测指标 |
+| Prometheus 3.13 LTS、prometheus-client | 故障服务指标抓取与固定恢复查询 |
 | OpenTelemetry | 跨 API、Worker、Agent 节点和工具调用的 trace |
 | Loki | 本地演练服务日志查询目标 |
 | LangSmith | 可选查看模型输入输出和图执行，不保存业务唯一事实 |
@@ -117,7 +117,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 容器编排 | Docker Compose | 阶段 1 |
 | 被管服务 | gateway-service、order-service | 阶段 1 起逐步增加 |
 | 故障依赖 | PostgreSQL 17、Redis 7.4、redis-py 6 | 数据库切片、真实 Redis 切片 |
-| 遥测 | Prometheus、Loki | 先提供简化数据，再接真实服务 |
+| 遥测 | Prometheus 3.13 LTS；后续 Loki | Prometheus 恢复验证切片、日志切片 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
 | 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |

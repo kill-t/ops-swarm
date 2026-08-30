@@ -1067,7 +1067,7 @@ async def test_database_configuration_plan_runs_through_controlled_verification(
     )
     assert verification.status_code == 201
     verification_run = verification.json()["verification_run"]
-    assert verification_run["verifier_name"] == "local_database_pool_saturation_v1"
+    assert verification_run["verifier_name"] == "prometheus_database_pool_saturation_v1"
     assert verification_run["rule"] == {
         "signal": "database_pool_saturation",
         "operator": "less_than",
@@ -1187,7 +1187,7 @@ async def test_redis_dependency_plan_runs_through_controlled_verification(
     )
     assert verification.status_code == 201
     verification_run = verification.json()["verification_run"]
-    assert verification_run["verifier_name"] == "local_redis_unavailable_ratio_v1"
+    assert verification_run["verifier_name"] == "prometheus_redis_unavailable_ratio_v1"
     assert verification_run["rule"] == {
         "signal": "redis_unavailable_ratio",
         "operator": "less_than",

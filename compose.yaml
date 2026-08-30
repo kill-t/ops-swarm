@@ -135,6 +135,42 @@ services:
     networks:
       - lab
 
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=1d
+    depends_on:
+      order-service:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:19090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - promtool
+        - query
+        - instant
+        - http://127.0.0.1:9090
+        - up
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - lab
+
   verification-worker:
     <<: *opsswarm-runtime
     init: true
@@ -145,7 +181,7 @@ services:
     restart: unless-stopped
     environment:
       OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
-      OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_VERIFIER_PROMETHEUS_BASE_URL: http://prometheus:9090
       OPSSWARM_VERIFICATION_WORKER_POLL_INTERVAL_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_POLL_INTERVAL_SECONDS:-1}
       OPSSWARM_VERIFICATION_WORKER_LEASE_DURATION_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_LEASE_DURATION_SECONDS:-15}
       OPSSWARM_VERIFICATION_WORKER_BASE_RETRY_DELAY_SECONDS: ${OPSSWARM_VERIFICATION_WORKER_BASE_RETRY_DELAY_SECONDS:-2}
@@ -154,6 +190,8 @@ services:
       control-migrate:
         condition: service_completed_successfully
       order-service:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
     read_only: true
     tmpfs:
@@ -174,3 +212,4 @@ networks:
 
 volumes:
   control-db-data:
+  prometheus-data:

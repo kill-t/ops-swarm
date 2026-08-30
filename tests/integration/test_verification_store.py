@@ -147,7 +147,7 @@ async def test_three_successes_spanning_window_resolve_incident_and_retry_is_ide
     assert incident.incident.status is IncidentStatus.RESOLVED
     assert incident.incident.version == 6
     events = await IncidentStore(database_session_factory).list_events(started.incident.incident.id)
-    assert events[-1].event.actor.actor_id == "local_order_http_5xx_ratio_v1"
+    assert events[-1].event.actor.actor_id == "prometheus_order_http_5xx_ratio_v1"
 
 
 async def test_successful_samples_without_full_window_remain_running(

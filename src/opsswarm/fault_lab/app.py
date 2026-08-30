@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, Path
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from opsswarm import __version__
 from opsswarm.fault_lab.controller import (
@@ -15,6 +16,7 @@ from opsswarm.fault_lab.controller import (
     FaultSnapshot,
     RedisAvailabilityConflict,
 )
+from opsswarm.fault_lab.metrics import FaultLabMetrics
 from opsswarm.fault_lab.models import (
     DatabasePoolConflictResponse,
     DatabasePoolErrorResponse,
@@ -78,6 +80,7 @@ def create_app(
     """创建故障演练应用；生产入口默认访问真实 Redis。"""
 
     fault_controller = controller if controller is not None else FaultController()
+    fault_metrics = FaultLabMetrics()
     dependency_backend = redis_backend
     if dependency_backend is None:
         dependency_backend = (
@@ -104,6 +107,14 @@ def create_app(
     def get_health() -> HealthResponse:
         return HealthResponse()
 
+    @app.get("/metrics", include_in_schema=False)
+    async def get_metrics() -> Response:
+        payload = fault_metrics.render(
+            snapshot=fault_controller.snapshot(),
+            redis_available=await dependency_backend.is_available(),
+        )
+        return Response(content=payload, media_type=CONTENT_TYPE_LATEST)
+
     @app.get(
         "/orders/{order_id}",
         response_model=OrderResponse,
@@ -120,6 +131,7 @@ def create_app(
     async def get_order(order_id: OrderId) -> OrderResponse | JSONResponse:
         snapshot = fault_controller.snapshot()
         if snapshot.release_500_enabled:
+            fault_metrics.record_order(result="failed", failure_reason="release_500")
             logger.warning("故障注入触发 order_id=%s fault=release_500", order_id)
             error = FaultErrorResponse(
                 message="新版本故障注入已启用，订单接口模拟返回 500",
@@ -128,6 +140,7 @@ def create_app(
             return JSONResponse(status_code=500, content=error.model_dump(mode="json"))
 
         if snapshot.database_pool_timeout_enabled:
+            fault_metrics.record_order(result="failed", failure_reason="database_pool_timeout")
             logger.warning(
                 "故障注入触发 order_id=%s fault=database_pool_timeout pool_size=%s waiters=%s",
                 order_id,
@@ -145,6 +158,7 @@ def create_app(
             )
 
         if not await dependency_backend.is_available():
+            fault_metrics.record_order(result="failed", failure_reason="redis_unavailable")
             logger.warning("故障注入触发 order_id=%s fault=redis_unavailable", order_id)
             redis_error = RedisDependencyErrorResponse(
                 message="Redis 依赖不可用，订单接口模拟连接失败",
@@ -155,6 +169,7 @@ def create_app(
                 content=redis_error.model_dump(mode="json"),
             )
 
+        fault_metrics.record_order(result="success", failure_reason="none")
         return OrderResponse(order_id=order_id)
 
     @app.get(

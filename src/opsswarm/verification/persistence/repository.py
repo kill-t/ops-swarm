@@ -48,9 +48,9 @@ from opsswarm.verification.persistence.tables import (
     VerificationWorkItemRow,
 )
 
-RELEASE_VERIFIER_NAME = "local_order_http_5xx_ratio_v1"
-CONFIGURATION_VERIFIER_NAME = "local_database_pool_saturation_v1"
-REDIS_VERIFIER_NAME = "local_redis_unavailable_ratio_v1"
+RELEASE_VERIFIER_NAME = "prometheus_order_http_5xx_ratio_v1"
+CONFIGURATION_VERIFIER_NAME = "prometheus_database_pool_saturation_v1"
+REDIS_VERIFIER_NAME = "prometheus_redis_unavailable_ratio_v1"
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$")
 _WORKER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,99}$")
 

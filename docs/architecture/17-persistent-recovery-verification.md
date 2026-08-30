@@ -33,7 +33,7 @@ sequenceDiagram
 
 ## 3. 服务端探针与判定
 
-`local_order_http_5xx_ratio_v1`、`local_database_pool_saturation_v1` 与 `local_redis_unavailable_ratio_v1` 分别只访问固定订单、连接池或 Redis 状态路径。三者都只允许本机或 Compose 服务名，不接受客户端 URL、订单 ID、信号值或 HTTP 状态；地址限制、环境代理关闭和 3 秒默认超时与白名单执行器保持相同安全边界。
+初始实现使用 `local_order_http_5xx_ratio_v1`、`local_database_pool_saturation_v1` 与 `local_redis_unavailable_ratio_v1` 访问固定状态路径。第 36 个切片已切换为三个 `prometheus_*_v1` 验证器：只访问项目内 Prometheus，并把动作和信号映射为代码中固定 PromQL。历史运行保留原名称；新适配器仍不接受客户端 URL、订单 ID、查询或观测值。
 
 - 合法 2xx 且响应符合 `OrderResponse`：样本值为 `0.0`。
 - 任意 5xx：样本值为 `1.0`。
@@ -65,7 +65,7 @@ sequenceDiagram
 ## 6. 当前限制与下一步
 
 - 自动采样由 Compose 中的常驻 Worker 触发；手动样本接口仍用于本地诊断。
-- 当前支持固定订单探针和连接池状态探针，没有 Prometheus 区间查询或多信号组合。
+- 当前已支持 Prometheus 固定即时查询，但尚未支持生产流量区间聚合或多信号组合。
 - 单个请求代表一个 0 或 1 的 5xx 样本，不是生产流量的统计分位。
 - 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。
 - Incident 已能进入 `resolved`，但关闭、复发和 UI 仍未提供完整操作入口。
