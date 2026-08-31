@@ -93,7 +93,8 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 13. 持久每次调查尝试的耗时、结果、Token 与费用。
 14. 在 Incident 作战室展示调查尝试与成本。
 15. 接入固定仓库、最小权限和失败关闭的 GitHub 只读变更工具。
-16. 使用私有仓库凭据完成无模型冒烟，再评估 webhook 或增量同步游标。
+16. 使用私有仓库凭据完成无模型冒烟，并验证现场 Worker 的组合变更来源。
+17. 建立服务、代码仓库、部署版本与 Commit SHA 的确定性映射。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -263,6 +264,8 @@ uv run python -m opsswarm.investigation.github_change_smoke --lookback-hours 6
 ```
 
 GitHub 文本只作为不可信证据数据输入 Agent，不能改变工具、角色或执行规则。当前新调查使用 `single-agent-v3` 和 `multi-agent-parallel-v3`；历史提示版本不迁移。
+
+本机私有仓库无模型冒烟已经完成，现场 Worker 也已使用 `simulator_and_github` 常驻运行。当前 `kill-t/ops-swarm` 的提交只能作为变更上下文，尚不能证明某个 Commit 已部署到订单服务；下一步需要增加服务、仓库、部署版本和 Commit SHA 的确定性关联。
 
 变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定记录；查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
 

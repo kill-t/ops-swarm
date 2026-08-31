@@ -26,7 +26,7 @@
 
 ## 测试与验收
 
-本切片的自动化测试不读取 `.env` 中的真实令牌，不访问 GitHub，也不调用模型。GitHub HTTP 行为由 `httpx2.MockTransport` 固定重放；真实私有仓库冒烟留到用户配置最小权限令牌后执行。
+本切片的自动化测试不读取 `.env` 中的真实令牌，不访问 GitHub，也不调用模型。GitHub HTTP 行为由 `httpx2.MockTransport` 固定重放；用户配置最小权限令牌后，另外执行真实私有仓库无模型冒烟。
 
 完整验收命令：
 
@@ -46,15 +46,17 @@ npm run build
 
 重新构建 `ops-swarm-runtime:local` 后，冻结与现场调查 Worker 均成功重新创建并进入常驻轮询；订单服务、Redis 故障代理、变更服务及依赖容器保持健康。运行态确认变更来源仍为默认 `simulator`，业务库没有 `pending` 或 `running` 调查任务，因此验收没有访问 GitHub、调用真实模型或产生模型费用。
 
+凭据补充验收中，1 小时时间窗的 GitHub 独立冒烟从私有 `kill-t/ops-swarm` 仓库取得 1 条规范化 Commit Evidence；6 小时时间窗的统一现场冒烟调用 3 个工具并取得 1 条 Prometheus Evidence 与 4 条 GitHub Commit Evidence。现场 Worker 随后单独重新创建，容器内确认固定仓库、令牌已配置且变更来源为 `simulator_and_github`。业务库仍无待处理任务；全过程没有调用模型、写入 GitHub 或产生模型费用。
+
 ## 为什么这样设计
 
 把 GitHub 作为模拟器的可选补充，能让求职项目展示真实 SaaS 工具集成，又不会牺牲故障演练的确定性。Agent 不需要知道 GitHub API，更不需要拥有通用网络或写权限；它只消费经过本地契约验证的 Evidence。失败不降级为“空结果”，保证根因判断不会建立在缺失却未披露的数据上。
 
 ## 限制与下一步
 
-- 私有仓库真实冒烟尚待 `.env` 中的细粒度只读令牌。
+- 私有仓库真实冒烟已经完成，但真实令牌只存在于本机 `.env`，不会进入自动测试或仓库。
 - 当前没有读取 diff、Checks、Deployments 或 Actions，也没有 webhook 增量同步。
-- 下一步先完成私有仓库无模型冒烟和现场 Worker 组合验证，再决定是否需要持久化同步游标。
+- 下一步建立服务、仓库、部署版本与 Commit SHA 的确定性映射，再决定是否需要持久化同步游标。
 
 ## 面试表达
 

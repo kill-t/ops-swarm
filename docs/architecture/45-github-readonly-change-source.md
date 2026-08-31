@@ -113,10 +113,11 @@ Compose 只把 GitHub 配置传给现场 Worker；冻结 Worker、API、处置�
 
 ## 8. 当前限制与下一步
 
-- 本切片用 MockTransport 完整验证 HTTP 契约，不把真实 GitHub 和令牌作为自动测试依赖；私有仓库冒烟需要用户在 `.env` 中提供最小只读令牌后单独验收。
+- 自动测试继续使用 MockTransport，不把真实 GitHub 和令牌作为持续集成依赖；本机已使用最小只读令牌完成私有仓库独立冒烟和统一现场数据源组合验收。
 - 当前只关联一个固定仓库和 `order-service`，没有自动从 Incident 选择仓库。
 - 当前读取 Commit 与已合并 PR，不读取 diff、文件内容、Checks、Deployments 或 Actions 日志。
 - GitHub API 是轮询式补充来源，还没有 webhook 变更摄取、游标同步或数据库缓存。
+- 当前仓库提交没有与订单服务部署版本建立确定性映射，因此只作为上下文证据，不直接证明线上发布。
 - 真实平台扩展仍应先评估业务价值，不因“多接一个工具”扩大模型权限。
 
 ## 9. 面试表达
