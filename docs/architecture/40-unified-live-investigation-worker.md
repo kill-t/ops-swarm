@@ -138,7 +138,7 @@ uv run python -m opsswarm.worker.main
 ## 10. 限制与下一步
 
 - 调查 Worker 已在后续切片部署为冻结与现场两个常驻工作池，详见 [工作池设计](42-persistent-investigation-worker-pools.md)。
-- 任务只保存最近一次错误和总尝试次数，本次前两次递归错误没有独立尝试历史；后续应增加尝试审计与模型 Token、费用、耗时。
+- 后续切片已增加逐次尝试审计、模型 Token、费用和耗时，并在作战室展示，详见 [调查尝试审计](43-investigation-attempt-audit.md) 与 [尝试历史界面](44-investigation-attempt-workroom.md)。
 - 单 Agent 的工具集合当前固定为三类；增加新工具时必须同步更新“证据齐备”策略，不能仅注册工具后假设中间件自动理解。
 - 现场变更查询会返回时间窗内多种记录，由确定性质疑规则判断支持、反驳或上下文；后续可增加 Incident 起始时间关联，但不能让模型提交任意时间范围。
 - OpenTelemetry 跨进程 trace 与常驻调查 Worker 均已在后续切片实现；长任务租约续期尚未引入。

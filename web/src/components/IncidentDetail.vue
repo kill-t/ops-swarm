@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import IncidentTimeline from "./IncidentTimeline.vue";
 import IncidentLifecycle from "./IncidentLifecycle.vue";
+import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
 import type { Incident, IncidentEvent, StreamStatus } from "../types/incidents";
+import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 defineProps<{
@@ -14,6 +16,9 @@ defineProps<{
   workroom: IncidentWorkroomSnapshot | null;
   workroomLoading: boolean;
   workroomError: string | null;
+  investigationAttempts: InvestigationAttempt[];
+  attemptsLoading: boolean;
+  attemptsError: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -84,6 +89,13 @@ function formatDateTime(value: string | null): string {
         :loading="workroomLoading"
         :error="workroomError"
         @refresh="emit('refreshWorkroom')"
+      />
+
+      <InvestigationAttemptHistory
+        v-if="workroom?.investigation"
+        :attempts="investigationAttempts"
+        :loading="attemptsLoading"
+        :error="attemptsError"
       />
 
       <IncidentTimeline

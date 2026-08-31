@@ -5,6 +5,7 @@ import {
   getIncidentWorkroom,
   listEvaluationRuns,
   listIncidents,
+  listInvestigationAttempts,
 } from "./api";
 
 describe("控制面 API 客户端", () => {
@@ -68,6 +69,23 @@ describe("控制面 API 客户端", () => {
     await expect(getIncidentWorkroom("incident/001")).resolves.toEqual(body);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/incidents/incident%2F001/workroom",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("使用编码后的调查运行 ID 读取尝试历史", async () => {
+    const body = { investigation_run_id: "run/001", items: [] };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listInvestigationAttempts("run/001")).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/investigations/run%2F001/attempts",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
   });

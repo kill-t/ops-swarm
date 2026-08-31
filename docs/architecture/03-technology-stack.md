@@ -133,6 +133,8 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 
 首个 UI 切片已经使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4 和 Vue Router 5。开发服务器通过同源 `/api` 代理连接本机控制面，不因此扩大 FastAPI CORS。当前 `vue-tsc` 与 TypeScript 7 的编译器入口不兼容，因此锁定经过类型检查和生产构建验证的 TypeScript 6；升级必须再次通过相同验收。
 
+Incident 作战室把固定六阶段摘要与增长型调查尝试分开读取。Pinia 只用聚合快照中的当前调查 ID 请求尝试历史，并通过 Incident ID、运行 ID 和请求 generation 防止迟到响应串线。费用展示继续遵守后端完整性语义，不把空值格式化为零。
+
 Redis 只属于故障演练环境，不承担控制面队列或业务事实存储。订单服务通过 redis-py 经项目内固定 TCP 代理访问 Redis 7.4；代理仅控制连通性并主动清理已有连接，不解析命令，也不拥有 Docker Socket。
 
 ## 7. 未选择的方案

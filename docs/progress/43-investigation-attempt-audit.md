@@ -50,9 +50,9 @@ npm run build
 
 ## 限制与下一步
 
-- 当前 API 已可查询尝试历史，但 Incident 作战室尚未展示。
+- 后续切片已在 Incident 作战室展示当前调查的尝试历史，详见 [作战室调查尝试与成本展示](../architecture/44-investigation-attempt-workroom.md)。
 - 供应商不返回标准 Token 用量时不会启发式估算费用。
-- 下一步在 Incident 作战室展示尝试状态、耗时、重试、Token 与费用完整性，并补充前端测试。
+- 下一步选择 GitHub、GitLab 或 MCP 的只读变更来源，复用现有 Evidence 安全边界。
 
 ## 面试表达
 

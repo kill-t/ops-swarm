@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付四十三个小切片：前四十二步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace 和常驻调查工作池；第 43 步为每次 Worker 租约建立了可结算尝试历史，持久耗时、结果、稳定错误、已观察 Token、价格快照和可重算费用。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付四十四个小切片：前四十三步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池和逐次尝试审计；第 44 步把当前调查的领取状态、耗时、重试、Token、费用与用量完整性展示到 Incident 作战室。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件、调查至验证六阶段摘要和逐次 Worker 历史，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -72,6 +72,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [OpenTelemetry 跨进程调查追踪](docs/architecture/41-opentelemetry-investigation-tracing.md)
 - [冻结与现场常驻调查工作池](docs/architecture/42-persistent-investigation-worker-pools.md)
 - [调查尝试审计与模型成本](docs/architecture/43-investigation-attempt-audit.md)
+- [作战室调查尝试与成本展示](docs/architecture/44-investigation-attempt-workroom.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -89,7 +90,8 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 11. 接入 OpenTelemetry，贯通 API、持久任务、Agent 节点和工具请求。
 12. 把调查 Worker 改为可优雅停机的冻结/现场常驻工作池。
 13. 持久每次调查尝试的耗时、结果、Token 与费用。
-14. 在 Incident 作战室展示调查尝试与成本，再评估 GitHub、GitLab 或 MCP 只读工具。
+14. 在 Incident 作战室展示调查尝试与成本。
+15. 评估并接入 GitHub、GitLab 或 MCP 只读变更工具。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -225,6 +227,8 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/investigations/{run_id}/attempts
 ```
 
 已有 `.env` 中的 `EVALUATION_INPUT_COST_PER_MILLION_USD` 与 `EVALUATION_OUTPUT_COST_PER_MILLION_USD` 作为当前模型价格兼容来源。如果供应商没有返回完整 usage，API 保留已观察 Token，但费用返回空，不会误记为免费。
+
+作战室会读取当前调查的该接口，展示每次领取的状态、耗时、重试、错误和模型资源消耗。运行中、用量不完整与价格未配置都有不同提示；点击六阶段区域的“同步”会同时刷新尝试历史。
 
 不调用模型、一次验证三个 Agent 工具与现场系统的统一只读链路：
 

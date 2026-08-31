@@ -1,5 +1,6 @@
 import type { Incident, IncidentPage } from "../types/incidents";
 import type { EvaluationRun, EvaluationRunPage } from "../types/evaluations";
+import type { InvestigationAttemptList } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 interface ApiErrorBody {
@@ -61,6 +62,16 @@ export function getIncidentWorkroom(
 ): Promise<IncidentWorkroomSnapshot> {
   return requestJson<IncidentWorkroomSnapshot>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/workroom`,
+    signal,
+  );
+}
+
+export function listInvestigationAttempts(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<InvestigationAttemptList> {
+  return requestJson<InvestigationAttemptList>(
+    `/api/v1/investigations/${encodeURIComponent(runId)}/attempts`,
     signal,
   );
 }

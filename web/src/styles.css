@@ -837,32 +837,42 @@ p {
 }
 
 .timeline-panel,
-.lifecycle-panel {
+.lifecycle-panel,
+.attempt-panel {
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgb(16 25 35 / 88%);
 }
 
-.lifecycle-panel {
+.lifecycle-panel,
+.attempt-panel {
   margin-bottom: 22px;
 }
 
 .timeline-heading,
-.lifecycle-heading {
+.lifecycle-heading,
+.attempt-heading {
   align-items: center;
   margin-bottom: 22px;
 }
 
-.lifecycle-heading {
+.lifecycle-heading,
+.attempt-heading {
   display: flex;
   justify-content: space-between;
   gap: 18px;
 }
 
-.lifecycle-heading h3 {
+.lifecycle-heading h3,
+.attempt-heading h3 {
   margin: 0;
   font-size: 18px;
+}
+
+.attempt-heading > span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .lifecycle-grid {
@@ -931,6 +941,7 @@ p {
 .stage-status-failed,
 .stage-status-rejected,
 .stage-status-expired,
+.stage-status-lease_expired,
 .stage-status-contested,
 .stage-status-insufficient_evidence {
   color: #ffc0c6;
@@ -960,6 +971,115 @@ p {
   margin-top: auto;
   color: #72889b;
   font-size: 11px;
+}
+
+.attempt-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attempt-card {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #2b3d4d;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #14212d, #101923 72%);
+}
+
+.attempt-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.attempt-card-heading > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.attempt-card-heading strong {
+  color: #dbe6f1;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.attempt-context {
+  margin: 13px 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.attempt-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid #293b4b;
+  border-radius: 9px;
+  background: #293b4b;
+  overflow: hidden;
+}
+
+.attempt-metrics > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  background: #0f1a24;
+}
+
+.attempt-metrics dt {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.attempt-metrics dd {
+  margin: 0;
+  color: #b8e7e3;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.attempt-caveat,
+.attempt-error,
+.attempt-retry {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.attempt-caveat {
+  border: 1px solid #5e4a28;
+  color: #decba9;
+  background: #251f16;
+}
+
+.attempt-error {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #663a43;
+  color: #e7b7bd;
+  background: #29181e;
+}
+
+.attempt-error code {
+  color: #ffc0c6;
+  font-size: 10px;
+}
+
+.attempt-retry {
+  color: #b6c7d7;
+  background: #162432;
 }
 
 .connection-state {
@@ -1121,6 +1241,7 @@ p {
 
   .incident-hero,
   .lifecycle-heading,
+  .attempt-heading,
   .timeline-heading,
   .timeline-topline {
     align-items: flex-start;
@@ -1157,6 +1278,14 @@ p {
 
   .lifecycle-grid {
     grid-template-columns: 1fr;
+  }
+
+  .attempt-list {
+    grid-template-columns: 1fr;
+  }
+
+  .attempt-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .facts-grid > div {

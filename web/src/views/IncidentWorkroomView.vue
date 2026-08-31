@@ -65,6 +65,9 @@ onUnmounted(() => store.clearSelection());
       :workroom="store.workroom"
       :workroom-loading="store.workroomLoading"
       :workroom-error="store.workroomError"
+      :investigation-attempts="store.investigationAttempts"
+      :attempts-loading="store.attemptsLoading"
+      :attempts-error="store.attemptsError"
       @refresh-workroom="store.refreshSelectedWorkroom"
     />
   </div>

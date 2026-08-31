@@ -1,12 +1,18 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { getIncident, getIncidentWorkroom, listIncidents } from "../services/api";
+import {
+  getIncident,
+  getIncidentWorkroom,
+  listIncidents,
+  listInvestigationAttempts,
+} from "../services/api";
 import {
   connectIncidentEvents,
   type IncidentStreamConnection,
 } from "../services/incident-stream";
 import type { Incident, IncidentEvent, IncidentStatus, StreamStatus } from "../types/incidents";
+import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 function errorMessage(error: unknown): string {
@@ -59,11 +65,56 @@ export const useIncidentStore = defineStore("incidents", () => {
   const workroom = ref<IncidentWorkroomSnapshot | null>(null);
   const workroomLoading = ref(false);
   const workroomError = ref<string | null>(null);
+  const investigationAttempts = ref<InvestigationAttempt[]>([]);
+  const attemptsLoading = ref(false);
+  const attemptsError = ref<string | null>(null);
   let streamConnection: IncidentStreamConnection | null = null;
   let selectionGeneration = 0;
   let workroomRequestGeneration = 0;
 
   const selectedIncidentId = computed(() => selectedIncident.value?.id ?? null);
+
+  async function refreshAttempts(
+    incidentId: string,
+    runId: string,
+    selection: number,
+    requestGeneration: number,
+  ): Promise<void> {
+    attemptsLoading.value = true;
+    attemptsError.value = null;
+    try {
+      const response = await listInvestigationAttempts(runId);
+      if (response.investigation_run_id !== runId) {
+        throw new Error("调查尝试响应与当前运行不一致");
+      }
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== workroomRequestGeneration ||
+        selectedIncident.value?.id !== incidentId ||
+        workroom.value?.investigation?.id !== runId
+      ) {
+        return;
+      }
+      investigationAttempts.value = response.items;
+    } catch (error) {
+      if (
+        selection === selectionGeneration &&
+        requestGeneration === workroomRequestGeneration &&
+        selectedIncident.value?.id === incidentId &&
+        workroom.value?.investigation?.id === runId
+      ) {
+        attemptsError.value = errorMessage(error);
+      }
+    } finally {
+      if (
+        selection === selectionGeneration &&
+        requestGeneration === workroomRequestGeneration &&
+        selectedIncident.value?.id === incidentId
+      ) {
+        attemptsLoading.value = false;
+      }
+    }
+  }
 
   async function loadIncidents(): Promise<void> {
     listLoading.value = true;
@@ -96,7 +147,19 @@ export const useIncidentStore = defineStore("incidents", () => {
       if (snapshot.incident_version < selectedIncident.value.version) {
         return;
       }
+      const previousRunId = workroom.value?.investigation?.id ?? null;
+      const currentRunId = snapshot.investigation?.id ?? null;
       workroom.value = snapshot;
+      if (currentRunId === null) {
+        investigationAttempts.value = [];
+        attemptsLoading.value = false;
+        attemptsError.value = null;
+      } else {
+        if (currentRunId !== previousRunId) {
+          investigationAttempts.value = [];
+        }
+        await refreshAttempts(incidentId, currentRunId, selection, requestGeneration);
+      }
     } catch (error) {
       if (selection === selectionGeneration && requestGeneration === workroomRequestGeneration) {
         workroomError.value = errorMessage(error);
@@ -146,6 +209,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     streamError.value = null;
     workroom.value = null;
     workroomError.value = null;
+    investigationAttempts.value = [];
+    attemptsLoading.value = false;
+    attemptsError.value = null;
     workroomRequestGeneration += 1;
     streamStatus.value = "connecting";
     detailLoading.value = true;
@@ -194,6 +260,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     workroom.value = null;
     workroomLoading.value = false;
     workroomError.value = null;
+    investigationAttempts.value = [];
+    attemptsLoading.value = false;
+    attemptsError.value = null;
     streamStatus.value = "idle";
   }
 
@@ -211,6 +280,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     workroom,
     workroomLoading,
     workroomError,
+    investigationAttempts,
+    attemptsLoading,
+    attemptsError,
     loadIncidents,
     selectIncident,
     refreshSelectedWorkroom,

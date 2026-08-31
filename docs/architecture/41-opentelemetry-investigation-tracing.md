@@ -77,8 +77,8 @@ Jaeger UI：`http://127.0.0.1:16686`。冒烟服务名为 `opsswarm-observabilit
 - Jaeger 使用内存存储，只适合本地演练；当前不承诺 trace 长期保留。
 - 调查 Worker 已在后续切片形成冻结与现场两个可优雅停机的常驻工作池，详见 [工作池设计](42-persistent-investigation-worker-pools.md)。
 - 当前只贯通调查队列；审批、执行和恢复验证的异步传播将在有明确诊断需求时扩展，不能一次把所有表变成遥测载体。
-- 模型 Token 与成本仍是评测业务事实，不从 HTTP span 推断。
-- 下一步优先建立每次调查尝试的业务历史和模型遥测，不从 trace 反推 Token 与费用。
+- 模型 Token 与成本已经分别进入评测和调查尝试业务事实，仍不从 HTTP span 推断。
+- 后续切片已建立每次调查尝试的业务历史、模型遥测和作战室展示，详见 [调查尝试审计](43-investigation-attempt-audit.md) 与 [尝试历史界面](44-investigation-attempt-workroom.md)。
 
 ## 8. 面试表达
 
