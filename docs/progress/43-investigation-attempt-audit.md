@@ -52,7 +52,7 @@ npm run build
 
 - 后续切片已在 Incident 作战室展示当前调查的尝试历史，详见 [作战室调查尝试与成本展示](../architecture/44-investigation-attempt-workroom.md)。
 - 供应商不返回标准 Token 用量时不会启发式估算费用。
-- 下一步选择 GitHub、GitLab 或 MCP 的只读变更来源，复用现有 Evidence 安全边界。
+- 后续第 45 步已选择 GitHub 只读变更来源并复用现有 Evidence 安全边界。
 
 ## 面试表达
 

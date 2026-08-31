@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付四十四个小切片：前四十三步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池和逐次尝试审计；第 44 步把当前调查的领取状态、耗时、重试、Token、费用与用量完整性展示到 Incident 作战室。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件、调查至验证六阶段摘要和逐次 Worker 历史，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付四十五个小切片：前四十四步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计与成本展示；第 45 步增加固定仓库的 GitHub Commit 和已合并 Pull Request 只读证据，并对外部文本加入提示注入边界。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件、调查至验证六阶段摘要和逐次 Worker 历史，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -73,6 +73,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [冻结与现场常驻调查工作池](docs/architecture/42-persistent-investigation-worker-pools.md)
 - [调查尝试审计与模型成本](docs/architecture/43-investigation-attempt-audit.md)
 - [作战室调查尝试与成本展示](docs/architecture/44-investigation-attempt-workroom.md)
+- [GitHub 只读变更调查数据源](docs/architecture/45-github-readonly-change-source.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -91,7 +92,8 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 12. 把调查 Worker 改为可优雅停机的冻结/现场常驻工作池。
 13. 持久每次调查尝试的耗时、结果、Token 与费用。
 14. 在 Incident 作战室展示调查尝试与成本。
-15. 评估并接入 GitHub、GitLab 或 MCP 只读变更工具。
+15. 接入固定仓库、最小权限和失败关闭的 GitHub 只读变更工具。
+16. 使用私有仓库凭据完成无模型冒烟，再评估 webhook 或增量同步游标。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -218,7 +220,7 @@ $env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main --once
 ```
 
-任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；`live` 由 `LiveInvestigationDataSource` 分别委托 Loki、Prometheus 和变更服务，任一来源失败都会进入既有任务重试，不回退为冻结证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
+任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；`live` 由 `LiveInvestigationDataSource` 分别委托 Loki、Prometheus 和变更来源，任一来源失败都会进入既有任务重试，不回退为冻结证据。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 
 每次领取都创建 `investigation_attempts`，成功、失败或租约过期后结算。只读查询：
 
@@ -253,6 +255,14 @@ uv run python -m opsswarm.investigation.loki_smoke --lookback-minutes 15
 ```powershell
 uv run python -m opsswarm.investigation.change_smoke --lookback-hours 6
 ```
+
+GitHub 默认关闭。需要补充固定私有仓库时，在不提交的 `.env` 中把 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER` 改为 `simulator_and_github`，设置 `OPSSWARM_GITHUB_REPOSITORY=kill-t/ops-swarm`，并填写只授予 `Contents: read` 与 `Pull requests: read` 的细粒度令牌。先运行不调用模型的独立冒烟：
+
+```powershell
+uv run python -m opsswarm.investigation.github_change_smoke --lookback-hours 6
+```
+
+GitHub 文本只作为不可信证据数据输入 Agent，不能改变工具、角色或执行规则。当前新调查使用 `single-agent-v3` 和 `multi-agent-parallel-v3`；历史提示版本不迁移。
 
 变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定记录；查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
 

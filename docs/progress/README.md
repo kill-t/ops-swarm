@@ -85,3 +85,4 @@
 - [42 - 冻结与现场常驻调查工作池](42-persistent-investigation-worker-pools.md)
 - [43 - 调查尝试审计与模型成本](43-investigation-attempt-audit.md)
 - [44 - 作战室调查尝试与成本展示](44-investigation-attempt-workroom.md)
+- [45 - GitHub 只读变更调查数据源](45-github-readonly-change-source.md)

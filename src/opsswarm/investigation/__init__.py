@@ -7,7 +7,17 @@ from opsswarm.investigation.changes import (
     ChangeInvestigationSettings,
 )
 from opsswarm.investigation.evaluation import compare_investigation_modes, evaluate_investigation
-from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.github_changes import (
+    GitHubChangeOnlyInvestigationDataSource,
+    GitHubChangeSettings,
+    GitHubEnrichedChangeDataSource,
+)
+from opsswarm.investigation.live import (
+    LiveChangeProvider,
+    LiveInvestigationDataSource,
+    LiveInvestigationSettings,
+    create_live_investigation_data_source,
+)
 from opsswarm.investigation.loki import (
     LokiInvestigationSettings,
     LokiOnlyInvestigationDataSource,
@@ -47,6 +57,9 @@ __all__ = [
     "EvidenceKind",
     "EvidenceObservation",
     "EvidenceRelation",
+    "GitHubChangeOnlyInvestigationDataSource",
+    "GitHubChangeSettings",
+    "GitHubEnrichedChangeDataSource",
     "HypothesisChallenge",
     "HypothesisEvidenceAssessment",
     "HypothesisStatus",
@@ -60,7 +73,9 @@ __all__ = [
     "InvestigationRunStatus",
     "InvestigationRunResult",
     "LangGraphParallelInvestigator",
+    "LiveChangeProvider",
     "LiveInvestigationDataSource",
+    "LiveInvestigationSettings",
     "LokiInvestigationSettings",
     "LokiOnlyInvestigationDataSource",
     "MultiAgentInvestigationResult",
@@ -74,5 +89,6 @@ __all__ = [
     "WorkItemStatus",
     "compare_investigation_modes",
     "challenge_investigation",
+    "create_live_investigation_data_source",
     "evaluate_investigation",
 ]

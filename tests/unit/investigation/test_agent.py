@@ -8,10 +8,14 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from pydantic import PrivateAttr
 
-from opsswarm.investigation.agent import SingleAgentInvestigator
+from opsswarm.investigation.agent import SYSTEM_PROMPT, SingleAgentInvestigator
 from opsswarm.investigation.errors import UnverifiedEvidenceReference
 from opsswarm.investigation.evaluation import evaluate_investigation
 from opsswarm.investigation.models import Recommendation, RootCause
+from opsswarm.investigation.prompt_versions import (
+    SINGLE_AGENT_PROMPT_VERSION,
+    UNTRUSTED_EVIDENCE_POLICY,
+)
 from opsswarm.investigation.scenarios import (
     RELEASE_500_SCENARIO,
     FrozenScenarioDataSource,
@@ -94,6 +98,11 @@ def build_fake_model(*, evidence_ids: list[str]) -> ToolCallingFakeModel:
             ),
         ]
     )
+
+
+def test_single_agent_prompt_marks_external_text_as_untrusted_data() -> None:
+    assert SINGLE_AGENT_PROMPT_VERSION == "single-agent-v3"
+    assert UNTRUSTED_EVIDENCE_POLICY in SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

@@ -142,7 +142,7 @@ uv run python -m opsswarm.worker.main
 - 单 Agent 的工具集合当前固定为三类；增加新工具时必须同步更新“证据齐备”策略，不能仅注册工具后假设中间件自动理解。
 - 现场变更查询会返回时间窗内多种记录，由确定性质疑规则判断支持、反驳或上下文；后续可增加 Incident 起始时间关联，但不能让模型提交任意时间范围。
 - OpenTelemetry 跨进程 trace 与常驻调查 Worker 均已在后续切片实现；长任务租约续期尚未引入。
-- 真实 GitHub、GitLab 或 MCP 接入必须复用只读适配、固定目标、有限响应和 Evidence 规范化边界。
+- 后续 [GitHub 只读变更数据源](45-github-readonly-change-source.md) 已复用固定目标、有限响应和 Evidence 规范化边界，并保留模拟器为默认来源。
 
 ## 11. 面试表达
 

@@ -17,7 +17,12 @@ from opsswarm.checkpoints import (
 )
 from opsswarm.database import Database, DatabaseSettings
 from opsswarm.database.asyncio_compat import create_selector_event_loop
-from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.github_changes import GitHubChangeSettings
+from opsswarm.investigation.live import (
+    LiveChangeProvider,
+    LiveInvestigationSettings,
+    create_live_investigation_data_source,
+)
 from opsswarm.investigation.models import InvestigationDataSourceMode
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
 from opsswarm.investigation.parallel_model import (
@@ -86,7 +91,16 @@ async def run(*, once: bool) -> bool | None:
         )
         data_source: InvestigationDataSource
         if worker_settings.data_source_mode is InvestigationDataSourceMode.LIVE:
-            data_source = LiveInvestigationDataSource()
+            live_settings = LiveInvestigationSettings.from_dotenv()
+            github_settings = (
+                GitHubChangeSettings.from_dotenv()
+                if live_settings.change_provider is LiveChangeProvider.SIMULATOR_AND_GITHUB
+                else None
+            )
+            data_source = create_live_investigation_data_source(
+                live_settings,
+                github_settings=github_settings,
+            )
             evaluation_scenario = None
         else:
             data_source = FrozenScenarioDataSource(RELEASE_500_SCENARIO)

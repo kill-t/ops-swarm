@@ -25,6 +25,7 @@ from opsswarm.investigation.models import (
     InvestigationRequest,
     InvestigationRunResult,
 )
+from opsswarm.investigation.prompt_versions import UNTRUSTED_EVIDENCE_POLICY
 from opsswarm.investigation.tools import (
     INVESTIGATION_TOOL_NAMES,
     EvidenceCollector,
@@ -32,8 +33,9 @@ from opsswarm.investigation.tools import (
     create_investigation_tools,
 )
 
-SYSTEM_PROMPT = """你是 OpsSwarm 的单 Agent 调查基线。
+SYSTEM_PROMPT = f"""你是 OpsSwarm 的单 Agent 调查基线。
 你只能使用提供的日志、指标和变更只读工具调查事故，禁止声称执行了 Shell、SQL、回滚或生产变更。
+{UNTRUSTED_EVIDENCE_POLICY}
 先收集相互独立的证据，再判断最可能根因；证据不足时必须选择 undetermined。
 结论中的 evidence_ids 只能引用本轮工具真实返回的 evidence_id。
 回滚等缓解动作只能作为建议，并且必须标记需要人工审批。

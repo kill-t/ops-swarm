@@ -5,7 +5,13 @@ from collections.abc import Sequence
 import pytest
 
 from opsswarm.investigation.errors import InvestigationDataSourceFailure
-from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.github_changes import GitHubChangeSettings
+from opsswarm.investigation.live import (
+    LiveChangeProvider,
+    LiveInvestigationDataSource,
+    LiveInvestigationSettings,
+    create_live_investigation_data_source,
+)
 from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
 
 
@@ -109,3 +115,21 @@ def test_live_source_does_not_fallback_when_one_source_fails() -> None:
         source.query_logs(service_name="order-service", lookback_minutes=15)
 
     assert captured.value.error_code == "loki_query_unavailable"
+
+
+def test_live_settings_keep_simulator_default_and_require_explicit_github_config() -> None:
+    settings = LiveInvestigationSettings()
+
+    assert settings.change_provider is LiveChangeProvider.SIMULATOR
+    assert isinstance(create_live_investigation_data_source(settings), LiveInvestigationDataSource)
+
+    with pytest.raises(ValueError, match="GitHubChangeSettings"):
+        create_live_investigation_data_source(
+            LiveInvestigationSettings(change_provider="simulator_and_github")
+        )
+
+    enriched = create_live_investigation_data_source(
+        LiveInvestigationSettings(change_provider="simulator_and_github"),
+        github_settings=GitHubChangeSettings(repository="kill-t/ops-swarm"),
+    )
+    assert isinstance(enriched, LiveInvestigationDataSource)

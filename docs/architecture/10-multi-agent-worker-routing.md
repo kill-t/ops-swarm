@@ -20,12 +20,12 @@ API 选择模式 → 同事务保存运行和任务 → Worker 租约领取
 
 | 业务模式 | 持久任务类型 | `graph_thread_id` | 提示版本 |
 | --- | --- | --- | --- |
-| `single_agent` | `run_single_agent_investigation` | 默认空 | `single-agent-v2` |
-| `multi_agent` | `run_multi_agent_investigation` | `investigation-run:{run_id}` | `multi-agent-parallel-v2` |
+| `single_agent` | `run_single_agent_investigation` | 默认空 | `single-agent-v3` |
+| `multi_agent` | `run_multi_agent_investigation` | `investigation-run:{run_id}` | `multi-agent-parallel-v3` |
 
 数据库检查约束允许两种模式和任务类型，并要求 `multi_agent` 必须关联图线程。Worker 处理前还会校验运行模式与任务类型是否匹配，防止数据库异常数据被错误路由。
 
-`single-agent-v1` 和 `multi-agent-parallel-v1` 仍保留在历史运行中。v2 只增加处置建议的明确语义映射，不改写旧实验身份；提示版本变化会使新尝试使用新的实验配置指纹。
+`single-agent-v1/v2` 和 `multi-agent-parallel-v1/v2` 仍保留在历史运行中。v2 增加处置建议的明确语义映射；后续 v3 增加外部证据文本不可信策略。任何升级都不改写旧实验身份，提示版本变化会使新尝试使用新的实验配置指纹。
 
 ## 3. API 兼容策略
 

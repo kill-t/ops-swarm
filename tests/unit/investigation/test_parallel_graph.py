@@ -24,6 +24,10 @@ from opsswarm.investigation.parallel_model import (
     LangChainConclusionSynthesizer,
     LangChainSpecialistAnalyst,
 )
+from opsswarm.investigation.prompt_versions import (
+    MULTI_AGENT_PROMPT_VERSION,
+    UNTRUSTED_EVIDENCE_POLICY,
+)
 from opsswarm.investigation.scenarios import (
     RELEASE_500_SCENARIO,
     FrozenScenarioDataSource,
@@ -325,6 +329,8 @@ async def test_langchain_model_adapters_validate_structured_responses() -> None:
     assert report.evidence_ids == ("log-order-runtime-error",)
     assert conclusion.root_cause.value == "release_500_regression"
     assert conclusion.requires_human_approval is True
+    assert MULTI_AGENT_PROMPT_VERSION == "multi-agent-parallel-v3"
+    assert all(UNTRUSTED_EVIDENCE_POLICY in str(item) for item in model.inputs)
 
 
 @pytest.mark.asyncio
