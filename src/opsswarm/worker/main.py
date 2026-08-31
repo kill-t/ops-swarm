@@ -24,6 +24,7 @@ from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
 from opsswarm.investigation.settings import LlmSettings, create_openai_compatible_model
 from opsswarm.investigation.tools import InvestigationDataSource
+from opsswarm.observability import create_tracing_runtime
 from opsswarm.worker.processor import (
     LangChainInvestigationProcessor,
     LangGraphMultiAgentProcessor,
@@ -48,6 +49,8 @@ async def run_once() -> bool:
         database_settings.database_url,
     )
     database = Database(database_settings.database_url)
+    tracing_runtime = create_tracing_runtime("opsswarm-investigation-worker")
+    tracer = tracing_runtime.get_tracer(__name__)
     try:
         llm_settings = LlmSettings.from_dotenv()
         model = create_openai_compatible_model(llm_settings)
@@ -70,6 +73,7 @@ async def run_once() -> bool:
                     structured_output_method=llm_settings.structured_output_method,
                 ),
                 checkpointer=saver,
+                tracer=tracer,
             )
             processor = ModeRoutingProcessor(
                 single_agent=LangChainInvestigationProcessor(
@@ -78,12 +82,14 @@ async def run_once() -> bool:
                     data_source=data_source,
                     data_source_mode=worker_settings.data_source_mode,
                     evaluation_scenario=evaluation_scenario,
+                    tracer=tracer,
                 ),
                 multi_agent=LangGraphMultiAgentProcessor(
                     investigator=multi_agent_investigator,
                     model_name=llm_settings.model,
                     data_source_mode=worker_settings.data_source_mode,
                     evaluation_scenario=evaluation_scenario,
+                    tracer=tracer,
                 ),
             )
             worker = InvestigationWorker(
@@ -92,10 +98,12 @@ async def run_once() -> bool:
                 worker_id=f"{socket.gethostname()}-{os.getpid()}"[:100],
                 clock=utc_now,
                 data_source_mode=worker_settings.data_source_mode,
+                tracer=tracer,
             )
             return await worker.run_once()
     finally:
         await database.dispose()
+        tracing_runtime.shutdown()
 
 
 def main() -> None:

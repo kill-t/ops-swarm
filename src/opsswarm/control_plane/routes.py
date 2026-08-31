@@ -54,6 +54,7 @@ from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.observability import capture_current_trace_context
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.verification.service import VerificationService
 from opsswarm.workroom import WorkroomStore
@@ -362,6 +363,7 @@ def create_router(clock: Clock) -> APIRouter:
             reason=request.reason,
             mode=request.mode,
             data_source_mode=request.data_source_mode,
+            trace_context=capture_current_trace_context(),
         )
         return StartInvestigationResponse.from_started(started)
 

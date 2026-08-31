@@ -5,10 +5,11 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import JsonValue
+from starlette.middleware.base import RequestResponseEndpoint
 
 from opsswarm import __version__
 from opsswarm.approval import (
@@ -57,6 +58,11 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.observability import (
+    TracingRuntime,
+    create_tracing_runtime,
+    current_trace_id_hex,
+)
 from opsswarm.planning import (
     ActionPlanCapabilityUnavailable,
     ActionPlanNotFound,
@@ -103,9 +109,12 @@ def create_app(
     workroom_store: WorkroomStore | None = None,
     evaluation_store: EvaluationStore | None = None,
     database_settings: DatabaseSettings | None = None,
+    tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
     """创建生产可管理数据库资源、测试可注入仓储的控制面应用。"""
+
+    selected_tracing_runtime = tracing_runtime or create_tracing_runtime("opsswarm-control-plane")
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -142,7 +151,10 @@ def create_app(
             )
             application.state.workroom_store = workroom_store
             application.state.evaluation_store = evaluation_store
-            yield
+            try:
+                yield
+            finally:
+                selected_tracing_runtime.shutdown()
             return
 
         settings = database_settings if database_settings is not None else DatabaseSettings()
@@ -173,6 +185,7 @@ def create_app(
             yield
         finally:
             await database.dispose()
+            selected_tracing_runtime.shutdown()
 
     app = FastAPI(
         title="OpsSwarm Control Plane",
@@ -189,6 +202,21 @@ def create_app(
     app.state.workroom_store = workroom_store
     app.state.evaluation_store = evaluation_store
     app.include_router(create_router(clock))
+
+    @app.middleware("http")
+    async def add_trace_id_header(
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        """追踪开启时让调用方能用响应头定位 Jaeger trace。"""
+
+        response = await call_next(request)
+        trace_id = current_trace_id_hex()
+        if trace_id is not None:
+            response.headers["X-Trace-ID"] = trace_id
+        return response
+
+    selected_tracing_runtime.instrument_fastapi(app)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation_error(

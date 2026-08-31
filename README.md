@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付四十个小切片：前三十九步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系以及 Prometheus、Loki、变更记录三个独立现场数据源；第 40 步把三类现场证据组合为统一只读数据源，并让调查任务把 `frozen` 或 `live` 模式持久化后再由对应 Worker 领取。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付四十一个小切片：前四十步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系和统一现场数据源；第 41 步接入 OpenTelemetry trace，把 FastAPI 请求、PostgreSQL 持久任务、Worker 尝试、Agent 节点和只读工具请求关联起来，并由本地 Jaeger 查看。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -69,6 +69,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [结构化日志与 Loki 只读调查数据源](docs/architecture/38-structured-logs-and-loki-investigation.md)
 - [持久变更记录模拟器与只读调查数据源](docs/architecture/39-change-record-simulator-and-investigation.md)
 - [统一现场数据源与调查 Worker 安全切换](docs/architecture/40-unified-live-investigation-worker.md)
+- [OpenTelemetry 跨进程调查追踪](docs/architecture/41-opentelemetry-investigation-tracing.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -83,9 +84,10 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 8. 恢复验证、失败恢复与时间线 UI。
 9. 评测集以及单 Agent、多 Agent 对比。
 10. 组合三类真实现场数据源并安全切换持久 Worker。
-11. 接入 OpenTelemetry，再评估 GitHub、GitLab 或 MCP 只读工具。
+11. 接入 OpenTelemetry，贯通 API、持久任务、Agent 节点和工具请求。
+12. 把调查 Worker 改为可优雅停机的冻结/现场常驻工作池，再评估 GitHub、GitLab 或 MCP 只读工具。
 
-阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
+阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
@@ -231,6 +233,24 @@ uv run python -m opsswarm.investigation.change_smoke --lookback-hours 6
 ```
 
 变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定记录；查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
+
+## OpenTelemetry 调查追踪
+
+追踪默认关闭，避免测试和普通开发流程产生额外网络依赖。启动本地 Jaeger 并发送不含业务内容的冒烟：
+
+```powershell
+docker compose up -d jaeger
+uv run python -m opsswarm.observability.smoke
+```
+
+Jaeger UI 位于 `http://127.0.0.1:16686`。需要追踪控制面和调查 Worker 时，在 `.env` 或当前终端显式设置：
+
+```powershell
+$env:OPSSWARM_OTEL_ENABLED = "true"
+$env:OPSSWARM_OTEL_TRACES_ENDPOINT = "http://127.0.0.1:14318/v1/traces"
+```
+
+控制面返回 `X-Trace-ID`，开始调查时只把 W3C `traceparent`/`tracestate` 保存到 `work_items.trace_context`，不保存 baggage。Worker 每次尝试作为原 API span 的子跨度；模型 HTTP、LangGraph 节点和三个只读工具继续形成子跨度。追踪只记录有限标识、模式、计数和稳定错误类型，不记录密钥、提示词、模型响应或原始证据。Jaeger 当前使用内存存储，容器重启会丢失 trace，这是可观测数据而不是业务事实。
 
 ## Evidence Board
 

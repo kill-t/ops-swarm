@@ -25,6 +25,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
     WorkItemStatus,
 )
+from opsswarm.observability import TraceContextCarrier
 
 
 class StoredInvestigationRun(StrictModel):
@@ -62,6 +63,7 @@ class StoredWorkItem(StrictModel):
     attempt_count: int
     max_attempts: int
     last_error: WorkItemError | None
+    trace_context: TraceContextCarrier | None = None
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None

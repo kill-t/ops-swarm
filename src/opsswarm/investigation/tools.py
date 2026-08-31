@@ -7,10 +7,13 @@ from typing import Protocol
 
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as langchain_tool
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 from pydantic import BaseModel, ConfigDict, Field
 
 from opsswarm.investigation.errors import InvestigationToolBudgetExceeded
 from opsswarm.investigation.models import EvidenceObservation
+from opsswarm.observability import mark_span_error
 
 QUERY_LOGS_TOOL_NAME = "query_service_logs"
 QUERY_METRICS_TOOL_NAME = "query_service_metrics"
@@ -131,8 +134,12 @@ def _serialize_observations(
 def create_investigation_tools(
     data_source: InvestigationDataSource,
     collector: EvidenceCollector,
+    *,
+    tracer: Tracer | None = None,
 ) -> tuple[BaseTool, ...]:
     """为单次调查创建三个只读、有界且可审计的 LangChain 工具。"""
+
+    selected_tracer = tracer or trace.get_tracer(__name__)
 
     @langchain_tool(QUERY_LOGS_TOOL_NAME, args_schema=ServiceMinuteQuery)
     def query_service_logs(
@@ -141,12 +148,28 @@ def create_investigation_tools(
     ) -> list[dict[str, object]]:
         """读取服务最近日志，只返回已经标准化的证据观察，不修改被调查系统。"""
 
-        observations = data_source.query_logs(
-            service_name=service_name,
-            lookback_minutes=lookback_minutes,
-        )
-        collector.record(QUERY_LOGS_TOOL_NAME, observations)
-        return _serialize_observations(observations)
+        with selected_tracer.start_as_current_span(
+            "opsswarm.tool.query_service_logs",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.tool.name": QUERY_LOGS_TOOL_NAME,
+                "opsswarm.tool.lookback_minutes": lookback_minutes,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                observations = data_source.query_logs(
+                    service_name=service_name,
+                    lookback_minutes=lookback_minutes,
+                )
+                collector.record(QUERY_LOGS_TOOL_NAME, observations)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_attribute("opsswarm.tool.evidence_count", len(observations))
+            span.set_status(Status(StatusCode.OK))
+            return _serialize_observations(observations)
 
     @langchain_tool(QUERY_METRICS_TOOL_NAME, args_schema=ServiceMinuteQuery)
     def query_service_metrics(
@@ -155,12 +178,28 @@ def create_investigation_tools(
     ) -> list[dict[str, object]]:
         """读取服务最近指标，只返回已经标准化的证据观察，不修改被调查系统。"""
 
-        observations = data_source.query_metrics(
-            service_name=service_name,
-            lookback_minutes=lookback_minutes,
-        )
-        collector.record(QUERY_METRICS_TOOL_NAME, observations)
-        return _serialize_observations(observations)
+        with selected_tracer.start_as_current_span(
+            "opsswarm.tool.query_service_metrics",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.tool.name": QUERY_METRICS_TOOL_NAME,
+                "opsswarm.tool.lookback_minutes": lookback_minutes,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                observations = data_source.query_metrics(
+                    service_name=service_name,
+                    lookback_minutes=lookback_minutes,
+                )
+                collector.record(QUERY_METRICS_TOOL_NAME, observations)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_attribute("opsswarm.tool.evidence_count", len(observations))
+            span.set_status(Status(StatusCode.OK))
+            return _serialize_observations(observations)
 
     @langchain_tool(LIST_CHANGES_TOOL_NAME, args_schema=ServiceHourQuery)
     def list_recent_changes(
@@ -169,11 +208,27 @@ def create_investigation_tools(
     ) -> list[dict[str, object]]:
         """读取服务最近发布与配置变更，不创建、回滚或修改任何变更。"""
 
-        observations = data_source.list_recent_changes(
-            service_name=service_name,
-            lookback_hours=lookback_hours,
-        )
-        collector.record(LIST_CHANGES_TOOL_NAME, observations)
-        return _serialize_observations(observations)
+        with selected_tracer.start_as_current_span(
+            "opsswarm.tool.list_recent_changes",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.tool.name": LIST_CHANGES_TOOL_NAME,
+                "opsswarm.tool.lookback_hours": lookback_hours,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                observations = data_source.list_recent_changes(
+                    service_name=service_name,
+                    lookback_hours=lookback_hours,
+                )
+                collector.record(LIST_CHANGES_TOOL_NAME, observations)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_attribute("opsswarm.tool.evidence_count", len(observations))
+            span.set_status(Status(StatusCode.OK))
+            return _serialize_observations(observations)
 
     return query_service_logs, query_service_metrics, list_recent_changes

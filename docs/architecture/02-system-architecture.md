@@ -36,6 +36,9 @@ flowchart LR
 
     lab --> telemetry[Prometheus / Loki]
     adapters --> telemetry
+
+    api -.OTLP/HTTP trace.-> jaeger[本地 Jaeger]
+    worker -.OTLP/HTTP trace.-> jaeger
 ```
 
 控制面和故障环境通过明确适配器交互。Agent 不能绕过适配器直接访问容器 Shell、业务数据库或宿主机。
@@ -81,8 +84,9 @@ sequenceDiagram
     participant Graph as LangGraph
     participant Tool as 只读工具
 
-    API->>DB: 同一事务迁移 Incident 并创建 investigation_run 与 work_item
+    API->>DB: 同一事务迁移 Incident 并创建 run、work_item、W3C 父上下文
     Worker->>DB: FOR UPDATE SKIP LOCKED 领取任务
+    Worker->>Worker: 从持久 trace_context 恢复父上下文
     Worker->>Graph: 使用 graph_thread_id 启动或恢复
     Graph->>Tool: 查询日志、指标、变更
     Tool-->>Graph: 返回带来源的结构化结果
@@ -92,6 +96,8 @@ sequenceDiagram
 ```
 
 `work_items` 使用租约字段 `locked_by`、`locked_until` 和重试计数实现至少一次处理。业务写入和外部动作必须使用幂等键，Worker 崩溃后其他实例才能安全接管。
+
+控制面开启 OpenTelemetry 后，FastAPI server span 的 W3C `traceparent` 与可选 `tracestate` 会随任务写入 `work_items.trace_context`。Worker 领取或重试时从该字段恢复远端父上下文，因此不同进程、不同尝试仍能在 Jaeger 中关联到原 API 请求。只传播 trace context，不传播 baggage；提示词、模型响应、密钥和原始证据不进入 span 属性。Jaeger 是本地、内存型诊断后端，不是业务事实或审计存储。
 
 调查成功提交时，Worker 必须仍持有有效租约。`investigation_runs`、`work_items`、`evidence_items`、`specialist_reports`、`hypotheses` 及两类证据关联在同一事务更新。checkpoint 中的中间节点输出不会被 API 当作业务 Evidence Board 返回。
 
@@ -210,7 +216,7 @@ LangGraph 1.x 用于：
 | `POST /__admin/changes` | 在独立模拟服务中幂等追加一种固定变更事实，不执行环境操作 |
 | `GET /api/v1/changes` | 按固定服务和 1～24 小时窗口只读查询变更事实 |
 
-非法状态迁移、过期版本或冲突操作统一返回 `409 Conflict`。请求校验错误返回 `422`。当前领域错误响应包含稳定错误码、中文消息和结构化详情；追踪标识将在可观测性切片统一加入。
+非法状态迁移、过期版本或冲突操作统一返回 `409 Conflict`。请求校验错误返回 `422`。当前领域错误响应包含稳定错误码、中文消息和结构化详情；追踪开启时普通控制面响应通过 `X-Trace-ID` 关联本地 Jaeger。
 
 ## 9. 部署与安全边界
 

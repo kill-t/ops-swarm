@@ -2,6 +2,21 @@ x-opsswarm-runtime: &opsswarm-runtime
   image: ops-swarm-runtime:local
 
 services:
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:14318:4318"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control
+
   control-db:
     image: postgres:17.6-alpine
     environment:

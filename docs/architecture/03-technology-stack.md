@@ -108,11 +108,12 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | --- | --- |
 | structlog 26 | 故障服务有限字段 JSON 事件日志 |
 | Prometheus 3.13 LTS、prometheus-client | 故障服务指标抓取与固定恢复查询 |
-| OpenTelemetry | 跨 API、Worker、Agent 节点和工具调用的 trace |
+| OpenTelemetry Python 1.44 / instrumentation 0.65b0 | 跨 API、Worker、Agent 节点和工具调用的 trace |
+| Jaeger 2.20 | 本地 OTLP/HTTP 接收、内存存储和 trace UI |
 | Loki 3.7、Grafana Alloy 1.19 | 本地日志存储、固定文件采集与只读调查查询 |
 | LangSmith | 可选查看模型输入输出和图执行，不保存业务唯一事实 |
 
-日志和 trace 使用 `incident_id`、`run_id`、`work_item_id` 和 `trace_id` 关联。密钥、审批令牌和原始敏感数据不得写入日志。
+日志和 trace 使用 `incident_id`、`run_id`、`work_item_id` 和 `trace_id` 关联。FastAPI 与 HTTPX 使用官方自动埋点，任务消费和 Agent 节点使用显式 span；跨进程只持久化 W3C `traceparent`/`tracestate`。密钥、审批令牌、提示词、模型响应和原始敏感数据不得写入日志或 span。当前仍由 structlog/Loki 承担日志，OpenTelemetry 只启用稳定 trace 信号。
 
 ## 6. 故障环境与前端
 
@@ -122,6 +123,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 被管服务 | gateway-service、order-service | 阶段 1 起逐步增加 |
 | 故障依赖 | PostgreSQL 17、Redis 7.4、redis-py 6 | 数据库切片、真实 Redis 切片 |
 | 遥测 | Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 | 指标恢复验证与日志调查切片 |
+| Trace 后端 | Jaeger 2.20 内存模式 | OpenTelemetry 调查追踪切片 |
 | 变更事实 | FastAPI、PostgreSQL 17 | 固定发布、配置和依赖维护记录及只读调查切片 |
 | 前端 | Vue 3、TypeScript、Vite | 时间线与审批阶段 |
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |

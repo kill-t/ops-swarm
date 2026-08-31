@@ -189,11 +189,14 @@ erDiagram
 | 调度 | `pending`、`running`、`completed`、`failed`，以及 `available_at` |
 | 租约 | `locked_by`、`locked_until`、每次领取生成的唯一 `lease_token` |
 | 重试 | `attempt_count`、`max_attempts` 和有限 `last_error` |
+| 追踪 | 可空 `trace_context` JSONB，只允许应用生成的 `traceparent` 与可选 `tracestate` |
 | 时间 | 创建、更新和终态完成时间 |
 
 领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，连接 `investigation_runs` 并只领取与 Worker 数据源模式一致的行，再使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
 
 任务类型当前支持 `run_single_agent_investigation` 和 `run_multi_agent_investigation`。应用在创建任务时由 `mode` 确定类型，Worker 处理前再次校验两者一致，不能让模型或提示词选择执行路径。
+
+`trace_context` 只解决异步进程的观测关联，不参与领取顺序、幂等、租约或业务状态判断。历史任务和关闭追踪时允许为空；新任务只保存经过严格格式校验的 W3C `traceparent`/`tracestate`，不保存 baggage、请求头、提示词或原始业务载荷。每次重试从同一持久父上下文创建新的消费跨度，形成可区分的兄弟尝试。
 
 ### 4.6 evidence_items
 

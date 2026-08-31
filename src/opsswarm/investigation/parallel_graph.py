@@ -7,6 +7,8 @@ from typing import Annotated, NotRequired, Protocol, TypedDict, cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.errors import (
@@ -28,6 +30,7 @@ from opsswarm.investigation.models import (
     SpecialistReport,
 )
 from opsswarm.investigation.tools import InvestigationDataSource
+from opsswarm.observability import mark_span_error
 
 _SPECIALIST_KINDS = (EvidenceKind.LOG, EvidenceKind.METRIC, EvidenceKind.CHANGE)
 
@@ -87,10 +90,12 @@ class LangGraphParallelInvestigator:
         analyst: SpecialistAnalyst,
         synthesizer: ConclusionSynthesizer,
         checkpointer: BaseCheckpointSaver[str] | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self._data_source = data_source
         self._analyst = analyst
         self._synthesizer = synthesizer
+        self._tracer = tracer or trace.get_tracer(__name__)
         builder = StateGraph(_GraphState)
         builder.add_node("coordinate", self._coordinate)
         builder.add_node("investigate_logs", self._investigate_logs)
@@ -198,10 +203,14 @@ class LangGraphParallelInvestigator:
 
         return self._workflow.get_graph().draw_mermaid()
 
-    @staticmethod
-    def _coordinate(state: _GraphState) -> _GraphUpdate:
+    def _coordinate(self, state: _GraphState) -> _GraphUpdate:
         del state
-        return {"coordination_plan": _SPECIALIST_KINDS}
+        with self._tracer.start_as_current_span(
+            "opsswarm.agent.node.coordinate",
+            kind=SpanKind.INTERNAL,
+        ) as span:
+            span.set_status(Status(StatusCode.OK))
+            return {"coordination_plan": _SPECIALIST_KINDS}
 
     async def _investigate_logs(self, state: _GraphState) -> _GraphUpdate:
         evidence = self._data_source.query_logs(
@@ -230,46 +239,77 @@ class LangGraphParallelInvestigator:
         state: _GraphState,
         evidence: Sequence[EvidenceObservation],
     ) -> _GraphUpdate:
-        plan = state.get("coordination_plan", ())
-        if specialist not in plan:
-            raise SpecialistKindMismatch(f"协调计划没有包含专业节点：{specialist.value}")
-        report = await self._analyst.analyze(
-            specialist=specialist,
-            request=state["request"],
-            evidence=evidence,
-        )
-        if report.specialist is not specialist:
-            raise SpecialistKindMismatch(
-                f"{specialist.value} 节点返回了 {report.specialist.value} 报告"
-            )
-        returned_ids = {item.evidence_id for item in evidence}
-        unknown_ids = set(report.evidence_ids) - returned_ids
-        if unknown_ids:
-            raise UnverifiedEvidenceReference(unknown_ids)
-        return {
-            "evidence": list(evidence),
-            "reports": [report],
-            "tool_call_count": 1,
-        }
+        with self._tracer.start_as_current_span(
+            f"opsswarm.agent.node.investigate_{specialist.value}",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "opsswarm.agent.specialist": specialist.value,
+                "opsswarm.tool.evidence_count": len(evidence),
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                plan = state.get("coordination_plan", ())
+                if specialist not in plan:
+                    raise SpecialistKindMismatch(f"协调计划没有包含专业节点：{specialist.value}")
+                report = await self._analyst.analyze(
+                    specialist=specialist,
+                    request=state["request"],
+                    evidence=evidence,
+                )
+                if report.specialist is not specialist:
+                    raise SpecialistKindMismatch(
+                        f"{specialist.value} 节点返回了 {report.specialist.value} 报告"
+                    )
+                returned_ids = {item.evidence_id for item in evidence}
+                unknown_ids = set(report.evidence_ids) - returned_ids
+                if unknown_ids:
+                    raise UnverifiedEvidenceReference(unknown_ids)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_status(Status(StatusCode.OK))
+            return {
+                "evidence": list(evidence),
+                "reports": [report],
+                "tool_call_count": 1,
+            }
 
     async def _synthesize(self, state: _GraphState) -> _GraphUpdate:
-        reports = sorted(state["reports"], key=lambda item: item.specialist.value)
-        if {item.specialist for item in reports} != set(_SPECIALIST_KINDS):
-            raise IncompleteSpecialistReports("综合节点必须收到日志、指标和变更三份报告")
-        evidence = sorted(state["evidence"], key=lambda item: item.evidence_id)
-        conclusion = await self._synthesizer.synthesize(
-            request=state["request"],
-            evidence=evidence,
-            reports=reports,
-        )
-        unknown_ids = set(conclusion.evidence_ids) - {item.evidence_id for item in evidence}
-        if unknown_ids:
-            raise UnverifiedEvidenceReference(unknown_ids)
-        return {"conclusion": conclusion}
+        with self._tracer.start_as_current_span(
+            "opsswarm.agent.node.synthesize",
+            kind=SpanKind.INTERNAL,
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                reports = sorted(state["reports"], key=lambda item: item.specialist.value)
+                if {item.specialist for item in reports} != set(_SPECIALIST_KINDS):
+                    raise IncompleteSpecialistReports("综合节点必须收到日志、指标和变更三份报告")
+                evidence = sorted(state["evidence"], key=lambda item: item.evidence_id)
+                conclusion = await self._synthesizer.synthesize(
+                    request=state["request"],
+                    evidence=evidence,
+                    reports=reports,
+                )
+                unknown_ids = set(conclusion.evidence_ids) - {item.evidence_id for item in evidence}
+                if unknown_ids:
+                    raise UnverifiedEvidenceReference(unknown_ids)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_status(Status(StatusCode.OK))
+            return {"conclusion": conclusion}
 
-    @staticmethod
-    def _challenge_hypothesis(state: _GraphState) -> _GraphUpdate:
+    def _challenge_hypothesis(self, state: _GraphState) -> _GraphUpdate:
         """使用确定性规则质疑综合结论，不再次调用模型。"""
 
-        artifacts = LangGraphParallelInvestigator._build_artifacts(state)
-        return {"hypothesis_challenge": challenge_investigation(artifacts)}
+        with self._tracer.start_as_current_span(
+            "opsswarm.agent.node.challenge_hypothesis",
+            kind=SpanKind.INTERNAL,
+        ) as span:
+            artifacts = LangGraphParallelInvestigator._build_artifacts(state)
+            result: _GraphUpdate = {"hypothesis_challenge": challenge_investigation(artifacts)}
+            span.set_status(Status(StatusCode.OK))
+            return result

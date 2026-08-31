@@ -12,6 +12,8 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.chat_models import BaseChatModel
+from opentelemetry import trace
+from opentelemetry.trace import Tracer
 
 from opsswarm.investigation.errors import (
     MissingStructuredConclusion,
@@ -54,6 +56,7 @@ class SingleAgentInvestigator:
         data_source: InvestigationDataSource,
         recursion_limit: int = 12,
         max_tool_calls: int | None = 6,
+        tracer: Tracer | None = None,
     ) -> None:
         if recursion_limit < 2:
             raise ValueError("recursion_limit 不能小于 2")
@@ -61,6 +64,7 @@ class SingleAgentInvestigator:
         self._data_source = data_source
         self._recursion_limit = recursion_limit
         self._max_tool_calls = max_tool_calls
+        self._tracer = tracer or trace.get_tracer(__name__)
 
     async def investigate(self, request: InvestigationRequest) -> InvestigationRunResult:
         """运行工具循环，并拒绝任何未经工具返回的证据引用。"""
@@ -74,7 +78,11 @@ class SingleAgentInvestigator:
         """返回结论和工具真实观察，供 Worker 原子写入 Evidence Board。"""
 
         collector = EvidenceCollector(max_tool_calls=self._max_tool_calls)
-        tools = create_investigation_tools(self._data_source, collector)
+        tools = create_investigation_tools(
+            self._data_source,
+            collector,
+            tracer=self._tracer,
+        )
         workflow = create_agent(
             model=self._model,
             tools=tools,

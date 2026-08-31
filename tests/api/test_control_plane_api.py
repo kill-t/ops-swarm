@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import httpx2
 import pytest
 import pytest_asyncio
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -41,6 +42,7 @@ from opsswarm.investigation.scenarios import (
     InvestigationScenario,
 )
 from opsswarm.investigation.settings import LlmSettings
+from opsswarm.observability import TracingSettings, create_tracing_runtime
 from opsswarm.planning import ActionType, RollbackConfigurationParameters
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import VerificationObservation
@@ -226,6 +228,57 @@ async def test_health_endpoint(control_client: httpx2.AsyncClient) -> None:
         "service": "opsswarm-control-plane",
         "status": "healthy",
     }
+
+
+async def test_start_investigation_persists_fastapi_trace_context(
+    migrated_database_url: str,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    exporter = InMemorySpanExporter()
+    runtime = create_tracing_runtime(
+        "opsswarm-control-plane-test",
+        settings=TracingSettings(enabled=True),
+        span_exporter=exporter,
+        instrument_httpx=False,
+    )
+    app = create_app(
+        database_settings=DatabaseSettings(database_url=migrated_database_url),
+        tracing_runtime=runtime,
+        clock=fixed_clock,
+        operation_adapter=ApiOperationAdapter(),
+        verification_adapter=ApiVerificationAdapter(),
+    )
+    async with app.router.lifespan_context(app):
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            alert = await client.post("/api/v1/alerts", json=alert_payload("trace-api-001"))
+            assert alert.status_code == 201
+            incident_id = alert.json()["incident"]["id"]
+            started = await client.post(
+                f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+                json={
+                    "expected_version": 1,
+                    "actor_id": "engineer-001",
+                    "reason": "验证 API 到 Worker 的追踪上下文",
+                },
+            )
+            assert started.status_code == 200
+            assert len(started.headers["X-Trace-ID"]) == 32
+
+    stored = await InvestigationStore(database_session_factory).get_work_item(
+        UUID(started.json()["work_item_id"])
+    )
+    assert stored.trace_context is not None
+    trace_id_hex = stored.trace_context.traceparent.split("-")[1]
+    assert started.headers["X-Trace-ID"] == trace_id_hex
+    server_spans = [span for span in exporter.get_finished_spans() if span.kind.name == "SERVER"]
+    assert server_spans
+    assert any(
+        f"{span.context.trace_id:032x}" == trace_id_hex for span in server_spans if span.context
+    )
 
 
 async def test_evaluation_runs_are_read_only_and_cursor_paginated(

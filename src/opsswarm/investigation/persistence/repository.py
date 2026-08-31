@@ -65,6 +65,7 @@ from opsswarm.investigation.prompt_versions import (
 from opsswarm.investigation.prompt_versions import (
     SINGLE_AGENT_PROMPT_VERSION as CURRENT_SINGLE_AGENT_PROMPT_VERSION,
 )
+from opsswarm.observability import TraceContextCarrier
 
 DEFAULT_PROMPT_VERSION = CURRENT_SINGLE_AGENT_PROMPT_VERSION
 MULTI_AGENT_PROMPT_VERSION = CURRENT_MULTI_AGENT_PROMPT_VERSION
@@ -96,6 +97,7 @@ class InvestigationStore:
         max_attempts: int = 3,
         mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
         """在同一事务中迁移 Incident、创建运行并投递持久任务。"""
 
@@ -146,6 +148,11 @@ class InvestigationStore:
                 attempt_count=0,
                 max_attempts=max_attempts,
                 last_error=None,
+                trace_context=(
+                    trace_context.model_dump(mode="json", exclude_none=True)
+                    if trace_context is not None
+                    else None
+                ),
                 created_at=occurred_at,
                 updated_at=occurred_at,
                 completed_at=None,
@@ -671,6 +678,11 @@ def _stored_work_item(row: WorkItemRow) -> StoredWorkItem:
         last_error=WorkItemError.model_validate(row.last_error)
         if row.last_error is not None
         else None,
+        trace_context=(
+            TraceContextCarrier.model_validate(row.trace_context)
+            if row.trace_context is not None
+            else None
+        ),
         created_at=row.created_at,
         updated_at=row.updated_at,
         completed_at=row.completed_at,

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -45,6 +46,12 @@ from opsswarm.investigation.persistence.tables import (
     SpecialistReportEvidenceRow,
 )
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from opsswarm.observability import (
+    TraceContextCarrier,
+    TracingSettings,
+    capture_current_trace_context,
+    create_tracing_runtime,
+)
 from opsswarm.planning import ActionPlanNotFound, HypothesisNotSupported, RiskLevel
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
@@ -133,6 +140,7 @@ async def start_investigation(
     max_attempts: int = 3,
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+    trace_context: TraceContextCarrier | None = None,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     incident_store = IncidentStore(session_factory)
     incident = await incident_store.ingest_alert(
@@ -158,6 +166,7 @@ async def start_investigation(
         max_attempts=max_attempts,
         mode=mode,
         data_source_mode=data_source_mode,
+        trace_context=trace_context,
     )
     return store, started
 
@@ -521,6 +530,57 @@ async def test_worker_processes_one_item_and_persists_structured_result(
         clock=lambda: clock_from(idle_times),
     )
     assert await idle_worker.run_once() is False
+
+
+async def test_worker_continues_persisted_api_trace_after_queue_boundary(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    exporter = InMemorySpanExporter()
+    runtime = create_tracing_runtime(
+        "integration-test",
+        settings=TracingSettings(enabled=True),
+        span_exporter=exporter,
+        instrument_httpx=False,
+    )
+    tracer = runtime.get_tracer(__name__)
+    try:
+        with tracer.start_as_current_span("api.start_investigation") as api_span:
+            api_span_context = api_span.get_span_context()
+            trace_context = capture_current_trace_context()
+
+        assert trace_context is not None
+        store, started = await start_investigation(
+            database_session_factory,
+            suffix="trace-context",
+            trace_context=trace_context,
+        )
+        persisted = await store.get_work_item(started.work_item.id)
+        assert persisted.trace_context == trace_context
+
+        times = iter(
+            [
+                BASE_TIME + timedelta(seconds=2),
+                BASE_TIME + timedelta(seconds=3),
+            ]
+        )
+        worker = InvestigationWorker(
+            store=store,
+            processor=RecordingProcessor(),
+            worker_id="worker-traced",
+            clock=lambda: clock_from(times),
+            tracer=tracer,
+        )
+
+        assert await worker.run_once() is True
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        attempt_span = spans["opsswarm.investigation.attempt"]
+        assert attempt_span.context is not None
+        assert attempt_span.context.trace_id == api_span_context.trace_id
+        assert attempt_span.parent is not None
+        assert attempt_span.parent.span_id == api_span_context.span_id
+        assert attempt_span.attributes["opsswarm.investigation.run_id"] == str(started.run.id)
+    finally:
+        runtime.shutdown()
 
 
 async def test_live_worker_only_claims_live_task_and_keeps_metrics_unscored(

@@ -3,6 +3,8 @@
 from typing import Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 
 from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.challenge import challenge_investigation
@@ -20,6 +22,7 @@ from opsswarm.investigation.scenarios import (
     InvestigationScenario,
 )
 from opsswarm.investigation.tools import InvestigationDataSource
+from opsswarm.observability import mark_span_error
 from opsswarm.worker.runner import InvestigationProcessor, ProcessorContext, ProcessorOutcome
 
 
@@ -52,10 +55,13 @@ class LangChainInvestigationProcessor:
         data_source: InvestigationDataSource,
         data_source_mode: InvestigationDataSourceMode,
         evaluation_scenario: InvestigationScenario | None,
+        tracer: Tracer | None = None,
     ) -> None:
+        self._tracer = tracer or trace.get_tracer(__name__)
         self._investigator = SingleAgentInvestigator(
             model=model,
             data_source=data_source,
+            tracer=self._tracer,
         )
         self._model_name = model_name
         self._data_source_mode = data_source_mode
@@ -68,7 +74,22 @@ class LangChainInvestigationProcessor:
             kind=WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION,
             data_source_mode=self._data_source_mode,
         )
-        artifacts = await self._investigator.investigate_with_evidence(context.request)
+        with self._tracer.start_as_current_span(
+            "opsswarm.agent.single_agent",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.request.model": self._model_name,
+                "opsswarm.investigation.data_source_mode": self._data_source_mode.value,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                artifacts = await self._investigator.investigate_with_evidence(context.request)
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_status(Status(StatusCode.OK))
         return ProcessorOutcome(
             result=artifacts.result,
             evidence_items=artifacts.evidence_items,
@@ -85,13 +106,20 @@ class LangChainInvestigationProcessor:
 class LangChainBaselineProcessor(LangChainInvestigationProcessor):
     """兼容既有冻结基线的单 Agent 处理器。"""
 
-    def __init__(self, *, model: BaseChatModel, model_name: str) -> None:
+    def __init__(
+        self,
+        *,
+        model: BaseChatModel,
+        model_name: str,
+        tracer: Tracer | None = None,
+    ) -> None:
         super().__init__(
             model=model,
             model_name=model_name,
             data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
             data_source_mode=InvestigationDataSourceMode.FROZEN,
             evaluation_scenario=RELEASE_500_SCENARIO,
+            tracer=tracer,
         )
 
 
@@ -105,11 +133,13 @@ class LangGraphMultiAgentProcessor:
         model_name: str,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         evaluation_scenario: InvestigationScenario | None = RELEASE_500_SCENARIO,
+        tracer: Tracer | None = None,
     ) -> None:
         self._investigator = investigator
         self._model_name = model_name
         self._data_source_mode = data_source_mode
         self._evaluation_scenario = evaluation_scenario
+        self._tracer = tracer or trace.get_tracer(__name__)
 
     async def process(self, context: ProcessorContext) -> ProcessorOutcome:
         _require_route(
@@ -118,16 +148,31 @@ class LangGraphMultiAgentProcessor:
             kind=WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION,
             data_source_mode=self._data_source_mode,
         )
-        thread_id = context.graph_thread_id
-        if thread_id is None:
-            raise RuntimeError("多 Agent 调查缺少 graph_thread_id")
-        if await self._investigator.has_checkpoint(thread_id=thread_id):
-            outcome = await self._investigator.resume(thread_id=thread_id)
-        else:
-            outcome = await self._investigator.investigate(
-                context.request,
-                thread_id=thread_id,
-            )
+        with self._tracer.start_as_current_span(
+            "opsswarm.agent.multi_agent",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.request.model": self._model_name,
+                "opsswarm.investigation.data_source_mode": self._data_source_mode.value,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                thread_id = context.graph_thread_id
+                if thread_id is None:
+                    raise RuntimeError("多 Agent 调查缺少 graph_thread_id")
+                if await self._investigator.has_checkpoint(thread_id=thread_id):
+                    outcome = await self._investigator.resume(thread_id=thread_id)
+                else:
+                    outcome = await self._investigator.investigate(
+                        context.request,
+                        thread_id=thread_id,
+                    )
+            except Exception as error:
+                mark_span_error(span, error)
+                raise
+            span.set_status(Status(StatusCode.OK))
         result = outcome.result
         return ProcessorOutcome(
             result=result,

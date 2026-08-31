@@ -4,6 +4,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol, Self
 
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 from pydantic import model_validator
 
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
@@ -22,6 +24,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
 )
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.observability import extract_trace_context, mark_span_error
 
 
 class ProcessorOutcome(StrictModel):
@@ -78,6 +81,7 @@ class InvestigationWorker:
         base_retry_delay: timedelta = timedelta(seconds=5),
         max_retry_delay: timedelta = timedelta(minutes=5),
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        tracer: Tracer | None = None,
     ) -> None:
         if base_retry_delay < timedelta(0):
             raise ValueError("base_retry_delay 不能小于 0")
@@ -91,6 +95,7 @@ class InvestigationWorker:
         self._base_retry_delay = base_retry_delay
         self._max_retry_delay = max_retry_delay
         self._data_source_mode = data_source_mode
+        self._tracer = tracer or trace.get_tracer(__name__)
 
     async def run_once(self) -> bool:
         """领取至多一个任务；无可用任务返回 False。"""
@@ -107,37 +112,56 @@ class InvestigationWorker:
         if lease_token is None:
             raise RuntimeError("已领取任务缺少 lease_token")
 
-        try:
-            outcome = await self._processor.process(
-                ProcessorContext(
-                    request=claimed.request,
-                    mode=claimed.run.mode,
-                    data_source_mode=claimed.run.data_source_mode,
-                    work_item_kind=claimed.work_item.kind,
-                    graph_thread_id=claimed.run.graph_thread_id,
+        parent_context = extract_trace_context(claimed.work_item.trace_context)
+        with self._tracer.start_as_current_span(
+            "opsswarm.investigation.attempt",
+            context=parent_context,
+            kind=SpanKind.CONSUMER,
+            attributes={
+                "messaging.system": "postgresql",
+                "messaging.operation.name": "process",
+                "messaging.message.id": str(claimed.work_item.id),
+                "opsswarm.investigation.run_id": str(claimed.run.id),
+                "opsswarm.investigation.mode": claimed.run.mode.value,
+                "opsswarm.investigation.data_source_mode": claimed.run.data_source_mode.value,
+                "opsswarm.worker.attempt": claimed.work_item.attempt_count,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                outcome = await self._processor.process(
+                    ProcessorContext(
+                        request=claimed.request,
+                        mode=claimed.run.mode,
+                        data_source_mode=claimed.run.data_source_mode,
+                        work_item_kind=claimed.work_item.kind,
+                        graph_thread_id=claimed.run.graph_thread_id,
+                    )
                 )
-            )
-        except Exception as error:
-            await self._store.fail(
+            except Exception as error:
+                mark_span_error(span, error)
+                await self._store.fail(
+                    claimed.work_item.id,
+                    lease_token=lease_token,
+                    occurred_at=self._clock(),
+                    error=_safe_error(error),
+                    retry_delay=self._retry_delay(claimed.work_item.attempt_count),
+                )
+                return True
+
+            await self._store.complete(
                 claimed.work_item.id,
                 lease_token=lease_token,
                 occurred_at=self._clock(),
-                error=_safe_error(error),
-                retry_delay=self._retry_delay(claimed.work_item.attempt_count),
+                result=outcome.result,
+                evidence_items=outcome.evidence_items,
+                specialist_reports=outcome.specialist_reports,
+                hypothesis_challenge=outcome.hypothesis_challenge,
+                metrics=outcome.metrics,
+                model_name=outcome.model_name,
             )
-            return True
-
-        await self._store.complete(
-            claimed.work_item.id,
-            lease_token=lease_token,
-            occurred_at=self._clock(),
-            result=outcome.result,
-            evidence_items=outcome.evidence_items,
-            specialist_reports=outcome.specialist_reports,
-            hypothesis_challenge=outcome.hypothesis_challenge,
-            metrics=outcome.metrics,
-            model_name=outcome.model_name,
-        )
+            span.set_status(Status(StatusCode.OK))
         return True
 
     def _retry_delay(self, attempt_count: int) -> timedelta:

@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 import pytest
 from langchain_core.runnables import RunnableLambda
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from opsswarm.investigation.errors import UnverifiedEvidenceReference
 from opsswarm.investigation.evaluation import (
@@ -27,6 +28,7 @@ from opsswarm.investigation.scenarios import (
     RELEASE_500_SCENARIO,
     FrozenScenarioDataSource,
 )
+from opsswarm.observability import TracingSettings, create_tracing_runtime
 
 
 class ConcurrentSpecialistAnalyst:
@@ -200,6 +202,36 @@ async def test_parallel_graph_fans_out_three_specialists_and_synthesizes() -> No
     assert "investigate_changes" in mermaid
     assert "synthesize" in mermaid
     assert "challenge_hypothesis" in mermaid
+
+
+@pytest.mark.asyncio
+async def test_parallel_graph_emits_explicit_agent_node_spans() -> None:
+    exporter = InMemorySpanExporter()
+    runtime = create_tracing_runtime(
+        "parallel-agent-test",
+        settings=TracingSettings(enabled=True),
+        span_exporter=exporter,
+        instrument_httpx=False,
+    )
+    investigator = LangGraphParallelInvestigator(
+        data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
+        analyst=ConcurrentSpecialistAnalyst(),
+        synthesizer=RecordingSynthesizer(),
+        tracer=runtime.get_tracer(__name__),
+    )
+
+    await investigator.investigate(RELEASE_500_SCENARIO.request)
+
+    span_names = {span.name for span in exporter.get_finished_spans()}
+    assert {
+        "opsswarm.agent.node.coordinate",
+        "opsswarm.agent.node.investigate_log",
+        "opsswarm.agent.node.investigate_metric",
+        "opsswarm.agent.node.investigate_change",
+        "opsswarm.agent.node.synthesize",
+        "opsswarm.agent.node.challenge_hypothesis",
+    } <= span_names
+    runtime.shutdown()
 
 
 @pytest.mark.asyncio

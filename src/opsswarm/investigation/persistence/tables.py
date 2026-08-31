@@ -138,6 +138,10 @@ class WorkItemRow(Base):
             name="ck_work_items_error_object",
         ),
         CheckConstraint(
+            "trace_context IS NULL OR jsonb_typeof(trace_context) = 'object'",
+            name="ck_work_items_trace_context_object",
+        ),
+        CheckConstraint(
             "(status = 'running' AND locked_by IS NOT NULL AND locked_until IS NOT NULL "
             "AND lease_token IS NOT NULL) OR "
             "(status <> 'running' AND locked_by IS NULL AND locked_until IS NULL "
@@ -184,6 +188,7 @@ class WorkItemRow(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     last_error: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    trace_context: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
