@@ -11,8 +11,12 @@ from opsswarm.change_records.models import (
     ConfigurationChange,
     DependencyMaintenanceChange,
     DeploymentChange,
+    DeploymentCodeReference,
     change_content_hash,
 )
+
+COMMIT_SHA = "a" * 40
+LEGACY_DEPLOYMENT_HASH = "040fe205932461edea2dd67af7d247fafd17ca7c4ca73b36a3f0e46e34ee5f54"
 
 
 def test_three_whitelisted_change_types_have_stable_hashes() -> None:
@@ -39,6 +43,22 @@ def test_three_whitelisted_change_types_have_stable_hashes() -> None:
             to_version="2026.01.01-rc1",
         )
     )
+    assert change_content_hash(changes[0]) == LEGACY_DEPLOYMENT_HASH
+
+    linked = DeploymentChange(
+        external_change_id="release-rc1",
+        from_version="stable",
+        to_version="2026.01.01-rc1",
+        code_reference=DeploymentCodeReference(
+            repository="kill-t/ops-swarm",
+            commit_sha=COMMIT_SHA,
+        ),
+    )
+    assert change_content_hash(linked) != LEGACY_DEPLOYMENT_HASH
+    assert linked.model_dump(mode="json")["code_reference"] == {
+        "repository": "kill-t/ops-swarm",
+        "commit_sha": COMMIT_SHA,
+    }
 
 
 @pytest.mark.parametrize(
@@ -67,6 +87,14 @@ def test_three_whitelisted_change_types_have_stable_hashes() -> None:
             external_change_id="Release With Spaces",
             from_version="stable",
             to_version="rc1",
+        ),
+        lambda: DeploymentCodeReference(
+            repository="kill-t/..",
+            commit_sha=COMMIT_SHA,
+        ),
+        lambda: DeploymentCodeReference(
+            repository="kill-t/ops-swarm",
+            commit_sha="not-a-commit-sha",
         ),
     ],
 )

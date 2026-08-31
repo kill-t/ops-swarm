@@ -36,6 +36,20 @@ class ChangeRecordRow(Base):
         ),
         CheckConstraint("jsonb_typeof(details) = 'object'", name="ck_change_records_details"),
         CheckConstraint(
+            "(change_type = 'deployment' AND (NOT (details ? 'code_reference') OR ("
+            "jsonb_typeof(details -> 'code_reference') = 'object' AND "
+            "jsonb_typeof(details #> '{code_reference,repository}') = 'string' AND "
+            "jsonb_typeof(details #> '{code_reference,commit_sha}') = 'string' AND "
+            "length(details #>> '{code_reference,repository}') BETWEEN 3 AND 140 AND "
+            "(details #>> '{code_reference,repository}') "
+            "~ '^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}$' AND "
+            "split_part(details #>> '{code_reference,repository}', '/', 2) "
+            "NOT IN ('.', '..') AND "
+            "(details #>> '{code_reference,commit_sha}') ~ '^[0-9a-f]{40,64}$'"
+            "))) OR (change_type <> 'deployment' AND NOT (details ? 'code_reference'))",
+            name="ck_change_records_code_reference",
+        ),
+        CheckConstraint(
             "content_hash ~ '^[0-9a-f]{64}$'",
             name="ck_change_records_content_hash",
         ),

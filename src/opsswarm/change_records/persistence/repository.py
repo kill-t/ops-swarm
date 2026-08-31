@@ -51,7 +51,7 @@ class ChangeRecordStore:
             "external_change_id": change.external_change_id,
             "service_name": candidate.service_name,
             "change_type": change.change_type,
-            "details": change.model_dump(mode="json"),
+            "details": change.model_dump(mode="json", exclude_none=True),
             "content_hash": content_hash,
             "occurred_at": candidate.occurred_at,
             "recorded_at": candidate.recorded_at,

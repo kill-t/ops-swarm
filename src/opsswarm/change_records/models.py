@@ -21,10 +21,33 @@ ReleaseVersion = Annotated[
     str,
     Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"),
 ]
+RepositorySlug = Annotated[
+    str,
+    Field(
+        min_length=3,
+        max_length=140,
+        pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}$",
+    ),
+]
+CommitSha = Annotated[str, Field(pattern=r"^[0-9a-f]{40,64}$")]
 
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DeploymentCodeReference(_StrictModel):
+    """部署系统声明的固定代码仓库与不可变提交。"""
+
+    repository: RepositorySlug
+    commit_sha: CommitSha
+
+    @field_validator("repository")
+    @classmethod
+    def reject_relative_repository(cls, value: str) -> str:
+        if value.split("/", maxsplit=1)[1] in {".", ".."}:
+            raise ValueError("代码仓库名不能是相对路径标记")
+        return value
 
 
 class DeploymentChange(_StrictModel):
@@ -34,6 +57,7 @@ class DeploymentChange(_StrictModel):
     external_change_id: ExternalChangeId
     from_version: ReleaseVersion
     to_version: ReleaseVersion
+    code_reference: DeploymentCodeReference | None = None
     completed: Literal[True] = True
 
     @model_validator(mode="after")
@@ -134,7 +158,8 @@ class ChangeRecordListResponse(_StrictModel):
 def change_content_hash(change: ChangeSpec) -> str:
     """以规范 JSON 计算幂等内容摘要，不依赖数据库生成字段。"""
 
-    payload = change.model_dump(mode="json")
+    # 新增可选字段时忽略空值，保证已有不可变记录的历史摘要仍可验证。
+    payload = change.model_dump(mode="json", exclude_none=True)
     encoded = json.dumps(
         payload,
         ensure_ascii=False,

@@ -32,7 +32,7 @@ flowchart LR
 
 | 类型 | 固定或受限字段 | 用途 |
 | --- | --- | --- |
-| `deployment` | `from_version`、`to_version`、`completed=true` | 与版本异常日志及 5xx 上升对齐 |
+| `deployment` | `from_version`、`to_version`、可选仓库与完整 Commit SHA、`completed=true` | 与版本异常日志、5xx 上升及代码来源对齐 |
 | `configuration` | `key=database_pool_size`、严格整数前后值、`completed=true` | 为连接池根因和安全回滚目标提供事实 |
 | `dependency_maintenance` | `dependency=redis`、`operation=restart`、`order_release_changed=false` | 区分依赖维护与版本发布 |
 
@@ -58,7 +58,7 @@ Agent 适配器进一步限制：
 - 查询生成时间必须新鲜，记录必须位于请求窗口，入库时间不能异常晚于响应；
 - 记录 UUID 或外部编号重复、结果截断、非 2xx、坏 JSON、时间漂移都作为有限错误失败关闭，不能解释成“近期没有变更”。
 
-通过校验后，一条记录对应一条 `change-simulator` Evidence。属性保留现有质疑与计划规则需要的 `change_type`、版本、配置前后值、依赖操作和 `completed`，同时增加外部变更号供审计；不把数据库行或任意原始 JSON 交给模型。
+通过校验后，一条记录对应一条 `change-simulator` Evidence。属性保留现有质疑与计划规则需要的 `change_type`、版本、配置前后值、依赖操作和 `completed`，同时增加外部变更号供审计；后续部署记录还可携带固定仓库与完整 Commit SHA，并由 [部署代码来源关联](46-deployment-commit-provenance.md) 与 GitHub Evidence 精确匹配。不把数据库行或任意原始 JSON 交给模型。
 
 ## 6. Compose 与数据库边界
 

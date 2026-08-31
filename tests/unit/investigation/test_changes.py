@@ -13,6 +13,7 @@ from opsswarm.change_records.models import (
     ConfigurationChange,
     DependencyMaintenanceChange,
     DeploymentChange,
+    DeploymentCodeReference,
 )
 from opsswarm.investigation.changes import (
     MAX_RESPONSE_BYTES,
@@ -28,6 +29,7 @@ from opsswarm.investigation.tools import EvidenceCollector, create_investigation
 
 NOW = 1_788_084_800
 GENERATED_AT = datetime.fromtimestamp(NOW, UTC)
+COMMIT_SHA = "a" * 40
 
 
 def _record(
@@ -72,6 +74,10 @@ def _response(
                 external_change_id="release-1",
                 from_version="stable",
                 to_version="rc1",
+                code_reference=DeploymentCodeReference(
+                    repository="kill-t/ops-swarm",
+                    commit_sha=COMMIT_SHA,
+                ),
             ),
             minutes_ago=3,
         ),
@@ -127,6 +133,9 @@ def test_change_tool_runs_fixed_query_and_collects_three_normalized_evidence() -
         item.attributes["change_type"]: item.attributes for item in collector.evidence_items
     }
     assert attributes_by_type["deployment"]["to_version"] == "rc1"
+    assert attributes_by_type["deployment"]["repository"] == "kill-t/ops-swarm"
+    assert attributes_by_type["deployment"]["commit_sha"] == COMMIT_SHA
+    assert attributes_by_type["deployment"]["code_reference_status"] == "declared"
     assert attributes_by_type["configuration"]["to_value"] == 5
     assert attributes_by_type["dependency_maintenance"]["dependency"] == "redis"
     assert len(requests) == 1

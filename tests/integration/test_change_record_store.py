@@ -2,8 +2,11 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.change_records import (
@@ -11,10 +14,13 @@ from opsswarm.change_records import (
     ChangeRecordStore,
     ConfigurationChange,
     DeploymentChange,
+    DeploymentCodeReference,
 )
+from opsswarm.change_records.persistence.tables import ChangeRecordRow
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 NOW = datetime(2026, 8, 30, 12, tzinfo=UTC)
+COMMIT_SHA = "a" * 40
 
 
 async def test_store_persists_and_lists_records_in_descending_order(
@@ -35,6 +41,10 @@ async def test_store_persists_and_lists_records_in_descending_order(
             external_change_id="release-change-1",
             from_version="stable",
             to_version="rc1",
+            code_reference=DeploymentCodeReference(
+                repository="kill-t/ops-swarm",
+                commit_sha=COMMIT_SHA,
+            ),
         ),
         occurred_at=NOW - timedelta(minutes=2),
         recorded_at=NOW - timedelta(minutes=1),
@@ -51,6 +61,7 @@ async def test_store_persists_and_lists_records_in_descending_order(
         newer.record.record_id,
         older.record.record_id,
     ]
+    assert page.items[0].change == newer.record.change
 
 
 async def test_same_external_id_is_idempotent_but_content_drift_conflicts(
@@ -127,3 +138,36 @@ async def test_list_reports_truncation_without_returning_unbounded_records(
 
     assert len(page.items) == 2
     assert page.truncated is True
+
+
+async def test_database_rejects_malformed_deployment_code_reference(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """即使绕过 Pydantic，PostgreSQL 也不能接收伪造的代码引用。"""
+
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            async with session.begin():
+                await session.execute(
+                    insert(ChangeRecordRow).values(
+                        id=uuid4(),
+                        source="fault-lab-change-simulator",
+                        external_change_id="invalid-code-reference",
+                        service_name="order-service",
+                        change_type="deployment",
+                        details={
+                            "change_type": "deployment",
+                            "external_change_id": "invalid-code-reference",
+                            "from_version": "stable",
+                            "to_version": "rc1",
+                            "code_reference": {
+                                "repository": "kill-t/ops-swarm",
+                                "commit_sha": "not-a-sha",
+                            },
+                            "completed": True,
+                        },
+                        content_hash="0" * 64,
+                        occurred_at=NOW,
+                        recorded_at=NOW,
+                    )
+                )

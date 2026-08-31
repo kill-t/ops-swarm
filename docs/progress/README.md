@@ -86,3 +86,4 @@
 - [43 - 调查尝试审计与模型成本](43-investigation-attempt-audit.md)
 - [44 - 作战室调查尝试与成本展示](44-investigation-attempt-workroom.md)
 - [45 - GitHub 只读变更调查数据源](45-github-readonly-change-source.md)
+- [46 - 部署版本与 GitHub Commit 确定性关联](46-deployment-commit-provenance.md)

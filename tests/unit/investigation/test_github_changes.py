@@ -327,3 +327,108 @@ def test_enriched_source_preserves_both_sources_and_rejects_identifier_conflict(
         conflict_source.list_recent_changes(service_name="order-service", lookback_hours=6)
 
     assert captured.value.error_code == "change_evidence_conflict"
+
+
+def test_enriched_source_matches_deployment_to_exact_repository_and_commit() -> None:
+    deployment = EvidenceObservation(
+        evidence_id="deployment-change",
+        kind=EvidenceKind.CHANGE,
+        source="change-simulator",
+        summary="order-service 已完成部署。",
+        observed_at=NOW - timedelta(minutes=2),
+        attributes={
+            "change_type": "deployment",
+            "repository": "kill-t/ops-swarm",
+            "commit_sha": COMMIT_SHA,
+            "code_reference_status": "declared",
+            "completed": True,
+        },
+    )
+    github_commit = EvidenceObservation(
+        evidence_id=f"github-commit-{COMMIT_SHA}",
+        kind=EvidenceKind.CHANGE,
+        source="github-rest",
+        summary="GitHub 提交。",
+        observed_at=NOW - timedelta(minutes=3),
+        attributes={
+            "change_type": "source_commit",
+            "repository": "kill-t/ops-swarm",
+            "commit_sha": COMMIT_SHA,
+            "completed": True,
+        },
+    )
+    source = GitHubEnrichedChangeDataSource(
+        FixedChanges([deployment]),
+        FixedChanges([github_commit]),
+    )
+
+    result = source.list_recent_changes(service_name="order-service", lookback_hours=6)
+    linked = next(item for item in result if item.evidence_id == "deployment-change")
+
+    assert linked.attributes["code_reference_status"] == "matched"
+    assert linked.attributes["github_commit_evidence_id"] == github_commit.evidence_id
+    assert "精确匹配" in linked.summary
+
+
+def test_enriched_source_does_not_match_different_repository_or_missing_commit() -> None:
+    deployment = EvidenceObservation(
+        evidence_id="deployment-change",
+        kind=EvidenceKind.CHANGE,
+        source="change-simulator",
+        summary="order-service 已完成部署。",
+        observed_at=NOW,
+        attributes={
+            "change_type": "deployment",
+            "repository": "kill-t/ops-swarm",
+            "commit_sha": COMMIT_SHA,
+            "code_reference_status": "declared",
+            "completed": True,
+        },
+    )
+    other_repository_commit = EvidenceObservation(
+        evidence_id="other-repository-commit",
+        kind=EvidenceKind.CHANGE,
+        source="github-rest",
+        summary="其他仓库提交。",
+        observed_at=NOW,
+        attributes={
+            "change_type": "source_commit",
+            "repository": "kill-t/other-repository",
+            "commit_sha": COMMIT_SHA,
+        },
+    )
+    source = GitHubEnrichedChangeDataSource(
+        FixedChanges([deployment]),
+        FixedChanges([other_repository_commit]),
+    )
+
+    result = source.list_recent_changes(service_name="order-service", lookback_hours=6)
+    linked = next(item for item in result if item.evidence_id == "deployment-change")
+
+    assert linked.attributes["code_reference_status"] == "commit_not_observed"
+    assert "github_commit_evidence_id" not in linked.attributes
+
+
+def test_enriched_source_rejects_ambiguous_github_commit_reference() -> None:
+    first = EvidenceObservation(
+        evidence_id="github-commit-first",
+        kind=EvidenceKind.CHANGE,
+        source="github-rest",
+        summary="第一条提交证据。",
+        observed_at=NOW,
+        attributes={
+            "change_type": "source_commit",
+            "repository": "kill-t/ops-swarm",
+            "commit_sha": COMMIT_SHA,
+        },
+    )
+    duplicate = first.model_copy(update={"evidence_id": "github-commit-duplicate"})
+    source = GitHubEnrichedChangeDataSource(
+        FixedChanges([]),
+        FixedChanges([first, duplicate]),
+    )
+
+    with pytest.raises(InvestigationDataSourceFailure) as captured:
+        source.list_recent_changes(service_name="order-service", lookback_hours=6)
+
+    assert captured.value.error_code == "github_ambiguous_commit_reference"

@@ -219,8 +219,20 @@ class ChangeApiOnlyInvestigationDataSource:
                 **common_attributes,
                 "from_version": change.from_version,
                 "to_version": change.to_version,
+                "code_reference_status": (
+                    "declared" if change.code_reference is not None else "not_declared"
+                ),
             }
             summary = f"order-service 已从 {change.from_version} 发布为 {change.to_version}。"
+            if change.code_reference is not None:
+                attributes.update(
+                    repository=change.code_reference.repository,
+                    commit_sha=change.code_reference.commit_sha,
+                )
+                summary += (
+                    f" 部署声明关联 {change.code_reference.repository} 的提交 "
+                    f"{change.code_reference.commit_sha[:7]}。"
+                )
         elif isinstance(change, ConfigurationChange):
             attributes = {
                 **common_attributes,

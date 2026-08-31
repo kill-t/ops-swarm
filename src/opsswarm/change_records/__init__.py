@@ -11,6 +11,7 @@ from opsswarm.change_records.models import (
     ConfigurationChange,
     DependencyMaintenanceChange,
     DeploymentChange,
+    DeploymentCodeReference,
 )
 from opsswarm.change_records.persistence import ChangeRecordStore
 
@@ -26,4 +27,5 @@ __all__ = [
     "ConfigurationChange",
     "DependencyMaintenanceChange",
     "DeploymentChange",
+    "DeploymentCodeReference",
 ]

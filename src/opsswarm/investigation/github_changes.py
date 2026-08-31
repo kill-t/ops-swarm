@@ -552,7 +552,10 @@ class GitHubEnrichedChangeDataSource:
                     message="组合变更来源返回了冲突证据标识",
                 )
             by_id[item.evidence_id] = item
-        return tuple(sorted(by_id.values(), key=lambda item: (item.observed_at, item.evidence_id)))
+        combined = tuple(
+            sorted(by_id.values(), key=lambda item: (item.observed_at, item.evidence_id))
+        )
+        return _link_deployment_code_references(combined)
 
 
 def _normalize_external_time(value: datetime) -> datetime:
@@ -575,3 +578,73 @@ def _safe_title(value: str) -> str:
     if len(normalized) <= 240:
         return normalized
     return f"{normalized[:239]}…"
+
+
+def _link_deployment_code_references(
+    evidence: tuple[EvidenceObservation, ...],
+) -> tuple[EvidenceObservation, ...]:
+    """只用规范化仓库与完整 SHA 精确关联部署和 GitHub Commit。"""
+
+    github_commits: dict[tuple[str, str], EvidenceObservation] = {}
+    for item in evidence:
+        if item.source != "github-rest" or item.attributes.get("change_type") != "source_commit":
+            continue
+        reference = _validated_evidence_code_reference(item)
+        if reference in github_commits:
+            raise InvestigationDataSourceFailure(
+                error_code="github_ambiguous_commit_reference",
+                message="GitHub 变更证据包含重复代码引用",
+            )
+        github_commits[reference] = item
+
+    linked: list[EvidenceObservation] = []
+    for item in evidence:
+        if item.source != "change-simulator" or item.attributes.get("change_type") != "deployment":
+            linked.append(item)
+            continue
+        status = item.attributes.get("code_reference_status")
+        if status == "not_declared":
+            linked.append(item)
+            continue
+        if status != "declared":
+            raise InvestigationDataSourceFailure(
+                error_code="deployment_invalid_code_reference",
+                message="部署证据代码引用状态不符合契约",
+            )
+        reference = _validated_evidence_code_reference(item)
+        match = github_commits.get(reference)
+        attributes = dict(item.attributes)
+        if match is None:
+            attributes["code_reference_status"] = "commit_not_observed"
+            summary = f"{item.summary} 本次 GitHub 时间窗未观察到该提交。"
+        else:
+            attributes["code_reference_status"] = "matched"
+            attributes["github_commit_evidence_id"] = match.evidence_id
+            summary = f"{item.summary} 已与本次 GitHub 提交证据精确匹配。"
+        linked.append(
+            EvidenceObservation.model_validate(
+                {
+                    **item.model_dump(mode="json"),
+                    "summary": summary,
+                    "attributes": attributes,
+                }
+            )
+        )
+    return tuple(linked)
+
+
+def _validated_evidence_code_reference(item: EvidenceObservation) -> tuple[str, str]:
+    repository = item.attributes.get("repository")
+    commit_sha = item.attributes.get("commit_sha")
+    if (
+        not isinstance(repository, str)
+        or _REPOSITORY_PATTERN.fullmatch(repository) is None
+        or repository.split("/", maxsplit=1)[1] in {".", ".."}
+        or not isinstance(commit_sha, str)
+        or re.fullmatch(_SHA_PATTERN, commit_sha) is None
+    ):
+        raise InvestigationDataSourceFailure(
+            error_code="deployment_invalid_code_reference",
+            message="变更证据包含无效代码仓库或 Commit SHA",
+        )
+    return repository.casefold(), commit_sha.lower()

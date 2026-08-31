@@ -10,6 +10,7 @@ from opsswarm.change_records.app import create_app
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 NOW = datetime(2026, 8, 30, 12, tzinfo=UTC)
+COMMIT_SHA = "a" * 40
 
 
 async def test_admin_write_is_idempotent_and_read_api_returns_record(
@@ -23,6 +24,10 @@ async def test_admin_write_is_idempotent_and_read_api_returns_record(
         "external_change_id": "release-rc1",
         "from_version": "stable",
         "to_version": "2026.01.01-rc1",
+        "code_reference": {
+            "repository": "kill-t/ops-swarm",
+            "commit_sha": COMMIT_SHA,
+        },
         "completed": True,
     }
     async with httpx2.AsyncClient(
@@ -43,6 +48,10 @@ async def test_admin_write_is_idempotent_and_read_api_returns_record(
     assert listed.status_code == 200
     assert listed.json()["generated_at"] == "2026-08-30T12:00:00Z"
     assert listed.json()["items"] == [created.json()["record"]]
+    assert listed.json()["items"][0]["change"]["code_reference"] == {
+        "repository": "kill-t/ops-swarm",
+        "commit_sha": COMMIT_SHA,
+    }
     assert listed.json()["truncated"] is False
 
 

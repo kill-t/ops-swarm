@@ -346,13 +346,13 @@ Worker 使用 `FOR UPDATE SKIP LOCKED` 跳过其他实例正在领取的行，�
 | --- | --- |
 | 标识与幂等 | UUID 主键；`(source, external_change_id)` 唯一 |
 | 固定归属 | 来源限定 `fault-lab-change-simulator`，服务限定 `order-service` |
-| 类型与内容 | 类型限定发布、连接池配置或 Redis 依赖维护；`details` 必须为 JSONB 对象 |
+| 类型与内容 | 类型限定发布、连接池配置或 Redis 依赖维护；`details` 必须为 JSONB 对象；部署可携带固定仓库与完整 Commit SHA |
 | 内容完整性 | 64 位小写 SHA-256 覆盖规范化变更内容，用于识别外部编号内容漂移 |
 | 时间 | `occurred_at` 与 `recorded_at` 使用 `TIMESTAMPTZ`，且发生时间不得晚于记录时间 |
 
 表不建立 Incident 外键，因为变更事实通常早于告警和 Incident。`(service_name, occurred_at DESC, id DESC)` 索引支持调查按服务与时间窗关联。仓储只暴露追加和有界读取：首次编号插入，完全相同重放返回原记录，不同内容复用编号则冲突；没有更新或删除路径。
 
-JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、服务、类型、对象形状、摘要和时间顺序。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)。
+JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、服务、类型、对象形状、摘要和时间顺序。部署代码引用是向后兼容的可选嵌套对象；一旦出现，数据库 CHECK 强制合法 `owner/repo` 与 40～64 位完整小写十六进制 SHA，非部署记录不得携带。空可选字段不进入规范 JSON，因此历史内容摘要保持不变。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)和[部署代码来源关联](46-deployment-commit-provenance.md)。
 
 ### 4.24 investigation_attempts
 
