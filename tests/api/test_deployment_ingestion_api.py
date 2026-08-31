@@ -19,6 +19,8 @@ SECRET = "integration-test-secret-value-1234567890"
 KEY_ID = "github-actions-production"
 REPOSITORY = "kill-t/ops-swarm"
 COMMIT_SHA = "a" * 40
+IMAGE_REPOSITORY = "ghcr.io/kill-t/ops-swarm-order-service"
+IMAGE_DIGEST = "sha256:" + "b" * 64
 
 
 def _settings(*, enabled: bool = True) -> DeploymentIngestionSettings:
@@ -27,6 +29,7 @@ def _settings(*, enabled: bool = True) -> DeploymentIngestionSettings:
         key_id=KEY_ID,
         secret=SECRET,
         repository=REPOSITORY,
+        image_repository=IMAGE_REPOSITORY,
     )
 
 
@@ -37,6 +40,8 @@ def _payload(**overrides: Any) -> dict[str, Any]:
         "service_name": "order-service",
         "repository": REPOSITORY,
         "commit_sha": COMMIT_SHA,
+        "image_repository": IMAGE_REPOSITORY,
+        "image_digest": IMAGE_DIGEST,
         "from_version": "stable",
         "to_version": "rc1",
         "deployment_status": "succeeded",
@@ -99,11 +104,16 @@ async def test_signed_deployment_is_persisted_and_exact_replay_is_idempotent(
     record = listed.json()["items"][0]
     assert record["source"] == "ci-deployment-ingestion"
     assert record["source_identity"] == KEY_ID
+    assert record["source_contract_version"] == 2
     assert record["occurred_at"] == "2026-08-30T11:59:00Z"
     assert record["recorded_at"] == "2026-08-30T12:00:00Z"
     assert record["change"]["code_reference"] == {
         "repository": REPOSITORY,
         "commit_sha": COMMIT_SHA,
+    }
+    assert record["change"]["artifact_reference"] == {
+        "image_repository": IMAGE_REPOSITORY,
+        "image_digest": IMAGE_DIGEST,
     }
 
 
@@ -190,6 +200,9 @@ async def test_signature_age_repository_and_event_age_are_enforced(
         _payload(), timestamp=int((NOW - timedelta(minutes=6)).timestamp())
     )
     forbidden_body, forbidden_headers = _signed_request(_payload(repository="kill-t/other"))
+    forbidden_image_body, forbidden_image_headers = _signed_request(
+        _payload(image_repository="ghcr.io/kill-t/other-service")
+    )
     old_body, old_headers = _signed_request(
         _payload(deployed_at=(NOW - timedelta(days=2)).isoformat())
     )
@@ -203,12 +216,19 @@ async def test_signature_age_repository_and_event_age_are_enforced(
         forbidden = await client.post(
             "/api/v1/deployment-events", content=forbidden_body, headers=forbidden_headers
         )
+        forbidden_image = await client.post(
+            "/api/v1/deployment-events",
+            content=forbidden_image_body,
+            headers=forbidden_image_headers,
+        )
         old = await client.post("/api/v1/deployment-events", content=old_body, headers=old_headers)
 
     assert stale.status_code == 401
     assert stale.json()["error_code"] == "deployment_signature_expired"
     assert forbidden.status_code == 403
     assert forbidden.json()["error_code"] == "deployment_repository_forbidden"
+    assert forbidden_image.status_code == 403
+    assert forbidden_image.json()["error_code"] == "deployment_image_repository_forbidden"
     assert old.status_code == 422
     assert old.json()["error_code"] == "deployment_event_timestamp_invalid"
 

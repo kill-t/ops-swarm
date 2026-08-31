@@ -216,6 +216,7 @@ class ChangeApiOnlyInvestigationDataSource:
             "completed": change.completed,
             "record_source": record.source,
             "source_identity": record.source_identity,
+            "source_contract_version": record.source_contract_version,
         }
         if isinstance(change, DeploymentChange):
             attributes = {
@@ -224,6 +225,9 @@ class ChangeApiOnlyInvestigationDataSource:
                 "to_version": change.to_version,
                 "code_reference_status": (
                     "declared" if change.code_reference is not None else "not_declared"
+                ),
+                "artifact_reference_status": (
+                    "declared" if change.artifact_reference is not None else "not_declared"
                 ),
             }
             summary = f"order-service 已从 {change.from_version} 发布为 {change.to_version}。"
@@ -235,6 +239,15 @@ class ChangeApiOnlyInvestigationDataSource:
                 summary += (
                     f" 部署声明关联 {change.code_reference.repository} 的提交 "
                     f"{change.code_reference.commit_sha[:7]}。"
+                )
+            if change.artifact_reference is not None:
+                attributes.update(
+                    image_repository=change.artifact_reference.image_repository,
+                    image_digest=change.artifact_reference.image_digest,
+                )
+                summary += (
+                    f" 构建产物为 {change.artifact_reference.image_repository}@"
+                    f"{change.artifact_reference.image_digest[:19]}…。"
                 )
         elif isinstance(change, ConfigurationChange):
             attributes = {

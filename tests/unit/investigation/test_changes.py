@@ -13,8 +13,10 @@ from opsswarm.change_records.models import (
     ChangeRecordListResponse,
     ConfigurationChange,
     DependencyMaintenanceChange,
+    DeploymentArtifactReference,
     DeploymentChange,
     DeploymentCodeReference,
+    SourceContractVersion,
 )
 from opsswarm.investigation.changes import (
     MAX_RESPONSE_BYTES,
@@ -31,6 +33,7 @@ from opsswarm.investigation.tools import EvidenceCollector, create_investigation
 NOW = 1_788_084_800
 GENERATED_AT = datetime.fromtimestamp(NOW, UTC)
 COMMIT_SHA = "a" * 40
+IMAGE_DIGEST = "sha256:" + "b" * 64
 
 
 def _record(
@@ -40,12 +43,14 @@ def _record(
     minutes_ago: int,
     source: str = "fault-lab-change-simulator",
     source_identity: str = "local-admin",
+    source_contract_version: SourceContractVersion = 1,
 ) -> ChangeRecord:
     occurred_at = GENERATED_AT - timedelta(minutes=minutes_ago)
     return ChangeRecord(
         record_id=UUID(int=identifier),
         source=source,  # type: ignore[arg-type]
         source_identity=source_identity,
+        source_contract_version=source_contract_version,
         occurred_at=occurred_at,
         recorded_at=occurred_at,
         change=change,
@@ -83,8 +88,15 @@ def _response(
                     repository="kill-t/ops-swarm",
                     commit_sha=COMMIT_SHA,
                 ),
+                artifact_reference=DeploymentArtifactReference(
+                    image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                    image_digest=IMAGE_DIGEST,
+                ),
             ),
             minutes_ago=3,
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="github-actions-production",
+            source_contract_version=2,
         ),
     )
     return ChangeRecordListResponse(
@@ -141,8 +153,14 @@ def test_change_tool_runs_fixed_query_and_collects_three_normalized_evidence() -
     assert attributes_by_type["deployment"]["repository"] == "kill-t/ops-swarm"
     assert attributes_by_type["deployment"]["commit_sha"] == COMMIT_SHA
     assert attributes_by_type["deployment"]["code_reference_status"] == "declared"
-    assert attributes_by_type["deployment"]["record_source"] == "fault-lab-change-simulator"
-    assert attributes_by_type["deployment"]["source_identity"] == "local-admin"
+    assert attributes_by_type["deployment"]["artifact_reference_status"] == "declared"
+    assert attributes_by_type["deployment"]["image_repository"] == (
+        "ghcr.io/kill-t/ops-swarm-order-service"
+    )
+    assert attributes_by_type["deployment"]["image_digest"] == IMAGE_DIGEST
+    assert attributes_by_type["deployment"]["source_contract_version"] == 2
+    assert attributes_by_type["deployment"]["record_source"] == CI_DEPLOYMENT_SOURCE
+    assert attributes_by_type["deployment"]["source_identity"] == "github-actions-production"
     assert attributes_by_type["configuration"]["to_value"] == 5
     assert attributes_by_type["dependency_maintenance"]["dependency"] == "redis"
     assert len(requests) == 1

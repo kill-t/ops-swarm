@@ -14,6 +14,7 @@ CHANGE_SOURCE: Literal["fault-lab-change-simulator"] = "fault-lab-change-simulat
 CI_DEPLOYMENT_SOURCE: Literal["ci-deployment-ingestion"] = "ci-deployment-ingestion"
 LOCAL_ADMIN_SOURCE_IDENTITY: Literal["local-admin"] = "local-admin"
 ChangeRecordSource = Literal["fault-lab-change-simulator", "ci-deployment-ingestion"]
+SourceContractVersion = Literal[1, 2]
 SUPPORTED_SERVICE: Literal["order-service"] = "order-service"
 MAX_CHANGE_RECORDS = 100
 ExternalChangeId = Annotated[
@@ -33,6 +34,20 @@ RepositorySlug = Annotated[
     ),
 ]
 CommitSha = Annotated[str, Field(pattern=r"^[0-9a-f]{40,64}$")]
+ImageRepository = Annotated[
+    str,
+    Field(
+        min_length=3,
+        max_length=255,
+        pattern=(
+            r"^[a-z0-9][a-z0-9._-]*"
+            r"(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|"
+            r"65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?"
+            r"(?:/[a-z0-9][a-z0-9._-]*)+$"
+        ),
+    ),
+]
+ContainerImageDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 SourceIdentity = Annotated[
     str,
     Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$"),
@@ -57,6 +72,13 @@ class DeploymentCodeReference(_StrictModel):
         return value
 
 
+class DeploymentArtifactReference(_StrictModel):
+    """部署系统声明的不带 tag 镜像仓库与不可变 OCI 摘要。"""
+
+    image_repository: ImageRepository
+    image_digest: ContainerImageDigest
+
+
 class DeploymentChange(_StrictModel):
     """一次已经完成的 order-service 版本发布。"""
 
@@ -65,6 +87,7 @@ class DeploymentChange(_StrictModel):
     from_version: ReleaseVersion
     to_version: ReleaseVersion
     code_reference: DeploymentCodeReference | None = None
+    artifact_reference: DeploymentArtifactReference | None = None
     completed: Literal[True] = True
 
     @model_validator(mode="after")
@@ -115,6 +138,7 @@ class ChangeRecord(_StrictModel):
     record_id: UUID
     source: ChangeRecordSource = CHANGE_SOURCE
     source_identity: SourceIdentity = LOCAL_ADMIN_SOURCE_IDENTITY
+    source_contract_version: SourceContractVersion = 1
     service_name: Literal["order-service"] = SUPPORTED_SERVICE
     occurred_at: datetime
     recorded_at: datetime
@@ -135,14 +159,24 @@ class ChangeRecord(_StrictModel):
 
     @model_validator(mode="after")
     def require_source_contract(self) -> Self:
+        if (
+            self.source_contract_version == 1
+            and isinstance(self.change, DeploymentChange)
+            and self.change.artifact_reference is not None
+        ):
+            raise ValueError("v1 来源契约不能携带 v2 构建产物引用")
         if self.source == CHANGE_SOURCE:
             if self.source_identity != LOCAL_ADMIN_SOURCE_IDENTITY:
                 raise ValueError("本地变更模拟器必须使用固定来源身份")
+            if self.source_contract_version != 1:
+                raise ValueError("本地变更模拟器只使用 v1 来源契约")
             return self
         if self.source_identity == LOCAL_ADMIN_SOURCE_IDENTITY:
             raise ValueError("CI/CD 摄取不能伪装成本地管理身份")
         if not isinstance(self.change, DeploymentChange) or self.change.code_reference is None:
             raise ValueError("CI/CD 摄取只接受带完整代码引用的部署事实")
+        if self.source_contract_version == 2 and self.change.artifact_reference is None:
+            raise ValueError("CI/CD v2 摄取必须包含不可变镜像摘要")
         return self
 
 

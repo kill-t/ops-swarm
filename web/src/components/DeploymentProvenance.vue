@@ -9,6 +9,7 @@ type ProvenanceStatus =
   | "declared"
   | "not_declared"
   | "invalid";
+type ArtifactStatus = "declared" | "not_declared" | "invalid";
 
 interface DeploymentProvenanceItem {
   evidenceId: string;
@@ -16,6 +17,9 @@ interface DeploymentProvenanceItem {
   toVersion: string | null;
   repository: string | null;
   commitSha: string | null;
+  imageRepository: string | null;
+  imageDigest: string | null;
+  artifactStatus: ArtifactStatus;
   status: ProvenanceStatus;
   githubUrl: string | null;
   summary: string;
@@ -30,6 +34,8 @@ const props = defineProps<{
 
 const repositoryPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/;
 const commitShaPattern = /^[0-9a-f]{40,64}$/;
+const imageRepositoryPattern = /^[a-z0-9][a-z0-9._-]*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:\/[a-z0-9][a-z0-9._-]*)+$/;
+const imageDigestPattern = /^sha256:[0-9a-f]{64}$/;
 const statusLabels: Record<ProvenanceStatus, string> = {
   matched: "已精确匹配",
   commit_not_observed: "时间窗未观察到",
@@ -43,6 +49,11 @@ const statusDescriptions: Record<ProvenanceStatus, string> = {
   declared: "部署已声明代码来源，但当前数据源未执行 GitHub 关联。",
   not_declared: "历史部署未声明代码来源，系统不会推测对应提交。",
   invalid: "证据字段不完整或关联引用不一致，页面拒绝宣称已匹配。",
+};
+const artifactStatusLabels: Record<ArtifactStatus, string> = {
+  declared: "已声明不可变摘要",
+  not_declared: "历史记录未声明",
+  invalid: "镜像来源异常",
 };
 
 function stringAttribute(item: EvidenceItem, key: string): string | null {
@@ -58,6 +69,27 @@ function isValidRepository(value: string | null): value is string {
 
 function isValidCommitSha(value: string | null): value is string {
   return value !== null && commitShaPattern.test(value);
+}
+
+function artifactStatus(
+  item: EvidenceItem,
+  imageRepository: string | null,
+  imageDigest: string | null,
+): ArtifactStatus {
+  const rawStatus = stringAttribute(item, "artifact_reference_status");
+  if (rawStatus === "not_declared" || rawStatus === null) {
+    return imageRepository === null && imageDigest === null ? "not_declared" : "invalid";
+  }
+  if (
+    rawStatus === "declared" &&
+    imageRepository !== null &&
+    imageRepositoryPattern.test(imageRepository) &&
+    imageDigest !== null &&
+    imageDigestPattern.test(imageDigest)
+  ) {
+    return "declared";
+  }
+  return "invalid";
 }
 
 function safeGitHubCommitUrl(
@@ -159,6 +191,8 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
     .map((item) => {
       const repository = stringAttribute(item, "repository");
       const commitSha = stringAttribute(item, "commit_sha");
+      const imageRepository = stringAttribute(item, "image_repository");
+      const imageDigest = stringAttribute(item, "image_digest");
       const provenance = provenanceStatus(item, repository, commitSha);
       return {
         evidenceId: item.evidence_id,
@@ -166,6 +200,9 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
         toVersion: stringAttribute(item, "to_version"),
         repository,
         commitSha,
+        imageRepository,
+        imageDigest,
+        artifactStatus: artifactStatus(item, imageRepository, imageDigest),
         status: provenance.status,
         githubUrl: provenance.githubUrl,
         summary: item.summary,
@@ -181,6 +218,10 @@ function statusLabel(status: ProvenanceStatus): string {
 
 function statusDescription(status: ProvenanceStatus): string {
   return statusDescriptions[status];
+}
+
+function artifactStatusLabel(status: ArtifactStatus): string {
+  return artifactStatusLabels[status];
 }
 
 function formatTime(value: string): string {
@@ -248,6 +289,18 @@ function formatTime(value: string): string {
           <div>
             <dt>完整 Commit SHA</dt>
             <dd><code>{{ deployment.commitSha ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>容器镜像仓库</dt>
+            <dd><code>{{ deployment.imageRepository ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>不可变镜像摘要</dt>
+            <dd><code>{{ deployment.imageDigest ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>构建产物状态</dt>
+            <dd>{{ artifactStatusLabel(deployment.artifactStatus) }}</dd>
           </div>
         </dl>
 

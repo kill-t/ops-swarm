@@ -11,12 +11,14 @@ from opsswarm.change_records.models import (
     ChangeRecord,
     ConfigurationChange,
     DependencyMaintenanceChange,
+    DeploymentArtifactReference,
     DeploymentChange,
     DeploymentCodeReference,
     change_content_hash,
 )
 
 COMMIT_SHA = "a" * 40
+IMAGE_DIGEST = "sha256:" + "b" * 64
 LEGACY_DEPLOYMENT_HASH = "040fe205932461edea2dd67af7d247fafd17ca7c4ca73b36a3f0e46e34ee5f54"
 
 
@@ -60,6 +62,15 @@ def test_three_whitelisted_change_types_have_stable_hashes() -> None:
         "repository": "kill-t/ops-swarm",
         "commit_sha": COMMIT_SHA,
     }
+    artifact_linked = linked.model_copy(
+        update={
+            "artifact_reference": DeploymentArtifactReference(
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+            )
+        }
+    )
+    assert change_content_hash(artifact_linked) != change_content_hash(linked)
 
 
 @pytest.mark.parametrize(
@@ -96,6 +107,14 @@ def test_three_whitelisted_change_types_have_stable_hashes() -> None:
         lambda: DeploymentCodeReference(
             repository="kill-t/ops-swarm",
             commit_sha="not-a-commit-sha",
+        ),
+        lambda: DeploymentArtifactReference(
+            image_repository="ghcr.io/kill-t/order-service:latest",
+            image_digest=IMAGE_DIGEST,
+        ),
+        lambda: DeploymentArtifactReference(
+            image_repository="ghcr.io/kill-t/order-service",
+            image_digest="sha256:not-a-digest",
         ),
     ],
 )
@@ -135,24 +154,31 @@ def test_ci_record_requires_non_admin_identity_and_full_deployment_reference() -
             repository="kill-t/ops-swarm",
             commit_sha=COMMIT_SHA,
         ),
+        artifact_reference=DeploymentArtifactReference(
+            image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            image_digest=IMAGE_DIGEST,
+        ),
     )
 
     record = ChangeRecord(
         record_id=UUID(int=2),
         source=CI_DEPLOYMENT_SOURCE,
         source_identity="github-actions-production",
+        source_contract_version=2,
         occurred_at=current_time,
         recorded_at=current_time,
         change=deployment,
     )
 
     assert record.source_identity == "github-actions-production"
+    assert record.source_contract_version == 2
 
     with pytest.raises(ValidationError):
         ChangeRecord(
             record_id=UUID(int=3),
             source=CI_DEPLOYMENT_SOURCE,
             source_identity="local-admin",
+            source_contract_version=2,
             occurred_at=current_time,
             recorded_at=current_time,
             change=deployment,
@@ -162,7 +188,37 @@ def test_ci_record_requires_non_admin_identity_and_full_deployment_reference() -
             record_id=UUID(int=4),
             source=CI_DEPLOYMENT_SOURCE,
             source_identity="github-actions-production",
+            source_contract_version=2,
             occurred_at=current_time,
             recorded_at=current_time,
             change=DependencyMaintenanceChange(external_change_id="redis-ci-1"),
+        )
+
+    with pytest.raises(ValidationError):
+        ChangeRecord(
+            record_id=UUID(int=5),
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="github-actions-production",
+            source_contract_version=2,
+            occurred_at=current_time,
+            recorded_at=current_time,
+            change=deployment.model_copy(update={"artifact_reference": None}),
+        )
+    with pytest.raises(ValidationError):
+        ChangeRecord(
+            record_id=UUID(int=6),
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="github-actions-production",
+            source_contract_version=1,
+            occurred_at=current_time,
+            recorded_at=current_time,
+            change=deployment,
+        )
+
+
+def test_artifact_reference_rejects_out_of_range_registry_port() -> None:
+    with pytest.raises(ValidationError):
+        DeploymentArtifactReference(
+            image_repository="registry.example.com:65536/team/order-service",
+            image_digest=IMAGE_DIGEST,
         )

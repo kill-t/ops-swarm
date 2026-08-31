@@ -142,7 +142,7 @@ def create_app(
             },
             status.HTTP_400_BAD_REQUEST: {"description": "请求长度声明不合法"},
             status.HTTP_401_UNAUTHORIZED: {"description": "签名认证失败或签名已过期"},
-            status.HTTP_403_FORBIDDEN: {"description": "代码仓库不在服务端白名单中"},
+            status.HTTP_403_FORBIDDEN: {"description": "代码或镜像仓库不在服务端白名单中"},
             status.HTTP_409_CONFLICT: {"description": "投递号已被不同部署事实占用"},
             status.HTTP_413_CONTENT_TOO_LARGE: {"description": "请求体超过 16 KiB"},
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {"description": "请求体不是 JSON"},
@@ -185,11 +185,15 @@ def create_app(
             signature=signature,
         )
         result = await store.record(
-            event.to_change(repository=deployment_ingestion.repository),
+            event.to_change(
+                repository=deployment_ingestion.repository,
+                image_repository=deployment_ingestion.image_repository,
+            ),
             occurred_at=event.deployed_at,
             recorded_at=current_time,
             source=CI_DEPLOYMENT_SOURCE,
             source_identity=deployment_ingestion.key_id,
+            source_contract_version=2,
         )
         if result.deduplicated:
             response.status_code = status.HTTP_200_OK

@@ -15,6 +15,7 @@ from opsswarm.change_records.models import (
     ChangeSpec,
     ConfigurationChange,
     DependencyMaintenanceChange,
+    DeploymentArtifactReference,
     DeploymentChange,
     DeploymentCodeReference,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "ChangeRecordWriteResult",
     "ChangeSpec",
     "ConfigurationChange",
+    "DeploymentArtifactReference",
     "DependencyMaintenanceChange",
     "DeploymentChange",
     "DeploymentCodeReference",

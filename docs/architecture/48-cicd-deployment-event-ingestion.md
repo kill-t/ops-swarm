@@ -90,9 +90,12 @@ OPSSWARM_DEPLOYMENT_INGESTION_ENABLED=true
 OPSSWARM_DEPLOYMENT_INGESTION_KEY_ID=github-actions-production
 OPSSWARM_DEPLOYMENT_INGESTION_SECRET=至少32字节的随机密钥
 OPSSWARM_DEPLOYMENT_INGESTION_REPOSITORY=kill-t/ops-swarm
+OPSSWARM_DEPLOYMENT_INGESTION_IMAGE_REPOSITORY=ghcr.io/kill-t/ops-swarm-order-service
 OPSSWARM_DEPLOYMENT_INGESTION_MAX_SIGNATURE_AGE_SECONDS=300
 OPSSWARM_DEPLOYMENT_INGESTION_MAX_EVENT_AGE_SECONDS=86400
 ```
+
+第 49 步起，新投递还必须携带与镜像仓库白名单一致的 `image_repository` 和不可变 `image_digest`；历史 v1 记录不受影响。
 
 密钥只放在未提交的 `.env` 或 CI/CD Secret 中。配置未完成时服务启动失败；关闭时入口稳定返回 `503`。这使部署事实写入成为显式启用能力，不会因为升级容器而意外开放。
 
@@ -104,7 +107,7 @@ OPSSWARM_DEPLOYMENT_INGESTION_MAX_EVENT_AGE_SECONDS=86400
 | `201` | 首次追加成功 |
 | `400` | 请求长度声明不合法 |
 | `401` | 身份、签名格式、签名值或签名时间无效 |
-| `403` | 仓库不在固定白名单 |
+| `403` | 代码仓库或镜像仓库不在固定白名单 |
 | `409` | 投递号已对应不同不可变事实 |
 | `413` | 请求体超过 16 KiB |
 | `415` | 非 `application/json` |
@@ -115,9 +118,9 @@ OPSSWARM_DEPLOYMENT_INGESTION_MAX_EVENT_AGE_SECONDS=86400
 
 - 当前只支持一个 key ID 和一条共享 HMAC 密钥，没有密钥轮换重叠窗口。
 - 当前只支持固定服务、固定演练环境和固定仓库，没有服务部署目录。
-- 事件证明的是已认证流水线的声明，不是构建产物本身；尚未保存镜像 digest、签名证明或软件物料清单。
+- 第 49 步已用显式来源契约 v2 增加镜像仓库与 digest；镜像签名、运行实例核对和软件物料清单仍未实现。
 - 当前没有仓库内 GitHub Actions 示例；接入真实流水线时应只给读取 Secret 和调用本地入口的最小权限。
-- 下一步可为部署事件补充容器镜像 digest，并在不扩大 Agent 权限的前提下形成 Commit、构建产物与运行版本三方来源链。
+- 下一步应独立核对运行实例元数据，不能把部署身份声明的 digest 直接当成已验证运行事实。
 
 ## 9. 面试表达
 

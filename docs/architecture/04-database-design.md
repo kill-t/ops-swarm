@@ -345,14 +345,14 @@ Worker 使用 `FOR UPDATE SKIP LOCKED` 跳过其他实例正在领取的行，�
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与幂等 | UUID 主键；`(source, external_change_id)` 唯一 |
-| 固定归属 | 来源限定本地模拟器或 CI/CD 部署摄取，`source_identity` 保存 `local-admin` 或已认证流水线身份；服务限定 `order-service` |
-| 类型与内容 | 类型限定发布、连接池配置或 Redis 依赖维护；`details` 必须为 JSONB 对象；部署可携带固定仓库与完整 Commit SHA |
+| 固定归属 | 来源限定本地模拟器或 CI/CD 部署摄取，`source_identity` 保存 `local-admin` 或已认证流水线身份；`source_contract_version` 区分历史 v1 与强制镜像来源的 v2；服务限定 `order-service` |
+| 类型与内容 | 类型限定发布、连接池配置或 Redis 依赖维护；`details` 必须为 JSONB 对象；部署可携带固定代码仓库、完整 Commit SHA、镜像仓库与 SHA-256 digest |
 | 内容完整性 | 64 位小写 SHA-256 覆盖规范化变更内容，用于识别外部编号内容漂移 |
 | 时间 | `occurred_at` 与 `recorded_at` 使用 `TIMESTAMPTZ`，且发生时间不得晚于记录时间 |
 
 表不建立 Incident 外键，因为变更事实通常早于告警和 Incident。`(service_name, occurred_at DESC, id DESC)` 索引支持调查按服务与时间窗关联。仓储只暴露追加和有界读取：首次编号插入，完全相同重放返回原记录，不同内容复用编号则冲突；CI/CD 来源还把部署发生时间纳入不可漂移事实，没有更新或删除路径。
 
-JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、来源身份、服务、类型、对象形状、摘要和时间顺序。部署代码引用对历史本地记录是向后兼容的可选嵌套对象；一旦出现，数据库 CHECK 强制合法 `owner/repo` 与 40～64 位完整小写十六进制 SHA，非部署记录不得携带。CI/CD 来源只能写入带完整代码引用的部署，且不能使用 `local-admin` 身份。空可选字段不进入规范 JSON，因此历史内容摘要保持不变。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)、[部署代码来源关联](46-deployment-commit-provenance.md)和[受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)。
+JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、来源身份、来源契约版本、服务、类型、对象形状、摘要和时间顺序。部署代码与构建产物引用对历史记录是向后兼容的可选嵌套对象；一旦出现，数据库 CHECK 强制合法字段形状，非部署记录不得携带。CI/CD v1 只强制完整代码引用，v2 同时强制镜像仓库与 `sha256:` digest，且都不能使用 `local-admin` 身份。空可选字段不进入规范 JSON，因此历史内容摘要保持不变。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)、[部署代码来源关联](46-deployment-commit-provenance.md)、[受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)和[部署构建产物摘要](49-deployment-artifact-digest.md)。
 
 ### 4.24 investigation_attempts
 

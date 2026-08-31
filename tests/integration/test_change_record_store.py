@@ -14,6 +14,7 @@ from opsswarm.change_records import (
     ChangeRecordIdempotencyConflict,
     ChangeRecordStore,
     ConfigurationChange,
+    DeploymentArtifactReference,
     DeploymentChange,
     DeploymentCodeReference,
 )
@@ -22,6 +23,7 @@ from opsswarm.change_records.persistence.tables import ChangeRecordRow
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 NOW = datetime(2026, 8, 30, 12, tzinfo=UTC)
 COMMIT_SHA = "a" * 40
+IMAGE_DIGEST = "sha256:" + "b" * 64
 
 
 async def test_store_persists_and_lists_records_in_descending_order(
@@ -109,19 +111,29 @@ async def test_ci_source_is_isolated_and_rejects_deployment_time_drift(
             repository="kill-t/ops-swarm",
             commit_sha=COMMIT_SHA,
         ),
+        artifact_reference=DeploymentArtifactReference(
+            image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            image_digest=IMAGE_DIGEST,
+        ),
     )
-    local = await store.record(change, occurred_at=NOW, recorded_at=NOW)
+    local = await store.record(
+        change.model_copy(update={"artifact_reference": None}),
+        occurred_at=NOW,
+        recorded_at=NOW,
+    )
     ci = await store.record(
         change,
         occurred_at=NOW - timedelta(minutes=1),
         recorded_at=NOW,
         source=CI_DEPLOYMENT_SOURCE,
         source_identity="github-actions-production",
+        source_contract_version=2,
     )
 
     assert local.record.record_id != ci.record.record_id
     assert ci.record.source == CI_DEPLOYMENT_SOURCE
     assert ci.record.source_identity == "github-actions-production"
+    assert ci.record.source_contract_version == 2
 
     with pytest.raises(ChangeRecordIdempotencyConflict):
         await store.record(
@@ -130,6 +142,7 @@ async def test_ci_source_is_isolated_and_rejects_deployment_time_drift(
             recorded_at=NOW,
             source=CI_DEPLOYMENT_SOURCE,
             source_identity="github-actions-production",
+            source_contract_version=2,
         )
 
     with pytest.raises(ChangeRecordIdempotencyConflict):
@@ -139,6 +152,7 @@ async def test_ci_source_is_isolated_and_rejects_deployment_time_drift(
             recorded_at=NOW,
             source=CI_DEPLOYMENT_SOURCE,
             source_identity="rotated-pipeline-identity",
+            source_contract_version=2,
         )
 
 
@@ -199,6 +213,7 @@ async def test_database_rejects_malformed_deployment_code_reference(
                         id=uuid4(),
                         source="fault-lab-change-simulator",
                         source_identity="local-admin",
+                        source_contract_version=1,
                         external_change_id="invalid-code-reference",
                         service_name="order-service",
                         change_type="deployment",
@@ -264,6 +279,26 @@ async def test_database_rejects_malformed_deployment_code_reference(
                 "completed": True,
             },
         ),
+        (
+            "ci-deployment-ingestion",
+            "github-actions-production",
+            "deployment",
+            {
+                "change_type": "deployment",
+                "external_change_id": "artifact-under-v1",
+                "from_version": "stable",
+                "to_version": "rc1",
+                "code_reference": {
+                    "repository": "kill-t/ops-swarm",
+                    "commit_sha": COMMIT_SHA,
+                },
+                "artifact_reference": {
+                    "image_repository": "ghcr.io/kill-t/ops-swarm-order-service",
+                    "image_digest": IMAGE_DIGEST,
+                },
+                "completed": True,
+            },
+        ),
     ],
 )
 async def test_database_enforces_source_identity_and_ci_deployment_contract(
@@ -281,9 +316,96 @@ async def test_database_enforces_source_identity_and_ci_deployment_contract(
                         id=uuid4(),
                         source=source,
                         source_identity=source_identity,
+                        source_contract_version=1,
                         external_change_id=details["external_change_id"],
                         service_name="order-service",
                         change_type=change_type,
+                        details=details,
+                        content_hash="0" * 64,
+                        occurred_at=NOW,
+                        recorded_at=NOW,
+                    )
+                )
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {
+            "change_type": "deployment",
+            "external_change_id": "missing-artifact-v2",
+            "from_version": "stable",
+            "to_version": "rc1",
+            "code_reference": {
+                "repository": "kill-t/ops-swarm",
+                "commit_sha": COMMIT_SHA,
+            },
+            "completed": True,
+        },
+        {
+            "change_type": "deployment",
+            "external_change_id": "invalid-artifact-v2",
+            "from_version": "stable",
+            "to_version": "rc1",
+            "code_reference": {
+                "repository": "kill-t/ops-swarm",
+                "commit_sha": COMMIT_SHA,
+            },
+            "artifact_reference": {
+                "image_repository": "ghcr.io/kill-t/ops-swarm-order-service",
+                "image_digest": "sha256:not-a-digest",
+            },
+            "completed": True,
+        },
+        {
+            "change_type": "deployment",
+            "external_change_id": "invalid-registry-port-v2",
+            "from_version": "stable",
+            "to_version": "rc1",
+            "code_reference": {
+                "repository": "kill-t/ops-swarm",
+                "commit_sha": COMMIT_SHA,
+            },
+            "artifact_reference": {
+                "image_repository": "registry.example.com:65536/team/order-service",
+                "image_digest": IMAGE_DIGEST,
+            },
+            "completed": True,
+        },
+        {
+            "change_type": "deployment",
+            "external_change_id": "extra-artifact-field-v2",
+            "from_version": "stable",
+            "to_version": "rc1",
+            "code_reference": {
+                "repository": "kill-t/ops-swarm",
+                "commit_sha": COMMIT_SHA,
+            },
+            "artifact_reference": {
+                "image_repository": "ghcr.io/kill-t/ops-swarm-order-service",
+                "image_digest": IMAGE_DIGEST,
+                "tag": "latest",
+            },
+            "completed": True,
+        },
+    ],
+)
+async def test_database_rejects_missing_or_invalid_v2_artifact(
+    database_session_factory: async_sessionmaker[AsyncSession],
+    details: dict[str, object],
+) -> None:
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            async with session.begin():
+                await session.execute(
+                    insert(ChangeRecordRow).values(
+                        id=uuid4(),
+                        source="ci-deployment-ingestion",
+                        source_identity="github-actions-production",
+                        source_contract_version=2,
+                        external_change_id=details["external_change_id"],
+                        service_name="order-service",
+                        change_type="deployment",
                         details=details,
                         content_hash="0" * 64,
                         occurred_at=NOW,

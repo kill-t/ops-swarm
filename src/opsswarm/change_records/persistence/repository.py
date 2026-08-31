@@ -22,6 +22,7 @@ from opsswarm.change_records.models import (
     ChangeRecordSource,
     ChangeRecordWriteResult,
     ChangeSpec,
+    SourceContractVersion,
     SourceIdentity,
     change_content_hash,
 )
@@ -42,6 +43,7 @@ class ChangeRecordStore:
         recorded_at: datetime,
         source: ChangeRecordSource = CHANGE_SOURCE,
         source_identity: SourceIdentity = LOCAL_ADMIN_SOURCE_IDENTITY,
+        source_contract_version: SourceContractVersion = 1,
     ) -> ChangeRecordWriteResult:
         """按来源与外部变更号幂等追加；内容漂移时拒绝复用。"""
 
@@ -49,6 +51,7 @@ class ChangeRecordStore:
             record_id=uuid4(),
             source=source,
             source_identity=source_identity,
+            source_contract_version=source_contract_version,
             occurred_at=occurred_at,
             recorded_at=recorded_at,
             change=change,
@@ -58,6 +61,7 @@ class ChangeRecordStore:
             "id": candidate.record_id,
             "source": candidate.source,
             "source_identity": candidate.source_identity,
+            "source_contract_version": candidate.source_contract_version,
             "external_change_id": change.external_change_id,
             "service_name": candidate.service_name,
             "change_type": change.change_type,
@@ -90,6 +94,8 @@ class ChangeRecordStore:
             if existing.content_hash != content_hash:
                 raise ChangeRecordIdempotencyConflict(change.external_change_id)
             if existing.source_identity != candidate.source_identity:
+                raise ChangeRecordIdempotencyConflict(change.external_change_id)
+            if existing.source_contract_version != candidate.source_contract_version:
                 raise ChangeRecordIdempotencyConflict(change.external_change_id)
             if (
                 candidate.source == CI_DEPLOYMENT_SOURCE
@@ -151,6 +157,7 @@ def _record_from_row(row: ChangeRecordRow) -> ChangeRecord:
         record_id=row.id,
         source=cast(ChangeRecordSource, row.source),
         source_identity=row.source_identity,
+        source_contract_version=cast(SourceContractVersion, row.source_contract_version),
         service_name=row.service_name,
         occurred_at=row.occurred_at,
         recorded_at=row.recorded_at,

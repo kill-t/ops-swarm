@@ -23,9 +23,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from opsswarm.change_records.models import (
     LOCAL_ADMIN_SOURCE_IDENTITY,
     CommitSha,
+    ContainerImageDigest,
+    DeploymentArtifactReference,
     DeploymentChange,
     DeploymentCodeReference,
     ExternalChangeId,
+    ImageRepository,
     ReleaseVersion,
     RepositorySlug,
 )
@@ -48,6 +51,7 @@ class DeploymentIngestionSettings(BaseSettings):
     key_id: str = ""
     secret: SecretStr = Field(default_factory=lambda: SecretStr(""))
     repository: str = ""
+    image_repository: str = ""
     max_signature_age_seconds: int = Field(default=300, ge=30, le=900)
     max_event_age_seconds: int = Field(default=86_400, ge=60, le=604_800)
 
@@ -65,8 +69,12 @@ class DeploymentIngestionSettings(BaseSettings):
             raise ValueError("CI/CD HMAC 密钥必须为 32 到 256 字节")
         try:
             DeploymentCodeReference(repository=self.repository, commit_sha="0" * 40)
+            DeploymentArtifactReference(
+                image_repository=self.image_repository,
+                image_digest="sha256:" + "0" * 64,
+            )
         except ValidationError as error:
-            raise ValueError("CI/CD 固定仓库必须使用安全的 owner/repo 格式") from error
+            raise ValueError("CI/CD 代码仓库或镜像仓库白名单格式不安全") from error
         return self
 
     @classmethod
@@ -87,6 +95,8 @@ class DeploymentEvent(BaseModel):
     service_name: Literal["order-service"]
     repository: RepositorySlug
     commit_sha: CommitSha
+    image_repository: ImageRepository
+    image_digest: ContainerImageDigest
     from_version: ReleaseVersion
     to_version: ReleaseVersion
     deployment_status: Literal["succeeded"]
@@ -112,8 +122,8 @@ class DeploymentEvent(BaseModel):
             raise ValueError("发布前后版本不能相同")
         return self
 
-    def to_change(self, *, repository: str) -> DeploymentChange:
-        """使用服务端白名单仓库构造既有不可变部署事实。"""
+    def to_change(self, *, repository: str, image_repository: str) -> DeploymentChange:
+        """使用服务端双白名单构造代码与构建产物来源。"""
 
         return DeploymentChange(
             external_change_id=self.delivery_id,
@@ -122,6 +132,10 @@ class DeploymentEvent(BaseModel):
             code_reference=DeploymentCodeReference(
                 repository=repository,
                 commit_sha=self.commit_sha,
+            ),
+            artifact_reference=DeploymentArtifactReference(
+                image_repository=image_repository,
+                image_digest=self.image_digest,
             ),
         )
 
@@ -182,6 +196,12 @@ async def authenticate_deployment_event(
             status_code=status.HTTP_403_FORBIDDEN,
             error_code="deployment_repository_forbidden",
             message="部署事件仓库不在固定白名单中",
+        )
+    if event.image_repository != settings.image_repository:
+        raise DeploymentIngestionError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code="deployment_image_repository_forbidden",
+            message="部署事件镜像仓库不在固定白名单中",
         )
     age_seconds = (now - event.deployed_at).total_seconds()
     if age_seconds < 0 or age_seconds > settings.max_event_age_seconds:

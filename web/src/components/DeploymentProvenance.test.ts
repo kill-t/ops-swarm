@@ -5,6 +5,7 @@ import DeploymentProvenance from "./DeploymentProvenance.vue";
 import type { EvidenceBoardSnapshot, EvidenceItem } from "../types/evidence-board";
 
 const COMMIT_SHA = "a".repeat(40);
+const IMAGE_DIGEST = `sha256:${"c".repeat(64)}`;
 
 function evidenceItem(overrides: Partial<EvidenceItem>): EvidenceItem {
   return {
@@ -39,6 +40,9 @@ describe("部署代码来源", () => {
         to_version: "2026.01.01-rc1",
         repository: "kill-t/ops-swarm",
         commit_sha: COMMIT_SHA,
+        image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
         code_reference_status: "matched",
         github_commit_evidence_id: githubEvidenceId,
       },
@@ -64,6 +68,9 @@ describe("部署代码来源", () => {
     expect(wrapper.text()).toContain("2026.01.01-rc1");
     expect(wrapper.text()).toContain("kill-t/ops-swarm");
     expect(wrapper.text()).toContain(COMMIT_SHA);
+    expect(wrapper.text()).toContain("ghcr.io/kill-t/ops-swarm-order-service");
+    expect(wrapper.text()).toContain(IMAGE_DIGEST);
+    expect(wrapper.text()).toContain("已声明不可变摘要");
     const link = wrapper.get(".provenance-link");
     expect(link.attributes("href")).toBe(
       `https://github.com/kill-t/ops-swarm/commit/${COMMIT_SHA}`,
@@ -102,7 +109,42 @@ describe("部署代码来源", () => {
     expect(wrapper.text()).toContain("不代表提交不存在");
     expect(wrapper.text()).toContain("未声明代码来源");
     expect(wrapper.text()).toContain("系统不会推测对应提交");
+    expect(wrapper.text()).toContain("历史记录未声明");
     expect(wrapper.find(".provenance-link").exists()).toBe(false);
+  });
+
+  it("镜像仓库与摘要不完整时明确显示异常", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        artifact_reference_status: "declared",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("镜像来源异常");
+    expect(wrapper.text()).not.toContain("已声明不可变摘要");
+  });
+
+  it("镜像仓库端口越界时拒绝显示为可信声明", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: "registry.example.com:65536/team/order-service",
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("镜像来源异常");
   });
 
   it("关联引用不一致时拒绝宣称精确匹配", () => {

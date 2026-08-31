@@ -4,7 +4,15 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Index,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,6 +46,20 @@ class ChangeRecordRow(Base):
             name="ck_change_records_ci_deployment",
         ),
         CheckConstraint(
+            "(source = 'fault-lab-change-simulator' AND source_contract_version = 1 AND "
+            "NOT (details ? 'artifact_reference')) OR "
+            "(source = 'ci-deployment-ingestion' AND "
+            "((source_contract_version = 1 AND NOT (details ? 'artifact_reference')) OR "
+            "source_contract_version = 2))",
+            name="ck_change_records_source_contract",
+        ),
+        CheckConstraint(
+            "source <> 'ci-deployment-ingestion' OR source_contract_version = 1 OR "
+            "(source_contract_version = 2 AND change_type = 'deployment' AND "
+            "details ? 'code_reference' AND details ? 'artifact_reference')",
+            name="ck_change_records_ci_artifact_v2",
+        ),
+        CheckConstraint(
             "service_name = 'order-service'",
             name="ck_change_records_service",
         ),
@@ -61,6 +83,23 @@ class ChangeRecordRow(Base):
             name="ck_change_records_code_reference",
         ),
         CheckConstraint(
+            "(change_type = 'deployment' AND (NOT (details ? 'artifact_reference') OR ("
+            "jsonb_typeof(details -> 'artifact_reference') = 'object' AND "
+            "(details -> 'artifact_reference') - 'image_repository' - 'image_digest' "
+            "= '{}'::jsonb AND "
+            "jsonb_typeof(details #> '{artifact_reference,image_repository}') = 'string' AND "
+            "jsonb_typeof(details #> '{artifact_reference,image_digest}') = 'string' AND "
+            "length(details #>> '{artifact_reference,image_repository}') BETWEEN 3 AND 255 AND "
+            "(details #>> '{artifact_reference,image_repository}') "
+            "~ '^[a-z0-9][a-z0-9._-]*"
+            "(?::([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|"
+            "65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?"
+            "(/[a-z0-9][a-z0-9._-]*)+$' AND "
+            "(details #>> '{artifact_reference,image_digest}') ~ '^sha256:[0-9a-f]{64}$'"
+            "))) OR (change_type <> 'deployment' AND NOT (details ? 'artifact_reference'))",
+            name="ck_change_records_artifact_reference",
+        ),
+        CheckConstraint(
             "content_hash ~ '^[0-9a-f]{64}$'",
             name="ck_change_records_content_hash",
         ),
@@ -79,6 +118,7 @@ class ChangeRecordRow(Base):
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
     source: Mapped[str] = mapped_column(String(100), nullable=False)
     source_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_contract_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     external_change_id: Mapped[str] = mapped_column(String(100), nullable=False)
     service_name: Mapped[str] = mapped_column(String(100), nullable=False)
     change_type: Mapped[str] = mapped_column(String(32), nullable=False)
