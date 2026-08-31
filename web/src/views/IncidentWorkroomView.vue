@@ -68,6 +68,9 @@ onUnmounted(() => store.clearSelection());
       :investigation-attempts="store.investigationAttempts"
       :attempts-loading="store.attemptsLoading"
       :attempts-error="store.attemptsError"
+      :evidence-board="store.evidenceBoard"
+      :evidence-board-loading="store.evidenceBoardLoading"
+      :evidence-board-error="store.evidenceBoardError"
       @refresh-workroom="store.refreshSelectedWorkroom"
     />
   </div>

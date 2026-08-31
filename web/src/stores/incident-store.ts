@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import {
+  getEvidenceBoard,
   getIncident,
   getIncidentWorkroom,
   listIncidents,
@@ -11,6 +12,7 @@ import {
   connectIncidentEvents,
   type IncidentStreamConnection,
 } from "../services/incident-stream";
+import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { Incident, IncidentEvent, IncidentStatus, StreamStatus } from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
@@ -68,11 +70,56 @@ export const useIncidentStore = defineStore("incidents", () => {
   const investigationAttempts = ref<InvestigationAttempt[]>([]);
   const attemptsLoading = ref(false);
   const attemptsError = ref<string | null>(null);
+  const evidenceBoard = ref<EvidenceBoardSnapshot | null>(null);
+  const evidenceBoardLoading = ref(false);
+  const evidenceBoardError = ref<string | null>(null);
   let streamConnection: IncidentStreamConnection | null = null;
   let selectionGeneration = 0;
   let workroomRequestGeneration = 0;
 
   const selectedIncidentId = computed(() => selectedIncident.value?.id ?? null);
+
+  async function refreshEvidenceBoard(
+    incidentId: string,
+    runId: string,
+    selection: number,
+    requestGeneration: number,
+  ): Promise<void> {
+    evidenceBoardLoading.value = true;
+    evidenceBoardError.value = null;
+    try {
+      const response = await getEvidenceBoard(runId);
+      if (response.investigation_run_id !== runId) {
+        throw new Error("Evidence Board 响应与当前运行不一致");
+      }
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== workroomRequestGeneration ||
+        selectedIncident.value?.id !== incidentId ||
+        workroom.value?.investigation?.id !== runId
+      ) {
+        return;
+      }
+      evidenceBoard.value = response;
+    } catch (error) {
+      if (
+        selection === selectionGeneration &&
+        requestGeneration === workroomRequestGeneration &&
+        selectedIncident.value?.id === incidentId &&
+        workroom.value?.investigation?.id === runId
+      ) {
+        evidenceBoardError.value = errorMessage(error);
+      }
+    } finally {
+      if (
+        selection === selectionGeneration &&
+        requestGeneration === workroomRequestGeneration &&
+        selectedIncident.value?.id === incidentId
+      ) {
+        evidenceBoardLoading.value = false;
+      }
+    }
+  }
 
   async function refreshAttempts(
     incidentId: string,
@@ -154,11 +201,18 @@ export const useIncidentStore = defineStore("incidents", () => {
         investigationAttempts.value = [];
         attemptsLoading.value = false;
         attemptsError.value = null;
+        evidenceBoard.value = null;
+        evidenceBoardLoading.value = false;
+        evidenceBoardError.value = null;
       } else {
         if (currentRunId !== previousRunId) {
           investigationAttempts.value = [];
+          evidenceBoard.value = null;
         }
-        await refreshAttempts(incidentId, currentRunId, selection, requestGeneration);
+        await Promise.all([
+          refreshAttempts(incidentId, currentRunId, selection, requestGeneration),
+          refreshEvidenceBoard(incidentId, currentRunId, selection, requestGeneration),
+        ]);
       }
     } catch (error) {
       if (selection === selectionGeneration && requestGeneration === workroomRequestGeneration) {
@@ -212,6 +266,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     investigationAttempts.value = [];
     attemptsLoading.value = false;
     attemptsError.value = null;
+    evidenceBoard.value = null;
+    evidenceBoardLoading.value = false;
+    evidenceBoardError.value = null;
     workroomRequestGeneration += 1;
     streamStatus.value = "connecting";
     detailLoading.value = true;
@@ -263,6 +320,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     investigationAttempts.value = [];
     attemptsLoading.value = false;
     attemptsError.value = null;
+    evidenceBoard.value = null;
+    evidenceBoardLoading.value = false;
+    evidenceBoardError.value = null;
     streamStatus.value = "idle";
   }
 
@@ -283,6 +343,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     investigationAttempts,
     attemptsLoading,
     attemptsError,
+    evidenceBoard,
+    evidenceBoardLoading,
+    evidenceBoardError,
     loadIncidents,
     selectIncident,
     refreshSelectedWorkroom,

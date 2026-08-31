@@ -1,5 +1,6 @@
 import type { Incident, IncidentPage } from "../types/incidents";
 import type { EvaluationRun, EvaluationRunPage } from "../types/evaluations";
+import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { InvestigationAttemptList } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
@@ -72,6 +73,16 @@ export function listInvestigationAttempts(
 ): Promise<InvestigationAttemptList> {
   return requestJson<InvestigationAttemptList>(
     `/api/v1/investigations/${encodeURIComponent(runId)}/attempts`,
+    signal,
+  );
+}
+
+export function getEvidenceBoard(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<EvidenceBoardSnapshot> {
+  return requestJson<EvidenceBoardSnapshot>(
+    `/api/v1/investigations/${encodeURIComponent(runId)}/evidence-board`,
     signal,
   );
 }

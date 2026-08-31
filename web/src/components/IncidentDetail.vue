@@ -2,6 +2,8 @@
 import IncidentTimeline from "./IncidentTimeline.vue";
 import IncidentLifecycle from "./IncidentLifecycle.vue";
 import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
+import DeploymentProvenance from "./DeploymentProvenance.vue";
+import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { Incident, IncidentEvent, StreamStatus } from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
@@ -19,6 +21,9 @@ defineProps<{
   investigationAttempts: InvestigationAttempt[];
   attemptsLoading: boolean;
   attemptsError: string | null;
+  evidenceBoard: EvidenceBoardSnapshot | null;
+  evidenceBoardLoading: boolean;
+  evidenceBoardError: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -89,6 +94,13 @@ function formatDateTime(value: string | null): string {
         :loading="workroomLoading"
         :error="workroomError"
         @refresh="emit('refreshWorkroom')"
+      />
+
+      <DeploymentProvenance
+        v-if="workroom?.investigation"
+        :board="evidenceBoard"
+        :loading="evidenceBoardLoading"
+        :error="evidenceBoardError"
       />
 
       <InvestigationAttemptHistory

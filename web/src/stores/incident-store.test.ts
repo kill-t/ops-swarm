@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IncidentStreamHandlers } from "../services/incident-stream";
+import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { Incident, IncidentEvent } from "../types/incidents";
 import type {
   InvestigationAttempt,
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listIncidents: vi.fn(),
   getIncident: vi.fn(),
   getIncidentWorkroom: vi.fn(),
+  getEvidenceBoard: vi.fn(),
   listInvestigationAttempts: vi.fn(),
   connectIncidentEvents: vi.fn(),
 }));
@@ -22,6 +24,7 @@ vi.mock("../services/api", () => ({
   listIncidents: mocks.listIncidents,
   getIncident: mocks.getIncident,
   getIncidentWorkroom: mocks.getIncidentWorkroom,
+  getEvidenceBoard: mocks.getEvidenceBoard,
   listInvestigationAttempts: mocks.listInvestigationAttempts,
 }));
 
@@ -99,6 +102,26 @@ const ATTEMPT: InvestigationAttempt = {
   error: null,
 };
 
+function evidenceBoard(runId: string, evidenceId = "deployment-evidence"): EvidenceBoardSnapshot {
+  return {
+    investigation_run_id: runId,
+    status: "succeeded",
+    evidence_items: [
+      {
+        id: `stored-${evidenceId}`,
+        evidence_id: evidenceId,
+        kind: "change",
+        source: "change-simulator",
+        summary: "已保存部署代码来源。",
+        observed_at: "2026-01-01T08:00:01Z",
+        attributes: { change_type: "deployment" },
+        content_hash: "a".repeat(64),
+        created_at: "2026-01-01T08:00:02Z",
+      },
+    ],
+  };
+}
+
 function event(cursor: number, version: number): IncidentEvent {
   return {
     cursor,
@@ -121,6 +144,7 @@ describe("Incident 状态仓库", () => {
     mocks.listIncidents.mockReset();
     mocks.getIncident.mockReset();
     mocks.getIncidentWorkroom.mockReset();
+    mocks.getEvidenceBoard.mockReset();
     mocks.listInvestigationAttempts.mockReset();
     mocks.connectIncidentEvents.mockReset();
     mocks.getIncidentWorkroom.mockResolvedValue(WORKROOM);
@@ -128,6 +152,9 @@ describe("Incident 状态仓库", () => {
       investigation_run_id: "run-001",
       items: [],
     });
+    mocks.getEvidenceBoard.mockImplementation((runId: string) =>
+      Promise.resolve(evidenceBoard(runId)),
+    );
   });
 
   it("按游标去重，并阻止历史事件或迟到列表覆盖更新版本", async () => {
@@ -173,12 +200,16 @@ describe("Incident 状态仓库", () => {
     await store.selectIncident(INCIDENT.id);
 
     expect(mocks.listInvestigationAttempts).toHaveBeenCalledWith("run-001");
+    expect(mocks.getEvidenceBoard).toHaveBeenCalledWith("run-001");
     expect(store.investigationAttempts).toEqual([ATTEMPT]);
+    expect(store.evidenceBoard).toEqual(evidenceBoard("run-001"));
     expect(store.attemptsError).toBeNull();
+    expect(store.evidenceBoardError).toBeNull();
 
     await store.refreshSelectedWorkroom();
 
     expect(mocks.listInvestigationAttempts).toHaveBeenCalledTimes(2);
+    expect(mocks.getEvidenceBoard).toHaveBeenCalledTimes(2);
   });
 
   it("调查运行切换后忽略较早返回的尝试响应", async () => {
@@ -218,5 +249,41 @@ describe("Incident 状态仓库", () => {
 
     expect(store.workroom?.investigation?.id).toBe("run-002");
     expect(store.investigationAttempts).toEqual([secondAttempt]);
+  });
+
+  it("调查运行切换后忽略较早返回的 Evidence Board", async () => {
+    const secondWorkroom: IncidentWorkroomSnapshot = {
+      ...WORKROOM_WITH_INVESTIGATION,
+      investigation: {
+        ...WORKROOM_WITH_INVESTIGATION.investigation!,
+        id: "run-002",
+      },
+    };
+    let resolveFirst: (response: EvidenceBoardSnapshot) => void = () => undefined;
+    const firstResponse = new Promise<EvidenceBoardSnapshot>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mocks.getIncident.mockResolvedValue(INCIDENT);
+    mocks.getIncidentWorkroom
+      .mockResolvedValueOnce(WORKROOM_WITH_INVESTIGATION)
+      .mockResolvedValueOnce(secondWorkroom);
+    mocks.getEvidenceBoard.mockImplementation((runId: string) =>
+      runId === "run-001"
+        ? firstResponse
+        : Promise.resolve(evidenceBoard("run-002", "deployment-evidence-002")),
+    );
+    mocks.connectIncidentEvents.mockReturnValue({ close: vi.fn() });
+    const store = useIncidentStore();
+
+    const initialSelection = store.selectIncident(INCIDENT.id);
+    await vi.waitFor(() => expect(mocks.getEvidenceBoard).toHaveBeenCalledWith("run-001"));
+    await store.refreshSelectedWorkroom();
+    resolveFirst(evidenceBoard("run-001", "stale-deployment-evidence"));
+    await initialSelection;
+
+    expect(store.workroom?.investigation?.id).toBe("run-002");
+    expect(store.evidenceBoard).toEqual(
+      evidenceBoard("run-002", "deployment-evidence-002"),
+    );
   });
 });

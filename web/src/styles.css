@@ -838,7 +838,8 @@ p {
 
 .timeline-panel,
 .lifecycle-panel,
-.attempt-panel {
+.attempt-panel,
+.provenance-panel {
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -846,31 +847,36 @@ p {
 }
 
 .lifecycle-panel,
-.attempt-panel {
+.attempt-panel,
+.provenance-panel {
   margin-bottom: 22px;
 }
 
 .timeline-heading,
 .lifecycle-heading,
-.attempt-heading {
+.attempt-heading,
+.provenance-heading {
   align-items: center;
   margin-bottom: 22px;
 }
 
 .lifecycle-heading,
-.attempt-heading {
+.attempt-heading,
+.provenance-heading {
   display: flex;
   justify-content: space-between;
   gap: 18px;
 }
 
 .lifecycle-heading h3,
-.attempt-heading h3 {
+.attempt-heading h3,
+.provenance-heading h3 {
   margin: 0;
   font-size: 18px;
 }
 
-.attempt-heading > span {
+.attempt-heading > span,
+.provenance-heading > span {
   color: var(--muted);
   font-size: 11px;
 }
@@ -971,6 +977,138 @@ p {
   margin-top: auto;
   color: #72889b;
   font-size: 11px;
+}
+
+.provenance-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provenance-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #2b3d4d;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #14212d, #101923 72%);
+}
+
+.provenance-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.provenance-card-heading > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.provenance-card-heading strong {
+  color: #dbe6f1;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.provenance-status-matched {
+  color: #a8eee2;
+  background: #1b4a43;
+}
+
+.provenance-status-declared,
+.provenance-status-commit_not_observed {
+  color: #ffe1a1;
+  background: #51401f;
+}
+
+.provenance-status-not_declared {
+  color: #b8d5e2;
+  background: #213746;
+}
+
+.provenance-status-invalid {
+  color: #ffc0c6;
+  background: #5a2831;
+}
+
+.provenance-summary {
+  margin: 14px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.provenance-facts {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1fr) minmax(240px, 1.6fr);
+  gap: 1px;
+  margin: 0;
+  border: 1px solid #293b4b;
+  border-radius: 9px;
+  background: #293b4b;
+  overflow: hidden;
+}
+
+.provenance-facts > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 11px;
+  background: #0f1a24;
+}
+
+.provenance-facts dt {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.provenance-facts dd {
+  min-width: 0;
+  margin: 0;
+  color: #dbe6f1;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.provenance-facts code {
+  color: #b9d8e8;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.provenance-link {
+  display: inline-flex;
+  margin-top: 13px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.provenance-link:hover {
+  text-decoration: underline;
+}
+
+.provenance-note {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 13px;
+  color: #72889b;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.provenance-note small {
+  flex: none;
+  color: inherit;
+  font-size: inherit;
 }
 
 .attempt-list {
@@ -1242,6 +1380,7 @@ p {
   .incident-hero,
   .lifecycle-heading,
   .attempt-heading,
+  .provenance-heading,
   .timeline-heading,
   .timeline-topline {
     align-items: flex-start;
@@ -1286,6 +1425,15 @@ p {
 
   .attempt-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .provenance-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .provenance-note {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .facts-grid > div {

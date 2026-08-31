@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   getEvaluationRun,
+  getEvidenceBoard,
   getIncidentWorkroom,
   listEvaluationRuns,
   listIncidents,
@@ -86,6 +87,27 @@ describe("控制面 API 客户端", () => {
     await expect(listInvestigationAttempts("run/001")).resolves.toEqual(body);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/investigations/run%2F001/attempts",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("使用编码后的调查运行 ID 读取 Evidence Board", async () => {
+    const body = {
+      investigation_run_id: "run/001",
+      status: "succeeded",
+      evidence_items: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getEvidenceBoard("run/001")).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/investigations/run%2F001/evidence-board",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
   });
