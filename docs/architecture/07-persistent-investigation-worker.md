@@ -109,10 +109,10 @@ uv run python -m opsswarm.worker.main --once
 
 - Compose 已将现场与冻结模式部署为两个独立常驻工作池，详见 [冻结与现场常驻调查工作池](42-persistent-investigation-worker-pools.md)。
 - 空闲轮询无需心跳；执行中仍依靠固定租约和硬超时，尚未增加长任务租约续期。
-- 任务只保存最近错误与总尝试次数，尚未建立每次 Worker 尝试的独立历史和模型费用遥测。
+- 后续切片已建立每次 Worker 尝试的独立历史和模型费用遥测，详见 [调查尝试审计与模型成本](43-investigation-attempt-audit.md)。
 - API 没有身份认证，开始调查的 `actor_id` 仍是不可信审计声明。
 
-后续优先把每次 Worker 尝试持久化，保存开始/结束、结果、稳定错误类型、Token 和估算费用。无论内部实现怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
+后续优先把已持久尝试展示到作战室。无论内部实现怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
 
 ## 8. 面试表达
 

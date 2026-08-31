@@ -47,6 +47,7 @@ erDiagram
     OPERATION_EXECUTIONS ||--o{ VERIFICATION_RUNS : verifies
     VERIFICATION_RUNS ||--o{ VERIFICATION_SAMPLES : records
     INVESTIGATION_RUNS ||--o{ WORK_ITEMS : schedules
+    WORK_ITEMS ||--o{ INVESTIGATION_ATTEMPTS : records
     EVALUATION_CASES ||--o{ EVALUATION_EXPERIMENTS : configures
     EVALUATION_EXPERIMENTS ||--o{ EVALUATION_RUNS : repeats
     EVALUATION_CASES ||--o{ EVALUATION_RUNS : evaluates
@@ -88,6 +89,7 @@ erDiagram
 | `verification_samples` | 服务端探针取得的不可变数值或错误样本 |
 | `verification_work_items` | 自动采样的到期时间、租约、重试和当前调度序号 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
+| `investigation_attempts` | 每次租约领取的耗时、结果、错误、Token 与估算费用 |
 | `evaluation_cases` | 故障真值和期望行为 |
 | `evaluation_experiments` | 数据集、模型、参数哈希、运行器和提示版本组成的可比配置 |
 | `evaluation_attempts` | 真实模型单场景、单模式调用的预算、运行中与成功/失败终态 |
@@ -96,7 +98,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、追加式变更记录表、调查运行与任务表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、追加式变更记录表、调查运行、任务与逐次尝试表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -352,6 +354,14 @@ Worker 使用 `FOR UPDATE SKIP LOCKED` 跳过其他实例正在领取的行，�
 
 JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验，数据库同时限制来源、服务、类型、对象形状、摘要和时间顺序。业务 PostgreSQL 保存外部变更事实；调查把规范化副本写入 `evidence_items` 后，Evidence Board 才与具体 `investigation_run` 绑定。完整边界见 [持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)。
 
+### 4.24 investigation_attempts
+
+每次 `work_items` 租约领取都在同一事务插入一条 `running` 尝试，`(work_item_id, attempt_number)` 唯一。它保存 Worker 标识、模型名与可选价格快照、请求数、已观察 Token、完整性标记、估算费用、租约窗口、实际耗时、是否重试和有限错误。内部唯一 `lease_token` 用于精确结算，只读 API 不暴露。
+
+状态为 `running`、`succeeded`、`failed` 或 `lease_expired`。成功、失败与当前任务结算在同一事务完成；过期尝试在新 Worker 接管前先收敛。终态只能从 `running` 结算一次，旧租约不能覆盖新尝试。
+
+`usage_complete=false` 表示供应商未返回全部 usage：已观察 Token 仍保留，但 `estimated_cost_usd` 必须为空。仅当 usage 完整且输入/输出单价快照同时存在时记录费用；仓储用 Token 与单价重算到 6 位小数，拒绝伪造值。
+
 ## 5. Incident 状态机
 
 ```mermaid
@@ -426,11 +436,11 @@ flowchart TD
 
 ## 7. 后续物理设计原则
 
-- `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`。
+- `work_items` 使用状态、可执行时间、租约、尝试次数和幂等键；领取使用 `FOR UPDATE SKIP LOCKED`，每次领取追加可结算的 `investigation_attempts`。
 - 接入真实工具后，`evidence_items` 增加受控来源 URI、查询时间范围和采集工具版本，不直接塞入无限制原始日志。
 - 扩展候选假设时继续复用显式支持、反驳和上下文关系，不能退回只保存 Agent 最终结论。
 - 审批必须绑定已实现的 `action_plans` 精确 ID 和版本；计划变化后旧审批失效。
-- `tool_calls` 后续保存工具版本和模型调用明细；当前评测实验与运行已经保存模型身份、参数哈希、提示版本、Token、成本和稳定失败分类。
+- `tool_calls` 后续保存工具版本和调用明细；当前评测尝试与真实调查尝试已分别保存模型用量、成本和稳定失败分类。
 - 任何未来表进入物理模型前都要由对应可运行切片验证，不因逻辑 ER 图存在就提前创建。
 
 ## 8. 数据保留与安全

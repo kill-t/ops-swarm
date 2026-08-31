@@ -20,6 +20,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `POST /api/v1/incidents/{id}/actions/close` | 使用当前版本关闭 `resolved` 事故 | 不存在 `404`；版本或状态冲突 `409` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
+| `GET /api/v1/investigations/{run_id}/attempts` | 按序返回 Worker 尝试、耗时、Token、费用与错误 | 调查不存在 `404` |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
 | `POST /api/v1/investigations/{run_id}/action-plans` | 首次生成草案 `201`；幂等重复 `200` | 不存在 `404`；调查或假设未就绪 `409` |
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |

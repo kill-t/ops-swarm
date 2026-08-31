@@ -638,6 +638,44 @@ async def test_start_investigation_and_status_filter(
     assert missing_plan.json()["error_code"] == "action_plan_not_found"
 
 
+async def test_investigation_attempts_are_read_only_and_hide_lease_token(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-attempt-history"),
+    )
+    incident_id = created.json()["incident"]["id"]
+    started = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "验证调查尝试只读视图",
+        },
+    )
+    run_id = started.json()["investigation"]["id"]
+    claimed = await InvestigationStore(database_session_factory).claim_next(
+        worker_id="api-attempt-worker",
+        occurred_at=BASE_TIME + timedelta(seconds=1),
+        lease_duration=timedelta(seconds=30),
+        model_name="test-model",
+    )
+    assert claimed is not None
+
+    response = await control_client.get(f"/api/v1/investigations/{run_id}/attempts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["investigation_run_id"] == run_id
+    assert len(body["items"]) == 1
+    assert body["items"][0]["status"] == "running"
+    assert body["items"][0]["model_name"] == "test-model"
+    assert body["items"][0]["usage"]["usage_complete"] is False
+    assert "lease_token" not in body["items"][0]
+
+
 async def test_start_multi_agent_investigation_persists_graph_thread(
     control_client: httpx2.AsyncClient,
 ) -> None:
@@ -1352,6 +1390,10 @@ async def test_missing_investigation_run_returns_structured_404(
         "message": f"调查运行不存在：{run_id}",
         "details": {"run_id": str(run_id)},
     }
+
+    attempts_response = await control_client.get(f"/api/v1/investigations/{run_id}/attempts")
+    assert attempts_response.status_code == 404
+    assert attempts_response.json()["error_code"] == "investigation_run_not_found"
 
     for method, path in (
         ("POST", f"/api/v1/investigations/{run_id}/action-plans"),

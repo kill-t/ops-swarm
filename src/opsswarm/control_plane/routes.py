@@ -38,6 +38,7 @@ from opsswarm.control_plane.schemas import (
     IncidentPageResponse,
     IncidentResponse,
     IncidentWorkroomResponse,
+    InvestigationAttemptListResponse,
     InvestigationRunResponse,
     OperationExecutionResponse,
     RecordVerificationSampleResponse,
@@ -378,6 +379,23 @@ def create_router(clock: Clock) -> APIRouter:
         store: InvestigationStoreDependency,
     ) -> InvestigationRunResponse:
         return InvestigationRunResponse.from_stored(await store.get_run(run_id))
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/attempts",
+        response_model=InvestigationAttemptListResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["调查"],
+    )
+    async def list_investigation_attempts(
+        run_id: UUID,
+        store: InvestigationStoreDependency,
+    ) -> InvestigationAttemptListResponse:
+        """只读返回 Worker 尝试、Token、费用和稳定失败分类。"""
+
+        return InvestigationAttemptListResponse.from_stored(
+            run_id,
+            await store.list_attempts(run_id),
+        )
 
     @router.get(
         "/api/v1/investigations/{run_id}/evidence-board",

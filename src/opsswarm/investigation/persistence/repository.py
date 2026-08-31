@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import and_, or_, select
@@ -12,6 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.incidents import IncidentAction, IncidentActor
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
+from opsswarm.investigation.attempts import (
+    InvestigationAttemptStatus,
+    ModelPricing,
+    ModelUsageTelemetry,
+)
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
@@ -46,6 +52,7 @@ from opsswarm.investigation.persistence.records import (
     StoredEvidenceItem,
     StoredHypothesis,
     StoredHypothesisEvidence,
+    StoredInvestigationAttempt,
     StoredInvestigationRun,
     StoredSpecialistReport,
     StoredWorkItem,
@@ -54,6 +61,7 @@ from opsswarm.investigation.persistence.tables import (
     EvidenceItemRow,
     HypothesisEvidenceRow,
     HypothesisRow,
+    InvestigationAttemptRow,
     InvestigationRunRow,
     SpecialistReportEvidenceRow,
     SpecialistReportRow,
@@ -273,6 +281,19 @@ class InvestigationStore:
                 raise WorkItemNotFound(work_item_id)
             return _stored_work_item(row)
 
+    async def list_attempts(self, run_id: UUID) -> tuple[StoredInvestigationAttempt, ...]:
+        """按尝试序号读取一次调查的完整 Worker 历史。"""
+
+        async with self._session_factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            rows = await session.scalars(
+                select(InvestigationAttemptRow)
+                .where(InvestigationAttemptRow.investigation_run_id == run_id)
+                .order_by(InvestigationAttemptRow.attempt_number)
+            )
+            return tuple(_stored_attempt(row) for row in rows)
+
     async def ensure_graph_thread_id(
         self,
         run_id: UUID,
@@ -308,10 +329,13 @@ class InvestigationStore:
         occurred_at: datetime,
         lease_duration: timedelta,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        model_name: str | None = None,
+        model_pricing: ModelPricing | None = None,
     ) -> ClaimedInvestigation | None:
         """跳过其他 Worker 已锁定任务，并接管到期租约。"""
 
         worker_id = _normalize_worker_id(worker_id)
+        model_name = _normalize_optional_model_name(model_name)
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         if not timedelta(seconds=1) <= lease_duration <= timedelta(minutes=30):
             raise ValueError("lease_duration 必须在 1 秒到 30 分钟之间")
@@ -346,6 +370,13 @@ class InvestigationStore:
                     return None
 
                 run_row = await _require_run(session, row.investigation_run_id)
+                if row.status == WorkItemStatus.RUNNING.value:
+                    await _expire_current_attempt(
+                        session,
+                        row,
+                        occurred_at=occurred_at,
+                        will_retry=row.attempt_count < row.max_attempts,
+                    )
                 if row.attempt_count >= row.max_attempts:
                     error = WorkItemError(
                         error_code="lease_expired_after_max_attempts",
@@ -354,10 +385,12 @@ class InvestigationStore:
                     _mark_terminal_failure(row, run_row, error=error, occurred_at=occurred_at)
                     continue
 
+                lease_token = uuid4()
+                lease_expires_at = occurred_at + lease_duration
                 row.status = WorkItemStatus.RUNNING.value
                 row.locked_by = worker_id
-                row.locked_until = occurred_at + lease_duration
-                row.lease_token = uuid4()
+                row.locked_until = lease_expires_at
+                row.lease_token = lease_token
                 row.attempt_count += 1
                 row.updated_at = occurred_at
                 run_row.status = InvestigationRunStatus.RUNNING.value
@@ -367,10 +400,45 @@ class InvestigationStore:
                 incident_row = await session.get(IncidentRow, run_row.incident_id)
                 if incident_row is None:
                     raise RuntimeError(f"调查运行关联的 Incident 不存在：{run_row.incident_id}")
+                attempt_row = InvestigationAttemptRow(
+                    id=uuid4(),
+                    investigation_run_id=run_row.id,
+                    work_item_id=row.id,
+                    attempt_number=row.attempt_count,
+                    lease_token=lease_token,
+                    status=InvestigationAttemptStatus.RUNNING.value,
+                    worker_id=worker_id,
+                    model_name=model_name,
+                    input_cost_per_million_usd=(
+                        model_pricing.input_cost_per_million_usd
+                        if model_pricing is not None
+                        else None
+                    ),
+                    output_cost_per_million_usd=(
+                        model_pricing.output_cost_per_million_usd
+                        if model_pricing is not None
+                        else None
+                    ),
+                    model_request_count=0,
+                    usage_complete=False,
+                    input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=0,
+                    estimated_cost_usd=None,
+                    started_at=occurred_at,
+                    lease_expires_at=lease_expires_at,
+                    finished_at=None,
+                    duration_ms=None,
+                    will_retry=None,
+                    error_code=None,
+                    error_message=None,
+                )
+                session.add(attempt_row)
                 await session.flush()
                 return ClaimedInvestigation(
                     run=_stored_run(run_row),
                     work_item=_stored_work_item(row),
+                    attempt=_stored_attempt(attempt_row),
                     request=InvestigationRequest(
                         incident_id=incident_row.id,
                         service_name=incident_row.service_name,
@@ -393,6 +461,7 @@ class InvestigationStore:
         hypothesis_challenge: HypothesisChallenge,
         metrics: InvestigationMetrics | None,
         model_name: str,
+        usage: ModelUsageTelemetry | None = None,
     ) -> StoredInvestigationRun:
         """只有当前有效租约可以提交最终结构化结果。"""
 
@@ -406,11 +475,26 @@ class InvestigationStore:
             specialist_reports=specialist_reports,
         )
         validate_hypothesis_challenge(artifacts, hypothesis_challenge)
+        usage = usage or ModelUsageTelemetry()
 
         async with self._session_factory() as session, session.begin():
             work_row = await _locked_work_item(session, work_item_id)
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
+            attempt_row = await _locked_attempt(
+                session,
+                work_item_id=work_item_id,
+                lease_token=lease_token,
+            )
+            _finalize_attempt(
+                attempt_row,
+                status=InvestigationAttemptStatus.SUCCEEDED,
+                occurred_at=occurred_at,
+                usage=usage,
+                will_retry=False,
+                error=None,
+                model_name=model_name,
+            )
 
             work_row.status = WorkItemStatus.COMPLETED.value
             work_row.locked_by = None
@@ -443,17 +527,34 @@ class InvestigationStore:
         occurred_at: datetime,
         error: WorkItemError,
         retry_delay: timedelta,
+        usage: ModelUsageTelemetry | None = None,
     ) -> StoredWorkItem:
         """记录失败；有剩余次数则延迟重试，否则进入终态。"""
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         if not timedelta(0) <= retry_delay <= timedelta(hours=1):
             raise ValueError("retry_delay 必须在 0 到 1 小时之间")
+        usage = usage or ModelUsageTelemetry()
 
         async with self._session_factory() as session, session.begin():
             work_row = await _locked_work_item(session, work_item_id)
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
+            will_retry = work_row.attempt_count < work_row.max_attempts
+            attempt_row = await _locked_attempt(
+                session,
+                work_item_id=work_item_id,
+                lease_token=lease_token,
+            )
+            _finalize_attempt(
+                attempt_row,
+                status=InvestigationAttemptStatus.FAILED,
+                occurred_at=occurred_at,
+                usage=usage,
+                will_retry=will_retry,
+                error=error,
+                model_name=None,
+            )
             if work_row.attempt_count >= work_row.max_attempts:
                 _mark_terminal_failure(
                     work_row,
@@ -584,6 +685,15 @@ def _normalize_worker_id(worker_id: str) -> str:
     return normalized
 
 
+def _normalize_optional_model_name(model_name: str | None) -> str | None:
+    if model_name is None:
+        return None
+    normalized = model_name.strip()
+    if not normalized or len(normalized) > 200:
+        raise ValueError("model_name 长度必须在 1 到 200 之间")
+    return normalized
+
+
 async def _require_run(session: AsyncSession, run_id: UUID) -> InvestigationRunRow:
     row = await session.get(InvestigationRunRow, run_id)
     if row is None:
@@ -598,6 +708,123 @@ async def _locked_work_item(session: AsyncSession, work_item_id: UUID) -> WorkIt
     if row is None:
         raise WorkItemNotFound(work_item_id)
     return row
+
+
+async def _locked_attempt(
+    session: AsyncSession,
+    *,
+    work_item_id: UUID,
+    lease_token: UUID,
+) -> InvestigationAttemptRow:
+    row = await session.scalar(
+        select(InvestigationAttemptRow)
+        .where(
+            InvestigationAttemptRow.work_item_id == work_item_id,
+            InvestigationAttemptRow.lease_token == lease_token,
+        )
+        .with_for_update()
+    )
+    if row is None or row.status != InvestigationAttemptStatus.RUNNING.value:
+        raise WorkItemLeaseLost(work_item_id)
+    return row
+
+
+async def _expire_current_attempt(
+    session: AsyncSession,
+    work_row: WorkItemRow,
+    *,
+    occurred_at: datetime,
+    will_retry: bool,
+) -> None:
+    """在接管之前把上一个未结算租约收敛为过期。"""
+
+    if work_row.lease_token is None:
+        return
+    row = await session.scalar(
+        select(InvestigationAttemptRow)
+        .where(
+            InvestigationAttemptRow.work_item_id == work_row.id,
+            InvestigationAttemptRow.lease_token == work_row.lease_token,
+        )
+        .with_for_update()
+    )
+    if row is None:
+        # 允许迁移前已在运行的历史任务被接管。
+        return
+    error = WorkItemError(
+        error_code="lease_expired",
+        message="Worker 租约到期，未能确认本次调查结果。",
+    )
+    _finalize_attempt(
+        row,
+        status=InvestigationAttemptStatus.LEASE_EXPIRED,
+        occurred_at=occurred_at,
+        usage=ModelUsageTelemetry(),
+        will_retry=will_retry,
+        error=error,
+        model_name=None,
+    )
+
+
+def _finalize_attempt(
+    row: InvestigationAttemptRow,
+    *,
+    status: InvestigationAttemptStatus,
+    occurred_at: datetime,
+    usage: ModelUsageTelemetry,
+    will_retry: bool,
+    error: WorkItemError | None,
+    model_name: str | None,
+) -> None:
+    """将运行态尝试只结算一次，并校验价格与费用形状。"""
+
+    if row.status != InvestigationAttemptStatus.RUNNING.value:
+        raise WorkItemLeaseLost(row.work_item_id)
+    if occurred_at < row.started_at:
+        raise ValueError("尝试结束时间不能早于开始时间")
+    normalized_model_name = _normalize_optional_model_name(model_name)
+    if row.model_name is None:
+        row.model_name = normalized_model_name
+    elif normalized_model_name is not None and row.model_name != normalized_model_name:
+        raise ValueError("尝试使用的 model_name 与领取时快照不一致")
+
+    has_pricing = row.input_cost_per_million_usd is not None
+    if has_pricing != (row.output_cost_per_million_usd is not None):
+        raise RuntimeError("调查尝试价格快照不完整")
+    if usage.estimated_cost_usd is not None and not has_pricing:
+        raise ValueError("未保存价格快照时不能写入估算费用")
+    if (
+        status is not InvestigationAttemptStatus.LEASE_EXPIRED
+        and usage.usage_complete
+        and has_pricing
+        and usage.estimated_cost_usd is None
+    ):
+        raise ValueError("用量与价格均可用时必须写入估算费用")
+    if usage.usage_complete and has_pricing:
+        assert row.input_cost_per_million_usd is not None
+        assert row.output_cost_per_million_usd is not None
+        expected_cost = (
+            (
+                Decimal(usage.input_tokens) * row.input_cost_per_million_usd
+                + Decimal(usage.output_tokens) * row.output_cost_per_million_usd
+            )
+            / Decimal(1_000_000)
+        ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        if usage.estimated_cost_usd != expected_cost:
+            raise ValueError("估算费用与 Token 及价格快照重算结果不一致")
+
+    row.status = status.value
+    row.model_request_count = usage.model_request_count
+    row.usage_complete = usage.usage_complete
+    row.input_tokens = usage.input_tokens
+    row.output_tokens = usage.output_tokens
+    row.total_tokens = usage.total_tokens
+    row.estimated_cost_usd = usage.estimated_cost_usd
+    row.finished_at = occurred_at
+    row.duration_ms = int((occurred_at - row.started_at).total_seconds() * 1000)
+    row.will_retry = will_retry
+    row.error_code = error.error_code if error is not None else None
+    row.error_message = error.message if error is not None else None
 
 
 def _require_valid_lease(
@@ -686,6 +913,46 @@ def _stored_work_item(row: WorkItemRow) -> StoredWorkItem:
         created_at=row.created_at,
         updated_at=row.updated_at,
         completed_at=row.completed_at,
+    )
+
+
+def _stored_attempt(row: InvestigationAttemptRow) -> StoredInvestigationAttempt:
+    pricing = (
+        ModelPricing(
+            input_cost_per_million_usd=row.input_cost_per_million_usd,
+            output_cost_per_million_usd=row.output_cost_per_million_usd,
+        )
+        if row.input_cost_per_million_usd is not None
+        and row.output_cost_per_million_usd is not None
+        else None
+    )
+    return StoredInvestigationAttempt(
+        id=row.id,
+        investigation_run_id=row.investigation_run_id,
+        work_item_id=row.work_item_id,
+        attempt_number=row.attempt_number,
+        status=InvestigationAttemptStatus(row.status),
+        worker_id=row.worker_id,
+        model_name=row.model_name,
+        pricing=pricing,
+        usage=ModelUsageTelemetry(
+            model_request_count=row.model_request_count,
+            usage_complete=row.usage_complete,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            total_tokens=row.total_tokens,
+            estimated_cost_usd=row.estimated_cost_usd,
+        ),
+        started_at=row.started_at,
+        lease_expires_at=row.lease_expires_at,
+        finished_at=row.finished_at,
+        duration_ms=row.duration_ms,
+        will_retry=row.will_retry,
+        error=(
+            WorkItemError(error_code=row.error_code, message=row.error_message)
+            if row.error_code is not None and row.error_message is not None
+            else None
+        ),
     )
 
 

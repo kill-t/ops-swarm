@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -19,6 +20,11 @@ from opsswarm.incidents import (
     IncidentStatus,
 )
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.attempts import (
+    InvestigationAttemptStatus,
+    ModelPricing,
+    ModelUsageTelemetry,
+)
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.errors import WorkItemLeaseLost
 from opsswarm.investigation.graph_thread import build_graph_thread_id
@@ -326,6 +332,15 @@ async def test_expired_lease_is_reclaimed_and_stale_worker_cannot_complete(
     assert completed.id == started.run.id
     assert completed.status is InvestigationRunStatus.SUCCEEDED
     assert completed.result == outcome.result
+    attempts = await store.list_attempts(started.run.id)
+    assert tuple(item.status for item in attempts) == (
+        InvestigationAttemptStatus.LEASE_EXPIRED,
+        InvestigationAttemptStatus.SUCCEEDED,
+    )
+    assert attempts[0].will_retry is True
+    assert attempts[0].error is not None
+    assert attempts[0].error.error_code == "lease_expired"
+    assert attempts[1].will_retry is False
 
 
 async def test_failure_retries_after_delay_then_becomes_terminal(
@@ -375,6 +390,12 @@ async def test_failure_retries_after_delay_then_becomes_terminal(
     run = await store.get_run(started.run.id)
     assert run.status is InvestigationRunStatus.FAILED
     assert run.last_error == error
+    attempts = await store.list_attempts(started.run.id)
+    assert tuple(item.status for item in attempts) == (
+        InvestigationAttemptStatus.FAILED,
+        InvestigationAttemptStatus.FAILED,
+    )
+    assert tuple(item.will_retry for item in attempts) == (True, False)
 
 
 async def test_expired_last_attempt_is_closed_as_terminal_failure(
@@ -401,6 +422,10 @@ async def test_expired_last_attempt_is_closed_as_terminal_failure(
     assert work.last_error is not None
     assert work.last_error.error_code == "lease_expired_after_max_attempts"
     assert run.status is InvestigationRunStatus.FAILED
+    attempts = await store.list_attempts(started.run.id)
+    assert len(attempts) == 1
+    assert attempts[0].status is InvestigationAttemptStatus.LEASE_EXPIRED
+    assert attempts[0].will_retry is False
 
 
 async def test_store_rejects_tampered_hypothesis_before_completing_work(
@@ -520,6 +545,12 @@ async def test_worker_processes_one_item_and_persists_structured_result(
     assert run.model_name == "fake-tool-model"
     assert run.metrics is not None and run.metrics.top1_accuracy == 1
     assert work.status is WorkItemStatus.COMPLETED
+    attempts = await store.list_attempts(started.run.id)
+    assert len(attempts) == 1
+    assert attempts[0].status is InvestigationAttemptStatus.SUCCEEDED
+    assert attempts[0].model_name == "fake-tool-model"
+    assert attempts[0].duration_ms == 1000
+    assert attempts[0].usage.usage_complete is False
     board = await store.get_evidence_board(started.run.id)
     assert run.result is not None
     assert board.conclusion == run.result.conclusion
@@ -552,6 +583,73 @@ async def test_worker_processes_one_item_and_persists_structured_result(
         clock=lambda: clock_from(idle_times),
     )
     assert await idle_worker.run_once() is False
+
+
+async def test_attempt_persists_model_pricing_usage_and_estimated_cost(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(
+        database_session_factory,
+        suffix="attempt-telemetry",
+    )
+    pricing = ModelPricing(
+        input_cost_per_million_usd=Decimal("1"),
+        output_cost_per_million_usd=Decimal("2"),
+    )
+    claimed = await store.claim_next(
+        worker_id="worker-telemetry",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
+        model_name="priced-model",
+        model_pricing=pricing,
+    )
+    assert claimed is not None and claimed.work_item.lease_token is not None
+    outcome = make_outcome()
+    with pytest.raises(ValueError, match="重算结果不一致"):
+        await store.complete(
+            claimed.work_item.id,
+            lease_token=claimed.work_item.lease_token,
+            occurred_at=BASE_TIME + timedelta(seconds=3),
+            result=outcome.result,
+            evidence_items=outcome.evidence_items,
+            specialist_reports=outcome.specialist_reports,
+            hypothesis_challenge=outcome.hypothesis_challenge,
+            metrics=outcome.metrics,
+            model_name="priced-model",
+            usage=ModelUsageTelemetry(
+                model_request_count=2,
+                usage_complete=True,
+                input_tokens=1000,
+                output_tokens=500,
+                total_tokens=1500,
+                estimated_cost_usd=Decimal("0.999999"),
+            ),
+        )
+    await store.complete(
+        claimed.work_item.id,
+        lease_token=claimed.work_item.lease_token,
+        occurred_at=BASE_TIME + timedelta(seconds=3),
+        result=outcome.result,
+        evidence_items=outcome.evidence_items,
+        specialist_reports=outcome.specialist_reports,
+        hypothesis_challenge=outcome.hypothesis_challenge,
+        metrics=outcome.metrics,
+        model_name="priced-model",
+        usage=ModelUsageTelemetry(
+            model_request_count=2,
+            usage_complete=True,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            estimated_cost_usd=Decimal("0.002000"),
+        ),
+    )
+
+    attempts = await store.list_attempts(started.run.id)
+    assert len(attempts) == 1
+    assert attempts[0].pricing == pricing
+    assert attempts[0].usage.total_tokens == 1500
+    assert attempts[0].usage.estimated_cost_usd == Decimal("0.002000")
 
 
 async def test_worker_continues_persisted_api_trace_after_queue_boundary(

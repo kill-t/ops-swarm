@@ -26,7 +26,11 @@ from opsswarm.investigation.parallel_model import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
-from opsswarm.investigation.settings import LlmSettings, create_openai_compatible_model
+from opsswarm.investigation.settings import (
+    LlmSettings,
+    ModelPricingSettings,
+    create_openai_compatible_model,
+)
 from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.observability import create_tracing_runtime
 from opsswarm.worker.processor import (
@@ -36,6 +40,7 @@ from opsswarm.worker.processor import (
 )
 from opsswarm.worker.runner import InvestigationWorker
 from opsswarm.worker.settings import InvestigationWorkerSettings
+from opsswarm.worker.usage import ModelUsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +78,12 @@ async def run(*, once: bool) -> bool | None:
     tracer = tracing_runtime.get_tracer(__name__)
     try:
         llm_settings = LlmSettings.from_dotenv()
-        model = create_openai_compatible_model(llm_settings)
+        model_pricing = ModelPricingSettings.from_dotenv().to_pricing()
+        usage_tracker = ModelUsageTracker(model_pricing)
+        model = create_openai_compatible_model(
+            llm_settings,
+            callbacks=(usage_tracker,),
+        )
         data_source: InvestigationDataSource
         if worker_settings.data_source_mode is InvestigationDataSourceMode.LIVE:
             data_source = LiveInvestigationDataSource()
@@ -122,6 +132,8 @@ async def run(*, once: bool) -> bool | None:
                 base_retry_delay=timedelta(seconds=worker_settings.base_retry_delay_seconds),
                 max_retry_delay=timedelta(seconds=worker_settings.max_retry_delay_seconds),
                 data_source_mode=worker_settings.data_source_mode,
+                model_name=llm_settings.model,
+                usage_tracker=usage_tracker,
                 tracer=tracer,
             )
             logger.info(

@@ -11,6 +11,7 @@ from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 from pydantic import model_validator
 
+from opsswarm.investigation.attempts import ModelUsageTelemetry
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.models import (
     EvidenceObservation,
@@ -28,6 +29,7 @@ from opsswarm.investigation.models import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.observability import extract_trace_context, mark_span_error
+from opsswarm.worker.usage import ModelUsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,8 @@ class InvestigationWorker:
         base_retry_delay: timedelta = timedelta(seconds=5),
         max_retry_delay: timedelta = timedelta(minutes=5),
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        model_name: str | None = None,
+        usage_tracker: ModelUsageTracker | None = None,
         tracer: Tracer | None = None,
     ) -> None:
         if base_retry_delay < timedelta(0):
@@ -106,6 +110,8 @@ class InvestigationWorker:
         self._base_retry_delay = base_retry_delay
         self._max_retry_delay = max_retry_delay
         self._data_source_mode = data_source_mode
+        self._model_name = model_name
+        self._usage_tracker = usage_tracker
         self._tracer = tracer or trace.get_tracer(__name__)
 
     async def run_once(self) -> bool:
@@ -116,6 +122,10 @@ class InvestigationWorker:
             occurred_at=self._clock(),
             lease_duration=self._lease_duration,
             data_source_mode=self._data_source_mode,
+            model_name=self._model_name,
+            model_pricing=(
+                self._usage_tracker.pricing if self._usage_tracker is not None else None
+            ),
         )
         if claimed is None:
             return False
@@ -130,6 +140,8 @@ class InvestigationWorker:
         lease_token = claimed.work_item.lease_token
         if lease_token is None:
             raise RuntimeError("已领取任务缺少 lease_token")
+        if self._usage_tracker is not None:
+            self._usage_tracker.begin_attempt()
 
         parent_context = extract_trace_context(claimed.work_item.trace_context)
         with self._tracer.start_as_current_span(
@@ -162,6 +174,7 @@ class InvestigationWorker:
                     timeout=self._processing_timeout.total_seconds(),
                 )
             except Exception as error:
+                usage = self._finish_usage()
                 mark_span_error(span, error)
                 await self._store.fail(
                     claimed.work_item.id,
@@ -169,6 +182,7 @@ class InvestigationWorker:
                     occurred_at=self._clock(),
                     error=_safe_error(error),
                     retry_delay=self._retry_delay(claimed.work_item.attempt_count),
+                    usage=usage,
                 )
                 logger.warning(
                     "调查任务进入重试 work_item_id=%s run_id=%s error_code=%s",
@@ -178,6 +192,7 @@ class InvestigationWorker:
                 )
                 return True
 
+            usage = self._finish_usage()
             await self._store.complete(
                 claimed.work_item.id,
                 lease_token=lease_token,
@@ -188,6 +203,7 @@ class InvestigationWorker:
                 hypothesis_challenge=outcome.hypothesis_challenge,
                 metrics=outcome.metrics,
                 model_name=outcome.model_name,
+                usage=usage,
             )
             span.set_status(Status(StatusCode.OK))
             logger.info(
@@ -224,6 +240,11 @@ class InvestigationWorker:
         multiplier = 2 ** max(attempt_count - 1, 0)
         calculated = timedelta(seconds=self._base_retry_delay.total_seconds() * multiplier)
         return calculated if calculated <= self._max_retry_delay else self._max_retry_delay
+
+    def _finish_usage(self) -> ModelUsageTelemetry:
+        if self._usage_tracker is None:
+            return ModelUsageTelemetry()
+        return self._usage_tracker.finish_attempt()
 
 
 def _safe_error(error: Exception) -> WorkItemError:

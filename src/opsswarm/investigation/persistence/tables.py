@@ -1,10 +1,13 @@
 """调查运行与 PostgreSQL 租约任务映射。"""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -12,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     text,
@@ -24,6 +28,7 @@ from opsswarm.database.base import Base
 
 RUN_STATUS_SQL = "'queued', 'running', 'succeeded', 'failed'"
 WORK_STATUS_SQL = "'pending', 'running', 'completed', 'failed'"
+ATTEMPT_STATUS_SQL = "'running', 'succeeded', 'failed', 'lease_expired'"
 
 
 class InvestigationRunRow(Base):
@@ -192,6 +197,111 @@ class WorkItemRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InvestigationAttemptRow(Base):
+    """每次租约领取对应的可结算尝试历史。"""
+
+    __tablename__ = "investigation_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({ATTEMPT_STATUS_SQL})",
+            name="ck_investigation_attempts_status",
+        ),
+        CheckConstraint(
+            "attempt_number >= 1",
+            name="ck_investigation_attempts_number",
+        ),
+        CheckConstraint(
+            "model_request_count >= 0 AND input_tokens >= 0 AND output_tokens >= 0 "
+            "AND total_tokens = input_tokens + output_tokens",
+            name="ck_investigation_attempts_usage",
+        ),
+        CheckConstraint(
+            "usage_complete OR (NOT usage_complete AND estimated_cost_usd IS NULL)",
+            name="ck_investigation_attempts_usage_complete",
+        ),
+        CheckConstraint(
+            "(input_cost_per_million_usd IS NULL AND output_cost_per_million_usd IS NULL) OR "
+            "(input_cost_per_million_usd IS NOT NULL "
+            "AND output_cost_per_million_usd IS NOT NULL "
+            "AND input_cost_per_million_usd >= 0 AND output_cost_per_million_usd >= 0)",
+            name="ck_investigation_attempts_pricing_pair",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'lease_expired') OR "
+            "(usage_complete AND input_cost_per_million_usd IS NOT NULL "
+            "AND estimated_cost_usd >= 0) OR "
+            "(input_cost_per_million_usd IS NULL AND estimated_cost_usd IS NULL) OR "
+            "(NOT usage_complete AND estimated_cost_usd IS NULL)",
+            name="ck_investigation_attempts_cost_shape",
+        ),
+        CheckConstraint(
+            "status <> 'lease_expired' OR (NOT usage_complete AND estimated_cost_usd IS NULL)",
+            name="ck_investigation_attempts_expired_usage",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND finished_at IS NULL AND duration_ms IS NULL "
+            "AND will_retry IS NULL AND error_code IS NULL AND error_message IS NULL "
+            "AND estimated_cost_usd IS NULL) OR "
+            "(status = 'succeeded' AND finished_at IS NOT NULL AND duration_ms >= 0 "
+            "AND will_retry = false AND error_code IS NULL AND error_message IS NULL) OR "
+            "(status IN ('failed', 'lease_expired') AND finished_at IS NOT NULL "
+            "AND duration_ms >= 0 AND will_retry IS NOT NULL "
+            "AND error_code IS NOT NULL AND error_message IS NOT NULL)",
+            name="ck_investigation_attempts_terminal_shape",
+        ),
+        CheckConstraint(
+            "started_at <= lease_expires_at AND (finished_at IS NULL OR finished_at >= started_at)",
+            name="ck_investigation_attempts_time_order",
+        ),
+        UniqueConstraint(
+            "work_item_id",
+            "attempt_number",
+            name="uq_investigation_attempts_work_number",
+        ),
+        Index(
+            "ix_investigation_attempts_run_number",
+            "investigation_run_id",
+            "attempt_number",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    investigation_run_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("investigation_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    work_item_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("work_items.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    lease_token: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    worker_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(200))
+    input_cost_per_million_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    output_cost_per_million_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    model_request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    usage_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger)
+    will_retry: Mapped[bool | None] = mapped_column(Boolean)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(String(500))
 
 
 class EvidenceItemRow(Base):

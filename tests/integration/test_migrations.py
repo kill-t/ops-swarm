@@ -20,7 +20,8 @@ def truncate_business_data(database_url: str) -> None:
     )
     with psycopg.connect(native_url, autocommit=True) as connection:
         connection.execute(
-            "TRUNCATE TABLE change_records, evaluation_attempts, evaluation_results, "
+            "TRUNCATE TABLE change_records, investigation_attempts, "
+            "evaluation_attempts, evaluation_results, "
             "evaluation_runs, "
             "evaluation_experiments, evaluation_cases, work_items, investigation_runs, "
             "incident_events, alerts, "

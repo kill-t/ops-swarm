@@ -7,6 +7,11 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from opsswarm.incidents.persistence import StoredIncident
+from opsswarm.investigation.attempts import (
+    InvestigationAttemptStatus,
+    ModelPricing,
+    ModelUsageTelemetry,
+)
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -67,6 +72,26 @@ class StoredWorkItem(StrictModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+
+
+class StoredInvestigationAttempt(StrictModel):
+    """一次已持久租约处理尝试，不暴露内部租约令牌。"""
+
+    id: UUID
+    investigation_run_id: UUID
+    work_item_id: UUID
+    attempt_number: int
+    status: InvestigationAttemptStatus
+    worker_id: str
+    model_name: str | None
+    pricing: ModelPricing | None
+    usage: ModelUsageTelemetry
+    started_at: datetime
+    lease_expires_at: datetime
+    finished_at: datetime | None
+    duration_ms: int | None
+    will_retry: bool | None
+    error: WorkItemError | None
 
 
 class StoredEvidenceItem(StrictModel):
@@ -160,4 +185,5 @@ class ClaimedInvestigation:
 
     run: StoredInvestigationRun
     work_item: StoredWorkItem
+    attempt: StoredInvestigationAttempt
     request: InvestigationRequest

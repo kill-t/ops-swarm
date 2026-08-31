@@ -49,6 +49,11 @@ from opsswarm.incidents import (
     IncidentStatus,
 )
 from opsswarm.incidents.persistence import StoredIncident, StoredIncidentEvent
+from opsswarm.investigation.attempts import (
+    InvestigationAttemptStatus,
+    ModelPricing,
+    ModelUsageTelemetry,
+)
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -70,6 +75,7 @@ from opsswarm.investigation.persistence import (
     StoredEvidenceItem,
     StoredHypothesis,
     StoredHypothesisEvidence,
+    StoredInvestigationAttempt,
     StoredInvestigationRun,
     StoredSpecialistReport,
 )
@@ -193,6 +199,47 @@ class InvestigationRunResponse(StrictApiModel):
     @classmethod
     def from_stored(cls, stored: StoredInvestigationRun) -> Self:
         return cls.model_validate(stored.model_dump())
+
+
+class InvestigationAttemptResponse(StrictApiModel):
+    """不暴露租约令牌的 Worker 尝试审计视图。"""
+
+    id: UUID
+    work_item_id: UUID
+    attempt_number: int
+    status: InvestigationAttemptStatus
+    worker_id: str
+    model_name: str | None
+    pricing: ModelPricing | None
+    usage: ModelUsageTelemetry
+    started_at: datetime
+    lease_expires_at: datetime
+    finished_at: datetime | None
+    duration_ms: int | None
+    will_retry: bool | None
+    error: WorkItemError | None
+
+    @classmethod
+    def from_stored(cls, stored: StoredInvestigationAttempt) -> Self:
+        return cls.model_validate(stored.model_dump(exclude={"investigation_run_id"}))
+
+
+class InvestigationAttemptListResponse(StrictApiModel):
+    """一次调查中按序排列的全部尝试。"""
+
+    investigation_run_id: UUID
+    items: tuple[InvestigationAttemptResponse, ...]
+
+    @classmethod
+    def from_stored(
+        cls,
+        run_id: UUID,
+        attempts: tuple[StoredInvestigationAttempt, ...],
+    ) -> Self:
+        return cls(
+            investigation_run_id=run_id,
+            items=tuple(InvestigationAttemptResponse.from_stored(item) for item in attempts),
+        )
 
 
 class EvidenceItemResponse(StrictApiModel):

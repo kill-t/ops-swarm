@@ -83,3 +83,4 @@
 - [40 - 统一现场数据源与调查 Worker 安全切换](40-unified-live-investigation-worker.md)
 - [41 - OpenTelemetry 跨进程调查追踪](41-opentelemetry-investigation-tracing.md)
 - [42 - 冻结与现场常驻调查工作池](42-persistent-investigation-worker-pools.md)
+- [43 - 调查尝试审计与模型成本](43-investigation-attempt-audit.md)

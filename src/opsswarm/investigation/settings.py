@@ -1,12 +1,15 @@
 """可选真实模型的环境配置与工厂。"""
 
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any, Literal, Self, cast
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from opsswarm.investigation.attempts import ModelPricing
 
 ThinkingMode = Literal["provider_default", "enabled", "disabled"]
 StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
@@ -51,7 +54,74 @@ class LlmSettings(BaseSettings):
         return cast(Self, constructor(_env_file=".env", _env_file_encoding="utf-8"))
 
 
-def create_openai_compatible_model(settings: LlmSettings) -> ChatOpenAI:
+class ModelPricingSettings(BaseSettings):
+    """读取可选模型单价，并兼容已有真实评测配置。"""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+    input_cost_per_million_usd: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=6,
+        validation_alias=AliasChoices(
+            "LLM_INPUT_COST_PER_MILLION_USD",
+            "EVALUATION_INPUT_COST_PER_MILLION_USD",
+        ),
+    )
+    output_cost_per_million_usd: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=6,
+        validation_alias=AliasChoices(
+            "LLM_OUTPUT_COST_PER_MILLION_USD",
+            "EVALUATION_OUTPUT_COST_PER_MILLION_USD",
+        ),
+    )
+
+    @field_validator("input_cost_per_million_usd", "output_cost_per_million_usd", mode="before")
+    @classmethod
+    def normalize_optional_price(cls, value: object) -> object:
+        """空价格表示未配置，不把未知成本记为零。"""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def validate_complete_price_pair(self) -> Self:
+        """输入与输出价格必须同时配置或同时缺省。"""
+
+        values = (self.input_cost_per_million_usd, self.output_cost_per_million_usd)
+        if (values[0] is None) != (values[1] is None):
+            raise ValueError("输入与输出 Token 单价必须同时配置")
+        return self
+
+    def to_pricing(self) -> ModelPricing | None:
+        """返回可随 Worker 尝试落库的价格快照。"""
+
+        if self.input_cost_per_million_usd is None:
+            return None
+        assert self.output_cost_per_million_usd is not None
+        return ModelPricing(
+            input_cost_per_million_usd=self.input_cost_per_million_usd,
+            output_cost_per_million_usd=self.output_cost_per_million_usd,
+        )
+
+    @classmethod
+    def from_dotenv(cls) -> Self:
+        """仅供显式本地命令读取项目根目录的 .env。"""
+
+        constructor = cast(Any, cls)
+        return cast(Self, constructor(_env_file=".env", _env_file_encoding="utf-8"))
+
+
+def create_openai_compatible_model(
+    settings: LlmSettings,
+    *,
+    callbacks: Sequence[BaseCallbackHandler] = (),
+) -> ChatOpenAI:
     """创建模型适配器但不发起网络请求。"""
 
     return ChatOpenAI(
@@ -59,6 +129,7 @@ def create_openai_compatible_model(settings: LlmSettings) -> ChatOpenAI:
         model=settings.model,
         base_url=settings.base_url,
         temperature=settings.temperature,
+        callbacks=list(callbacks),
         extra_body=_thinking_extra_body(settings),
     )
 

@@ -80,7 +80,8 @@ async def database_session_factory(
     async with engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE TABLE change_records, evaluation_attempts, evaluation_results, "
+                "TRUNCATE TABLE change_records, investigation_attempts, "
+                "evaluation_attempts, evaluation_results, "
                 "evaluation_runs, "
                 "evaluation_experiments, "
                 "evaluation_cases, "

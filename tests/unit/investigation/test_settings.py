@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 import pytest
 from pydantic import ValidationError
 
 from opsswarm.investigation.settings import (
     LlmSettings,
+    ModelPricingSettings,
     create_bounded_openai_compatible_model,
     create_openai_compatible_model,
 )
@@ -63,3 +66,27 @@ def test_model_factory_applies_explicit_provider_compatibility(
     assert settings.structured_output_method == "json_mode"
     assert model.extra_body == {"thinking": {"type": "disabled"}}
     assert bounded_model.extra_body == {"thinking": {"type": "disabled"}}
+
+
+def test_model_pricing_reuses_existing_evaluation_prices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LLM_INPUT_COST_PER_MILLION_USD", raising=False)
+    monkeypatch.delenv("LLM_OUTPUT_COST_PER_MILLION_USD", raising=False)
+    monkeypatch.setenv("EVALUATION_INPUT_COST_PER_MILLION_USD", "0.45")
+    monkeypatch.setenv("EVALUATION_OUTPUT_COST_PER_MILLION_USD", "1.35")
+
+    pricing = ModelPricingSettings().to_pricing()
+
+    assert pricing is not None
+    assert pricing.input_cost_per_million_usd == Decimal("0.45")
+    assert pricing.output_cost_per_million_usd == Decimal("1.35")
+
+
+def test_model_pricing_rejects_incomplete_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_INPUT_COST_PER_MILLION_USD", "0.45")
+    monkeypatch.delenv("LLM_OUTPUT_COST_PER_MILLION_USD", raising=False)
+    monkeypatch.delenv("EVALUATION_OUTPUT_COST_PER_MILLION_USD", raising=False)
+
+    with pytest.raises(ValidationError, match="必须同时配置"):
+        ModelPricingSettings()

@@ -88,6 +88,8 @@ Agent 测试分三层：
 
 持久 Worker 通过业务枚举在 LangChain 单 Agent 与 LangGraph 多 Agent 之间确定性路由，并按持久化的 `frozen` 或 `live` 数据源模式部署为两个 Compose 常驻工作池。工作池使用可中断空闲轮询，处理硬超时小于租约，容器宽限期大于处理超时；收到停机信号后不再领取新任务。多 Agent 处理器先查询线程 checkpoint 是否存在，再决定首次运行或恢复；Agent 模式和数据源模式都不进入模型提示词，也不由模型选择。
 
+每次 Worker 租约领取会在同一事务创建 `investigation_attempts`。LangChain 回调以单次尝试为边界收集模型请求数和供应商用量元数据，超时后的迟到回调不会跨尝试串账。价格快照随尝试持久化，费用由仓储层重新计算；元数据不完整时保留已观察 Token，但费用明确为空，不把未知成本解释为零。
+
 单 Agent 使用 LangChain `ToolStrategy` 输出结构化结论。三个必需只读工具均完成后，`wrap_model_call` 中间件会把下一轮可用工具收窄为结构化结论工具，并强制工具选择；这既保留真实工具循环，也防止兼容模型对已完成查询反复调用。默认调查工具预算为 6 次，递归限制仍作为第二道终止边界。
 
 Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlchemy 在当前任务租约事务中写入规范化 Evidence Board。PostgreSQL 复合外键阻止专业报告跨调查引用证据；这类业务完整性不依赖 LangGraph checkpoint 或模型自觉。

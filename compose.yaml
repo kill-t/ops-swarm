@@ -31,6 +31,8 @@ x-investigation-worker: &investigation-worker
     LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0}
     LLM_THINKING_MODE: ${LLM_THINKING_MODE:-provider_default}
     LLM_STRUCTURED_OUTPUT_METHOD: ${LLM_STRUCTURED_OUTPUT_METHOD:-json_schema}
+    EVALUATION_INPUT_COST_PER_MILLION_USD: ${EVALUATION_INPUT_COST_PER_MILLION_USD:-}
+    EVALUATION_OUTPUT_COST_PER_MILLION_USD: ${EVALUATION_OUTPUT_COST_PER_MILLION_USD:-}
   depends_on:
     control-migrate:
       condition: service_completed_successfully
