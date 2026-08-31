@@ -173,13 +173,13 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent` 并保存对应 `prompt_version`；多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |
 | 时间 | 创建、首次开始、完成和更新时间均使用 `TIMESTAMPTZ` |
 
-成功状态必须有结果和完成时间，失败状态必须有错误和完成时间。排队或运行状态不能提前写完成时间。模型名在 Worker 实际成功执行后写入，避免排队配置与真实处理模型不一致。
+成功状态必须有结果和完成时间，失败状态必须有错误和完成时间。排队或运行状态不能提前写完成时间。模型名在 Worker 实际成功执行后写入，避免排队配置与真实处理模型不一致。历史运行迁移时回填 `data_source_mode=frozen`；字段没有服务端默认值，后续创建必须由应用显式写入。冻结运行成功时保存评测 `metrics`，现场运行没有固定真值，只保存 `result.tool_call_count` 并保持 `metrics` 为空。
 
 ### 4.5 work_items
 
@@ -191,7 +191,7 @@ erDiagram
 | 重试 | `attempt_count`、`max_attempts` 和有限 `last_error` |
 | 时间 | 创建、更新和终态完成时间 |
 
-领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
+领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，连接 `investigation_runs` 并只领取与 Worker 数据源模式一致的行，再使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
 
 任务类型当前支持 `run_single_agent_investigation` 和 `run_multi_agent_investigation`。应用在创建任务时由 `mode` 确定类型，Worker 处理前再次校验两者一致，不能让模型或提示词选择执行路径。
 

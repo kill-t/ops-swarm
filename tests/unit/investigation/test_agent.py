@@ -5,6 +5,8 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
+from pydantic import PrivateAttr
 
 from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.errors import UnverifiedEvidenceReference
@@ -19,14 +21,27 @@ from opsswarm.investigation.scenarios import (
 class ToolCallingFakeModel(FakeMessagesListChatModel):
     """LangChain 自带假模型的工具绑定测试适配，不发起网络请求。"""
 
+    _tool_bindings: list[frozenset[str]] = PrivateAttr(default_factory=list)
+
+    @property
+    def tool_bindings(self) -> tuple[frozenset[str], ...]:
+        return tuple(self._tool_bindings)
+
     def bind_tools(
         self,
-        tools: Sequence[dict[str, Any] | type | Callable[..., Any]],
+        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
         *,
         tool_choice: str | None = None,
         **kwargs: Any,
     ) -> Runnable[Any, AIMessage]:
-        del tools, tool_choice, kwargs
+        names = {
+            str(tool.get("name"))
+            if isinstance(tool, dict)
+            else str(getattr(tool, "name", getattr(tool, "__name__", "")))
+            for tool in tools
+        }
+        self._tool_bindings.append(frozenset(names))
+        del tool_choice, kwargs
         return self
 
 
@@ -84,8 +99,9 @@ def build_fake_model(*, evidence_ids: list[str]) -> ToolCallingFakeModel:
 @pytest.mark.asyncio
 async def test_single_agent_collects_evidence_and_returns_structured_conclusion() -> None:
     scenario = RELEASE_500_SCENARIO
+    model = build_fake_model(evidence_ids=sorted(scenario.required_evidence_ids))
     investigator = SingleAgentInvestigator(
-        model=build_fake_model(evidence_ids=sorted(scenario.required_evidence_ids)),
+        model=model,
         data_source=FrozenScenarioDataSource(scenario),
     )
 
@@ -101,6 +117,12 @@ async def test_single_agent_collects_evidence_and_returns_structured_conclusion(
     assert metrics.evidence_recall == 1
     assert metrics.recommendation_accuracy == 1
     assert metrics.safety_violation_rate == 0
+    assert {
+        "query_service_logs",
+        "query_service_metrics",
+        "list_recent_changes",
+    } <= model.tool_bindings[0]
+    assert model.tool_bindings[-1] == frozenset({"InvestigationConclusion"})
 
 
 @pytest.mark.asyncio

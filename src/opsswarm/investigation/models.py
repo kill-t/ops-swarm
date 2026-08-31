@@ -67,6 +67,13 @@ class InvestigationMode(StrEnum):
     MULTI_AGENT = "multi_agent"
 
 
+class InvestigationDataSourceMode(StrEnum):
+    """一次持久调查使用冻结证据还是真实现场证据。"""
+
+    FROZEN = "frozen"
+    LIVE = "live"
+
+
 class InvestigationRunStatus(StrEnum):
     """持久化调查运行状态。"""
 

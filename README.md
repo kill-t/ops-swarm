@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付三十九个小切片：确定性版本 500 故障模拟、纯领域 Incident 状态机、PostgreSQL 事故持久化、FastAPI 控制面、单 Agent 调查基线、持久调查 Worker、LangGraph 并行调查基线、PostgreSQL checkpoint 恢复、多 Agent Worker 路由、Evidence Board、根因假设质疑、版本化处置计划、精确版本审批请求、审批决定与过期收敛、确定性白名单执行器、逐次恢复验证、可重放 SSE 时间线、工程师关闭与告警复发、Vue 3 Incident 作战室、作战室处置链路聚合展示、三故障版本化调查评测集、评测结果 PostgreSQL 持久化与只读查询、只读评测面板、评测实验身份与运行遥测、真实模型尝试生命周期、DeepSeek 兼容适配、真实模型三场景批量对照、处置建议契约与评测集 v2、确定性处置能力映射、数据库连接池配置回滚计划模板、数据库连接池确定性故障演练、配置回滚受控执行与恢复验证、持久恢复验证调度 Worker、Redis 不可用确定性处置闭环、真实 Redis 与受控故障代理、Prometheus 指标与恢复验证、Prometheus 只读调查数据源、结构化日志与 Loki 只读调查数据源，以及持久变更记录与只读调查数据源。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付四十个小切片：前三十九步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系以及 Prometheus、Loki、变更记录三个独立现场数据源；第 40 步把三类现场证据组合为统一只读数据源，并让调查任务把 `frozen` 或 `live` 模式持久化后再由对应 Worker 领取。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件和调查至验证六阶段摘要，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -68,6 +68,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Prometheus 只读调查数据源](docs/architecture/37-prometheus-investigation-data-source.md)
 - [结构化日志与 Loki 只读调查数据源](docs/architecture/38-structured-logs-and-loki-investigation.md)
 - [持久变更记录模拟器与只读调查数据源](docs/architecture/39-change-record-simulator-and-investigation.md)
+- [统一现场数据源与调查 Worker 安全切换](docs/architecture/40-unified-live-investigation-worker.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -81,24 +82,26 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 7. 人工审批、白名单执行器和幂等操作。
 8. 恢复验证、失败恢复与时间线 UI。
 9. 评测集以及单 Agent、多 Agent 对比。
-10. 组合三类真实现场数据源，再接入 OpenTelemetry、GitHub 或 MCP 工具。
+10. 组合三类真实现场数据源并安全切换持久 Worker。
+11. 接入 OpenTelemetry，再评估 GitHub、GitLab 或 MCP 只读工具。
 
-阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
+阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
 ## 单 Agent 与多 Agent 任务模式
 
-开始调查接口的 `mode` 可取 `single_agent` 或 `multi_agent`，省略时保持单 Agent 默认值。模式不是模型决定的，而是作为业务运行和持久任务的一部分写入 PostgreSQL。
+开始调查接口的 `mode` 可取 `single_agent` 或 `multi_agent`，`data_source_mode` 可取 `frozen` 或 `live`；两者省略时分别使用单 Agent 和冻结数据。模式不是模型决定的，而是作为业务运行和持久任务的一部分写入 PostgreSQL。
 
 ```json
 {
   "expected_version": 1,
   "actor_id": "engineer-001",
   "reason": "使用并行调查模式",
-  "mode": "multi_agent"
+  "mode": "multi_agent",
+  "data_source_mode": "live"
 }
 ```
 
-Worker 校验运行模式与任务类型一致：单 Agent 调用 LangChain 基线；多 Agent 查询对应线程是否已有 checkpoint，存在则恢复，不存在才启动新图。
+Worker 校验运行模式、任务类型和数据源模式一致：单 Agent 调用 LangChain 基线；多 Agent 查询对应线程是否已有 checkpoint，存在则恢复，不存在才启动新图。冻结 Worker 不会领取现场任务，现场 Worker 也不会领取冻结任务。
 
 ## LangGraph PostgreSQL checkpoint
 
@@ -150,7 +153,7 @@ uv run python -m opsswarm.evaluation.main `
 
 ## 单 Agent 调查基线
 
-`opsswarm.investigation` 使用 LangChain 1.x 组装单 Agent 工具循环，但只暴露日志、指标和变更三个有界只读工具。结论必须符合 `InvestigationConclusion`，并且只能引用本轮工具实际返回的证据 ID。固定 `release_500` 场景用于离线计算根因 Top-1、证据召回、建议准确率、安全违规率和工具调用数。
+`opsswarm.investigation` 使用 LangChain 1.x 组装单 Agent 工具循环，但只暴露日志、指标和变更三个有界只读工具。结论必须符合 `InvestigationConclusion`，并且只能引用本轮工具实际返回的证据 ID。三类快照全部取得后，中间件会移除调查工具并只保留结构化结论工具，避免模型重复查询；单次运行默认最多调用 6 次调查工具。固定场景用于离线计算根因 Top-1、证据召回、建议准确率、安全违规率和工具调用数。
 
 默认测试使用假模型和冻结工具结果，不需要模型密钥或网络：
 
@@ -189,7 +192,7 @@ uv run python -m opsswarm.evaluation.real_batch_main `
 
 开始调查接口会在同一事务中保存 Incident 状态变化、`investigation_runs` 和 `work_items`。Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 领取任务，并通过到期时间和唯一租约令牌阻止迟到实例覆盖结果。
 
-当前 Worker 每次运行至多处理一个任务，需要显式配置真实模型：
+当前 Worker 每次运行至多处理一个任务。它会显式读取项目根目录 `.env` 中的模型配置；真实 `.env` 已被 Git 忽略：
 
 ```powershell
 $env:LLM_API_KEY = "本地模型服务密钥"
@@ -197,10 +200,17 @@ $env:LLM_MODEL = "模型名称"
 $env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
 $env:LLM_THINKING_MODE = "provider_default、enabled 或 disabled"
 $env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_calling"
+$env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main
 ```
 
-当前两种持久处理器都仍读取冻结 `release_500` 证据，主要用于公平验证任务、Agent 调用、checkpoint 和结果落库链路。真实 Prometheus、Loki 和变更记录已经接入各自的独立只读调查数据源；在统一现场数据源组合完成前不会与冻结证据混用，也不会把现场结果对照固定答案计算准确率。
+任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；`live` 由 `LiveInvestigationDataSource` 分别委托 Loki、Prometheus 和变更服务，任一来源失败都会进入既有任务重试，不回退为冻结证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
+
+不调用模型、一次验证三个 Agent 工具与现场系统的统一只读链路：
+
+```powershell
+uv run python -m opsswarm.investigation.live_smoke
+```
 
 不调用模型、直接验证 Agent 指标工具与真实 Prometheus 的只读链路：
 

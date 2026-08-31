@@ -139,7 +139,7 @@ LangGraph 1.x 用于：
 
 图状态只保存恢复工作流所需的可序列化数据和业务标识，不保存数据库 Session、网络客户端或未受控 Python 对象。Incident 与 `graph_thread_id` 的对应关系保存在业务库。
 
-当前并行图已经接入持久 Worker。API 把 `single_agent` 或 `multi_agent` 作为业务模式落库，Worker 同时校验对应任务类型。多 Agent 运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`：如果 checkpoint 不存在则提交初始状态，存在则使用同一线程和空输入恢复。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点。
+当前并行图已经接入持久 Worker。API 把 `single_agent` 或 `multi_agent` 作为业务模式、把 `frozen` 或 `live` 作为数据源模式共同落库，Worker 同时校验任务类型与自身数据源配置。多 Agent 运行使用 `investigation-run:{run_id}` 作为稳定 `thread_id`：如果 checkpoint 不存在则提交初始状态，存在则使用同一线程和空输入恢复。失败 superstep 中已经成功的并行节点保留 pending writes，恢复时只重新运行失败节点；恢复使用运行创建时已经冻结的数据源模式，不能因另一台 Worker 配置不同而切换证据来源。
 
 单 Agent 与多 Agent 最终都提交工具实际返回的规范化证据；多 Agent 额外提交三类专业报告。持久化入口再次校验结果证据集合、结论引用和报告引用，避免只依赖提示词或图节点保护业务库。
 
@@ -171,7 +171,7 @@ LangGraph 1.x 用于：
 - `database_pool_size`：固定演练负载需要 10 个连接；容量低于 10 时订单固定返回 `database_pool_timeout`，容量恢复为 50 后饱和度为 `0.2` 且订单恢复。状态接口同时返回饱和度和等待数，为后续只读验证探针提供稳定信号。
 - Redis 网络依赖：`order-service` 经固定 TCP 故障代理对独立 `lab-redis` 执行真实 `PING`；代理断开时订单固定返回 `redis_connection_unavailable`，通过 CAS 恢复连通后不可用比例变为 `0.0` 且订单恢复。
 
-当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。Agent 的指标、日志和变更工具均已能通过各自的只读适配器生成现场 Evidence，但统一现场数据源和分布式 trace 尚未接入，持久调查 Worker 因此仍使用冻结证据。
+当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。`LiveInvestigationDataSource` 按证据类型委托三个失败关闭的只读适配器，现场调查 Worker 已能完整提交 Evidence Board；冻结 Worker 仍作为默认值服务可重复评测。分布式 trace 尚未接入。
 
 如果多个故障同时存在，固定按版本故障、连接池故障、Redis 故障排序，避免一次请求的错误类型受分支顺序或随机数影响。版本与连接池状态保存在订单服务进程，Redis 断连状态保存在单副本代理进程；服务重启后都回到安全默认值。故障状态不是 Incident、审批或执行审计的业务事实。管理接口只暴露在 Compose 内网或 localhost，不作为生产接口设计；执行器仍不能访问 Docker Socket，Redis 代理后端也不能在运行时改变。
 
@@ -186,7 +186,7 @@ LangGraph 1.x 用于：
 | `GET /api/v1/incidents/{id}` | 查询 Incident 详情和当前版本 |
 | `GET /api/v1/incidents/{id}/workroom` | 用单条数据库查询读取最近调查及其处置链路摘要 |
 | `POST /api/v1/incidents/{id}/actions/close` | 工程师以当前版本关闭已恢复事故 |
-| `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单 Agent 或多 Agent |
+| `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子开始调查并创建持久任务，必须提供 `expected_version`，可选择单/多 Agent 与冻结/现场数据 |
 | `GET /api/v1/investigations/{run_id}` | 查询调查运行、结果、指标与错误 |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 查询已提交的结论、规范化证据、专业报告和引用 |
 | `POST /api/v1/investigations/{run_id}/action-plans` | 从已支持假设和证据生成版本化白名单计划 |

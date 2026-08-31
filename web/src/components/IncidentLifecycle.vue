@@ -26,6 +26,10 @@ function formatTime(value: string | null): string {
 function confidence(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
+
+function dataSourceLabel(value: "frozen" | "live"): string {
+  return value === "live" ? "真实现场" : "冻结基准";
+}
 </script>
 
 <template>
@@ -61,7 +65,10 @@ function confidence(value: number): string {
         <h4>调查运行</h4>
         <template v-if="snapshot.investigation">
           <strong>{{ snapshot.investigation.mode }}</strong>
-          <p>{{ snapshot.investigation.model_name ?? "等待 Worker 选择模型" }}</p>
+          <p>
+            {{ dataSourceLabel(snapshot.investigation.data_source_mode) }} ·
+            {{ snapshot.investigation.model_name ?? "等待 Worker 选择模型" }}
+          </p>
           <small>更新 {{ formatTime(snapshot.investigation.updated_at) }}</small>
         </template>
         <p v-else>尚未开始调查</p>

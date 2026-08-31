@@ -130,7 +130,7 @@ redis_unavailable_ratio < 0.01
 
 - 第 34 个切片交付时，Redis 可用性仍是进程内确定性模型；第 35 个切片已改为真实 Redis 与固定代理。
 - 第 35 个切片已支持确定性完全断连，但仍没有模拟延迟、丢包和主从切换。
-- Prometheus 指标调查适配器已在第 37 个切片实现；持久 Worker 仍读取冻结场景，等待 Loki 与变更数据源形成完整现场证据链。
+- Prometheus 指标调查适配器已在第 37 个切片实现；Loki、变更记录与统一现场 Worker 已在第 38～40 个切片完成，冻结场景继续专用于公平评测。
 - 浏览器作战室仍只读，没有可信身份与状态变更按钮。
 
 上述真实 Redis 与固定故障代理已在第 35 个切片落地：Docker Desktop 会出现独立 Redis 与代理容器，订单服务通过代理执行真实 `PING`，执行器仍只调用固定恢复接口而不接触 Docker Socket。后续再补结构化日志、Prometheus 指标和 OpenTelemetry trace。

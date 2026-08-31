@@ -93,6 +93,6 @@ uv run python -m opsswarm.investigation.change_smoke --lookback-hours 6
 
 ## 8. 下一步与面试表达
 
-三个独立现场数据源已经齐备，但持久 Worker 仍使用冻结场景。下一切片应实现组合数据源，把日志调用路由到 Loki、指标调用路由到 Prometheus、变更调用路由到变更服务，并通过显式运行配置切换 Worker；冻结数据源继续用于可重复评测，现场调查不对固定真值计算准确率。
+三个独立现场数据源在本切片结束时已经齐备。后续 [统一现场数据源与调查 Worker 安全切换](40-unified-live-investigation-worker.md) 已把日志调用路由到 Loki、指标调用路由到 Prometheus、变更调用路由到变更服务，并通过持久化模式选择对应 Worker；冻结数据源继续用于可重复评测，现场调查不对固定真值计算准确率。
 
 面试时可以这样表达：我没有把 Git 平台或数据库查询权限直接交给 Agent，而是先做了一个追加式变更事实边界。外部编号通过 PostgreSQL 唯一约束保证并发幂等，内容摘要阻止编号复用时静默漂移；Agent 只能查询固定服务和有限时间窗，响应还要经过大小、类型、时间和重复校验。变更事实与 Incident 不建立错误的前置外键，而是在调查时按服务与时间关联，进入 Evidence Board 后再绑定具体运行。

@@ -7,6 +7,7 @@ from opsswarm.investigation.changes import (
     ChangeInvestigationSettings,
 )
 from opsswarm.investigation.evaluation import compare_investigation_modes, evaluate_investigation
+from opsswarm.investigation.live import LiveInvestigationDataSource
 from opsswarm.investigation.loki import (
     LokiInvestigationSettings,
     LokiOnlyInvestigationDataSource,
@@ -21,6 +22,7 @@ from opsswarm.investigation.models import (
     InvestigationArtifacts,
     InvestigationComparison,
     InvestigationConclusion,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
@@ -51,12 +53,14 @@ __all__ = [
     "InvestigationArtifacts",
     "InvestigationComparison",
     "InvestigationConclusion",
+    "InvestigationDataSourceMode",
     "InvestigationMetrics",
     "InvestigationMode",
     "InvestigationRequest",
     "InvestigationRunStatus",
     "InvestigationRunResult",
     "LangGraphParallelInvestigator",
+    "LiveInvestigationDataSource",
     "LokiInvestigationSettings",
     "LokiOnlyInvestigationDataSource",
     "MultiAgentInvestigationResult",

@@ -13,6 +13,8 @@ from opsswarm.checkpoints import (
 )
 from opsswarm.database import Database, DatabaseSettings
 from opsswarm.database.asyncio_compat import create_selector_event_loop
+from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.models import InvestigationDataSourceMode
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
 from opsswarm.investigation.parallel_model import (
     LangChainConclusionSynthesizer,
@@ -21,12 +23,14 @@ from opsswarm.investigation.parallel_model import (
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
 from opsswarm.investigation.settings import LlmSettings, create_openai_compatible_model
+from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.worker.processor import (
-    LangChainBaselineProcessor,
+    LangChainInvestigationProcessor,
     LangGraphMultiAgentProcessor,
     ModeRoutingProcessor,
 )
 from opsswarm.worker.runner import InvestigationWorker
+from opsswarm.worker.settings import InvestigationWorkerSettings
 
 
 def utc_now() -> datetime:
@@ -38,17 +42,25 @@ async def run_once() -> bool:
 
     database_settings = DatabaseSettings()
     checkpoint_settings = CheckpointSettings()
+    worker_settings = InvestigationWorkerSettings.from_dotenv()
     ensure_separate_checkpoint_database(
         checkpoint_settings.checkpoint_database_url,
         database_settings.database_url,
     )
     database = Database(database_settings.database_url)
     try:
-        llm_settings = LlmSettings()
+        llm_settings = LlmSettings.from_dotenv()
         model = create_openai_compatible_model(llm_settings)
+        data_source: InvestigationDataSource
+        if worker_settings.data_source_mode is InvestigationDataSourceMode.LIVE:
+            data_source = LiveInvestigationDataSource()
+            evaluation_scenario = None
+        else:
+            data_source = FrozenScenarioDataSource(RELEASE_500_SCENARIO)
+            evaluation_scenario = RELEASE_500_SCENARIO
         async with open_checkpoint_saver(checkpoint_settings.checkpoint_database_url) as saver:
             multi_agent_investigator = LangGraphParallelInvestigator(
-                data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
+                data_source=data_source,
                 analyst=LangChainSpecialistAnalyst(
                     model,
                     structured_output_method=llm_settings.structured_output_method,
@@ -60,13 +72,18 @@ async def run_once() -> bool:
                 checkpointer=saver,
             )
             processor = ModeRoutingProcessor(
-                single_agent=LangChainBaselineProcessor(
+                single_agent=LangChainInvestigationProcessor(
                     model=model,
                     model_name=llm_settings.model,
+                    data_source=data_source,
+                    data_source_mode=worker_settings.data_source_mode,
+                    evaluation_scenario=evaluation_scenario,
                 ),
                 multi_agent=LangGraphMultiAgentProcessor(
                     investigator=multi_agent_investigator,
                     model_name=llm_settings.model,
+                    data_source_mode=worker_settings.data_source_mode,
+                    evaluation_scenario=evaluation_scenario,
                 ),
             )
             worker = InvestigationWorker(
@@ -74,6 +91,7 @@ async def run_once() -> bool:
                 processor=processor,
                 worker_id=f"{socket.gethostname()}-{os.getpid()}"[:100],
                 clock=utc_now,
+                data_source_mode=worker_settings.data_source_mode,
             )
             return await worker.run_once()
     finally:

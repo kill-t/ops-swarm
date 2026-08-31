@@ -36,6 +36,10 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_mode",
         ),
         CheckConstraint(
+            "data_source_mode IN ('frozen', 'live')",
+            name="ck_investigation_runs_data_source_mode",
+        ),
+        CheckConstraint(
             "mode <> 'multi_agent' OR graph_thread_id IS NOT NULL",
             name="ck_investigation_runs_multi_thread",
         ),
@@ -60,6 +64,12 @@ class InvestigationRunRow(Base):
         CheckConstraint(
             "metrics IS NULL OR status = 'succeeded'",
             name="ck_investigation_runs_metrics_shape",
+        ),
+        CheckConstraint(
+            "status <> 'succeeded' OR "
+            "(data_source_mode = 'frozen' AND metrics IS NOT NULL) OR "
+            "(data_source_mode = 'live' AND metrics IS NULL)",
+            name="ck_investigation_runs_metric_scope",
         ),
         CheckConstraint(
             "status <> 'failed' OR last_error IS NOT NULL",
@@ -95,6 +105,7 @@ class InvestigationRunRow(Base):
         nullable=False,
     )
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    data_source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     graph_thread_id: Mapped[str | None] = mapped_column(String(100), unique=True)

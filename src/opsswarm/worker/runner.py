@@ -11,6 +11,7 @@ from opsswarm.investigation.models import (
     EvidenceObservation,
     HypothesisChallenge,
     InvestigationArtifacts,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
@@ -30,7 +31,7 @@ class ProcessorOutcome(StrictModel):
     evidence_items: tuple[EvidenceObservation, ...]
     specialist_reports: tuple[SpecialistReport, ...] = ()
     hypothesis_challenge: HypothesisChallenge
-    metrics: InvestigationMetrics
+    metrics: InvestigationMetrics | None
     model_name: str
 
     @model_validator(mode="after")
@@ -51,6 +52,7 @@ class ProcessorContext(StrictModel):
 
     request: InvestigationRequest
     mode: InvestigationMode
+    data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
     work_item_kind: WorkItemKind
     graph_thread_id: str | None
 
@@ -75,6 +77,7 @@ class InvestigationWorker:
         lease_duration: timedelta = timedelta(minutes=2),
         base_retry_delay: timedelta = timedelta(seconds=5),
         max_retry_delay: timedelta = timedelta(minutes=5),
+        data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     ) -> None:
         if base_retry_delay < timedelta(0):
             raise ValueError("base_retry_delay 不能小于 0")
@@ -87,6 +90,7 @@ class InvestigationWorker:
         self._lease_duration = lease_duration
         self._base_retry_delay = base_retry_delay
         self._max_retry_delay = max_retry_delay
+        self._data_source_mode = data_source_mode
 
     async def run_once(self) -> bool:
         """领取至多一个任务；无可用任务返回 False。"""
@@ -95,6 +99,7 @@ class InvestigationWorker:
             worker_id=self._worker_id,
             occurred_at=self._clock(),
             lease_duration=self._lease_duration,
+            data_source_mode=self._data_source_mode,
         )
         if claimed is None:
             return False
@@ -107,6 +112,7 @@ class InvestigationWorker:
                 ProcessorContext(
                     request=claimed.request,
                     mode=claimed.run.mode,
+                    data_source_mode=claimed.run.data_source_mode,
                     work_item_kind=claimed.work_item.kind,
                     graph_thread_id=claimed.run.graph_thread_id,
                 )

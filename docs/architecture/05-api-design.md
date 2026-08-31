@@ -43,13 +43,13 @@ SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件�
 
 告警接收先按 `(source, external_event_id)` 判断完全重复，再锁定同指纹未关闭 Incident。命中 `resolved` 时，在同一事务内保存新告警与 `incident.alert_attached`，随后执行 `reopen` 并追加状态事件；响应返回更新后的 `investigating` 快照。命中 `closed` 不会重新打开历史事故，而是创建新 Incident。完全重复告警始终返回原 Incident，即使它后来已经关闭。
 
-开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent` 以保持现有客户端兼容。非法模式返回结构化 `422`。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
+开始调查请求支持可选 `mode`：`single_agent` 或 `multi_agent`，默认 `single_agent`；也支持 `data_source_mode`：`frozen` 或 `live`，默认 `frozen`。非法值返回结构化 `422`。两种选择都会进入调查运行响应并持久化，客户端不能在重试或恢复阶段改写。多 Agent 响应中的 `investigation.graph_thread_id` 使用业务运行 ID 确定性生成；该字段用于恢复关联，不是外部调用方可以指定的输入。
 
 ### 2.1 Evidence Board 读取语义
 
 Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint。`queued` 或重试中的运行返回当前状态、空结论和空集合；成功运行返回按稳定业务标识排序的证据、专业报告和 `hypotheses`。单 Agent 可以有证据但没有专业报告，多 Agent 同时返回报告及其 `evidence_ids`。主根因假设返回 `supported`、`contested` 或 `insufficient_evidence` 状态，并包含规则版本和逐证据关系。每条证据暴露 SHA-256 `content_hash`，用于调用方检测内容漂移，不把它宣传为外部来源签名。
 
-作战室聚合接口只返回值班工程师需要快速浏览的摘要，不替代上述明细接口。它使用一条 PostgreSQL 查询选择 Incident 最近调查、该调查最高版本计划、计划唯一审批、计划最近执行及其唯一验证运行，并同时计算证据、报告、步骤和样本数量。不存在的后续阶段返回 `null`，原始日志、原始证据和动作参数不会进入聚合响应。具体一致性与选择规则见 [Incident 作战室只读聚合投影](21-incident-workroom-projection.md)。
+作战室聚合接口只返回值班工程师需要快速浏览的摘要，不替代上述明细接口。它使用一条 PostgreSQL 查询选择 Incident 最近调查、该调查最高版本计划、计划唯一审批、计划最近执行及其唯一验证运行，并同时计算证据、报告、步骤和样本数量。调查摘要显式返回 `data_source_mode`，页面显示“冻结基准”或“真实现场”，避免把现场运行误认为评测结果。不存在的后续阶段返回 `null`，原始日志、原始证据和动作参数不会进入聚合响应。具体一致性与选择规则见 [Incident 作战室只读聚合投影](21-incident-workroom-projection.md)。
 
 ### 2.2 处置计划生成语义
 

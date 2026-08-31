@@ -10,6 +10,7 @@ from opsswarm.approval import ApprovalRequestStatus
 from opsswarm.execution import ExecutionStatus
 from opsswarm.investigation.models import (
     HypothesisStatus,
+    InvestigationDataSourceMode,
     InvestigationMode,
     InvestigationRunStatus,
     RootCause,
@@ -29,6 +30,7 @@ class WorkroomInvestigationSummary(StrictWorkroomModel):
 
     id: UUID
     mode: InvestigationMode
+    data_source_mode: InvestigationDataSourceMode
     status: InvestigationRunStatus
     prompt_version: str
     model_name: str | None

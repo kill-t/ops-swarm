@@ -27,6 +27,7 @@ from opsswarm.investigation.models import (
     HypothesisChallenge,
     HypothesisStatus,
     InvestigationArtifacts,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
@@ -94,6 +95,7 @@ class InvestigationStore:
         reason: str,
         max_attempts: int = 3,
         mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
+        data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     ) -> StartedInvestigation:
         """在同一事务中迁移 Incident、创建运行并投递持久任务。"""
 
@@ -116,6 +118,7 @@ class InvestigationStore:
                 id=run_id,
                 incident_id=incident_id,
                 mode=mode.value,
+                data_source_mode=data_source_mode.value,
                 status=InvestigationRunStatus.QUEUED.value,
                 prompt_version=_PROMPT_VERSION_BY_MODE[mode],
                 graph_thread_id=(
@@ -297,6 +300,7 @@ class InvestigationStore:
         worker_id: str,
         occurred_at: datetime,
         lease_duration: timedelta,
+        data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     ) -> ClaimedInvestigation | None:
         """跳过其他 Worker 已锁定任务，并接管到期租约。"""
 
@@ -309,7 +313,12 @@ class InvestigationStore:
             for _ in range(100):
                 row = await session.scalar(
                     select(WorkItemRow)
+                    .join(
+                        InvestigationRunRow,
+                        InvestigationRunRow.id == WorkItemRow.investigation_run_id,
+                    )
                     .where(
+                        InvestigationRunRow.data_source_mode == data_source_mode.value,
                         or_(
                             and_(
                                 WorkItemRow.status == WorkItemStatus.PENDING.value,
@@ -320,7 +329,7 @@ class InvestigationStore:
                                 WorkItemRow.status == WorkItemStatus.RUNNING.value,
                                 WorkItemRow.locked_until <= occurred_at,
                             ),
-                        )
+                        ),
                     )
                     .order_by(WorkItemRow.available_at, WorkItemRow.created_at)
                     .with_for_update(skip_locked=True)
@@ -375,7 +384,7 @@ class InvestigationStore:
         evidence_items: tuple[EvidenceObservation, ...],
         specialist_reports: tuple[SpecialistReport, ...],
         hypothesis_challenge: HypothesisChallenge,
-        metrics: InvestigationMetrics,
+        metrics: InvestigationMetrics | None,
         model_name: str,
     ) -> StoredInvestigationRun:
         """只有当前有效租约可以提交最终结构化结果。"""
@@ -405,7 +414,7 @@ class InvestigationStore:
             run_row.status = InvestigationRunStatus.SUCCEEDED.value
             run_row.model_name = model_name
             run_row.result = result.model_dump(mode="json")
-            run_row.metrics = metrics.model_dump(mode="json")
+            run_row.metrics = metrics.model_dump(mode="json") if metrics is not None else None
             run_row.last_error = None
             run_row.completed_at = occurred_at
             run_row.updated_at = occurred_at
@@ -625,6 +634,7 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         id=row.id,
         incident_id=row.incident_id,
         mode=InvestigationMode(row.mode),
+        data_source_mode=InvestigationDataSourceMode(row.data_source_mode),
         status=InvestigationRunStatus(row.status),
         prompt_version=row.prompt_version,
         graph_thread_id=row.graph_thread_id,

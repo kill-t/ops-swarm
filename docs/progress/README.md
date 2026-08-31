@@ -80,3 +80,4 @@
 - [37 - Prometheus 只读调查数据源](37-prometheus-investigation-data-source.md)
 - [38 - 结构化日志与 Loki 只读调查数据源](38-structured-logs-and-loki-investigation.md)
 - [39 - 持久变更记录模拟器与只读调查数据源](39-change-record-simulator-and-investigation.md)
+- [40 - 统一现场数据源与调查 Worker 安全切换](40-unified-live-investigation-worker.md)

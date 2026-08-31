@@ -1,4 +1,5 @@
 export type InvestigationMode = "single_agent" | "multi_agent";
+export type InvestigationDataSourceMode = "frozen" | "live";
 export type InvestigationRunStatus = "queued" | "running" | "succeeded" | "failed";
 export type HypothesisStatus = "supported" | "contested" | "insufficient_evidence";
 export type RootCause =
@@ -20,6 +21,7 @@ export type VerificationStatus = "running" | "passed" | "failed";
 export interface WorkroomInvestigationSummary {
   id: string;
   mode: InvestigationMode;
+  data_source_mode: InvestigationDataSourceMode;
   status: InvestigationRunStatus;
   prompt_version: string;
   model_name: string | null;

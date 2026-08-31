@@ -98,7 +98,7 @@ Invoke-WebRequest http://127.0.0.1:18001/metrics
 
 - 三个 Gauge 是确定性故障快照，不是生产流量的窗口聚合；
 - Prometheus 只抓取 `order-service`，尚未采集 API、Worker、PostgreSQL 或 Redis Exporter；
-- Prometheus 与 Loki 调查适配器已在后续切片实现，但持久调查 Worker 仍等待变更数据源形成完整现场证据链；
+- Prometheus、Loki、变更记录与统一现场调查 Worker 已在后续第 37～40 个切片完成；
 - 尚未接入 Alertmanager、Grafana 和 OpenTelemetry；
 - Prometheus 只适用于本地演练，不具备生产鉴权、高可用和长期存储。
 

@@ -12,6 +12,7 @@ from opsswarm.investigation.models import (
     EvidenceRelation,
     HypothesisStatus,
     InvestigationConclusion,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRequest,
@@ -32,6 +33,7 @@ class StoredInvestigationRun(StrictModel):
     id: UUID
     incident_id: UUID
     mode: InvestigationMode
+    data_source_mode: InvestigationDataSourceMode
     status: InvestigationRunStatus
     prompt_version: str
     graph_thread_id: str | None

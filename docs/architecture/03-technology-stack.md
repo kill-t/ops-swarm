@@ -86,7 +86,9 @@ Agent 测试分三层：
 
 当前已经把 `langgraph` 和 `langgraph-checkpoint-postgres` 声明为直接生产依赖，实现 Graph API 并行调查和 `AsyncPostgresSaver` 跨连接恢复。并行测试不能依赖分支完成顺序，所有进入综合提示的证据和报告都按稳定业务标识排序。checkpoint 反序列化使用显式项目类型白名单，不允许数据库内容触发任意 Python 类型加载。
 
-持久 Worker 当前通过业务枚举在 LangChain 单 Agent 与 LangGraph 多 Agent 之间确定性路由。多 Agent 处理器先查询线程 checkpoint 是否存在，再决定首次运行或恢复；模式选择不进入模型提示词。
+持久 Worker 通过业务枚举在 LangChain 单 Agent 与 LangGraph 多 Agent 之间确定性路由，并按持久化的 `frozen` 或 `live` 数据源模式分池领取任务。多 Agent 处理器先查询线程 checkpoint 是否存在，再决定首次运行或恢复；Agent 模式和数据源模式都不进入模型提示词，也不由模型选择。
+
+单 Agent 使用 LangChain `ToolStrategy` 输出结构化结论。三个必需只读工具均完成后，`wrap_model_call` 中间件会把下一轮可用工具收窄为结构化结论工具，并强制工具选择；这既保留真实工具循环，也防止兼容模型对已完成查询反复调用。默认调查工具预算为 6 次，递归限制仍作为第二道终止边界。
 
 Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlchemy 在当前任务租约事务中写入规范化 Evidence Board。PostgreSQL 复合外键阻止专业报告跨调查引用证据；这类业务完整性不依赖 LangGraph checkpoint 或模型自觉。
 

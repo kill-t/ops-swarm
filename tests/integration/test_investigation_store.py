@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,6 +28,7 @@ from opsswarm.investigation.models import (
     HypothesisStatus,
     InvestigationArtifacts,
     InvestigationConclusion,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
@@ -40,6 +41,7 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.persistence import InvestigationStore, StartedInvestigation
 from opsswarm.investigation.persistence.tables import (
     HypothesisEvidenceRow,
+    InvestigationRunRow,
     SpecialistReportEvidenceRow,
 )
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
@@ -130,6 +132,7 @@ async def start_investigation(
     suffix: str = "001",
     max_attempts: int = 3,
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
+    data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     incident_store = IncidentStore(session_factory)
     incident = await incident_store.ingest_alert(
@@ -154,6 +157,7 @@ async def start_investigation(
         reason="开始自动调查",
         max_attempts=max_attempts,
         mode=mode,
+        data_source_mode=data_source_mode,
     )
     return store, started
 
@@ -171,6 +175,7 @@ async def test_start_atomically_persists_incident_run_and_work_item(
     assert persisted_incident.incident.status is IncidentStatus.INVESTIGATING
     assert persisted_incident.incident.version == 2
     assert persisted_run.mode is InvestigationMode.SINGLE_AGENT
+    assert persisted_run.data_source_mode is InvestigationDataSourceMode.FROZEN
     assert persisted_run.graph_thread_id is None
     assert persisted_run.status is InvestigationRunStatus.QUEUED
     assert persisted_work.kind is WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION
@@ -437,6 +442,14 @@ class RecordingProcessor:
         return make_outcome()
 
 
+class LiveRecordingProcessor(RecordingProcessor):
+    """现场调查成功但不伪造冻结真值评分。"""
+
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+        self.contexts.append(context)
+        return make_outcome().model_copy(update={"metrics": None})
+
+
 class FailingProcessor:
     """模拟可重试的模型超时。"""
 
@@ -492,6 +505,14 @@ async def test_worker_processes_one_item_and_persists_structured_result(
         EvidenceRelation.SUPPORTS
     }
 
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(InvestigationRunRow)
+                .where(InvestigationRunRow.id == started.run.id)
+                .values(metrics=None)
+            )
+
     idle_times = iter([BASE_TIME + timedelta(seconds=4)])
     idle_worker = InvestigationWorker(
         store=store,
@@ -500,6 +521,59 @@ async def test_worker_processes_one_item_and_persists_structured_result(
         clock=lambda: clock_from(idle_times),
     )
     assert await idle_worker.run_once() is False
+
+
+async def test_live_worker_only_claims_live_task_and_keeps_metrics_unscored(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(
+        database_session_factory,
+        suffix="live-source",
+        data_source_mode=InvestigationDataSourceMode.LIVE,
+    )
+    frozen_processor = RecordingProcessor()
+    frozen_worker = InvestigationWorker(
+        store=store,
+        processor=frozen_processor,
+        worker_id="frozen-worker",
+        clock=lambda: BASE_TIME + timedelta(seconds=2),
+    )
+
+    assert await frozen_worker.run_once() is False
+    assert frozen_processor.contexts == []
+
+    live_processor = LiveRecordingProcessor()
+    live_times = iter(
+        [
+            BASE_TIME + timedelta(seconds=3),
+            BASE_TIME + timedelta(seconds=4),
+        ]
+    )
+    live_worker = InvestigationWorker(
+        store=store,
+        processor=live_processor,
+        worker_id="live-worker",
+        clock=lambda: clock_from(live_times),
+        data_source_mode=InvestigationDataSourceMode.LIVE,
+    )
+
+    assert await live_worker.run_once() is True
+    assert live_processor.contexts[0].data_source_mode is InvestigationDataSourceMode.LIVE
+    completed = await store.get_run(started.run.id)
+    assert completed.status is InvestigationRunStatus.SUCCEEDED
+    assert completed.data_source_mode is InvestigationDataSourceMode.LIVE
+    assert completed.metrics is None
+    assert completed.result is not None and completed.result.tool_call_count == 3
+
+    frozen_metrics = make_outcome().metrics
+    assert frozen_metrics is not None
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(InvestigationRunRow)
+                .where(InvestigationRunRow.id == started.run.id)
+                .values(metrics=frozen_metrics.model_dump(mode="json"))
+            )
 
 
 async def test_concurrent_plan_generation_is_idempotent_and_keeps_incident_investigating(

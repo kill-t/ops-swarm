@@ -24,7 +24,7 @@ sequenceDiagram
     Worker->>DB: 携带租约令牌提交成功或失败
 ```
 
-API 只负责快速投递，不在请求进程中调用模型。Worker 和 API 共享领域模型及业务数据库，但分别创建、释放数据库连接池。`ProcessorContext` 同时携带请求、模式、持久任务类型和 `graph_thread_id`；确定性路由器选择 LangChain 单 Agent 或 LangGraph 多 Agent，测试仍可通过 `InvestigationProcessor` 协议注入假处理器。
+API 只负责快速投递，不在请求进程中调用模型。Worker 和 API 共享领域模型及业务数据库，但分别创建、释放数据库连接池。`ProcessorContext` 同时携带请求、Agent 模式、数据源模式、持久任务类型和 `graph_thread_id`；确定性路由器选择 LangChain 单 Agent 或 LangGraph 多 Agent，测试仍可通过 `InvestigationProcessor` 协议注入假处理器。
 
 ## 3. 持久状态
 
@@ -75,7 +75,7 @@ Worker 提交结果必须同时匹配任务状态、租约令牌和租约有效�
 
 ## 5. API 契约
 
-`POST /api/v1/incidents/{id}/actions/start-investigation` 仍要求 `expected_version`、`actor_id` 和原因，并允许可选 `mode`，响应同时包含：
+`POST /api/v1/incidents/{id}/actions/start-investigation` 仍要求 `expected_version`、`actor_id` 和原因，并允许可选 `mode` 与 `data_source_mode`，响应同时包含：
 
 - 迁移到 `investigating` 的 Incident 快照。
 - 状态为 `queued` 的 Investigation 快照。
@@ -98,20 +98,20 @@ uv run python -m opsswarm.control_plane.main --host 127.0.0.1 --port 8000
 $env:LLM_API_KEY = "本地模型服务密钥"
 $env:LLM_MODEL = "模型名称"
 $env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
+$env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main
 ```
 
-未显式设置密钥和模型名时 Worker 拒绝启动，持续集成也不会调用真实模型。当前处理器读取冻结 `release_500` 演练证据，不得描述为真实监控平台接入。
+未显式设置密钥和模型名时 Worker 拒绝启动，持续集成也不会调用真实模型。Worker 默认只领取 `frozen` 任务；显式设置 `OPSSWARM_WORKER_DATA_SOURCE_MODE=live` 后只领取 `live` 任务。模式随运行持久化，失败重试和 LangGraph 恢复不会切换数据源。
 
 ## 7. 当前限制与下一步
 
 - Worker 是单次命令，没有轮询间隔、信号处理、心跳或优雅停机。
-- `investigation_runs.result` 暂以受 Pydantic 校验的 JSONB 保存；Evidence Board 还未拆分为独立证据表。
-- 单 Agent 和多 Agent 处理器都仍使用冻结数据源，尚未接真实遥测平台。
+- 现场与冻结模式需要分别启动；后续守护进程应部署为两个独立工作池。
+- 任务只保存最近错误与总尝试次数，尚未建立每次 Worker 尝试的独立历史和模型费用遥测。
 - API 没有身份认证，开始调查的 `actor_id` 仍是不可信审计声明。
-- 尚未通过 SSE 把运行状态推送给前端。
 
-下一阶段把图返回的证据与专业报告拆入 Evidence Board 业务表。无论图内部怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
+后续优先把单次命令改为可优雅停机的常驻工作池，并通过 OpenTelemetry 关联 API 投递、任务尝试、Agent 节点和工具调用。无论内部实现怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
 
 ## 8. 面试表达
 

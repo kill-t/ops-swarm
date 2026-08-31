@@ -54,6 +54,7 @@ from opsswarm.investigation.models import (
     EvidenceRelation,
     HypothesisStatus,
     InvestigationConclusion,
+    InvestigationDataSourceMode,
     InvestigationMetrics,
     InvestigationMode,
     InvestigationRunResult,
@@ -159,6 +160,7 @@ class StartInvestigationRequest(StrictApiModel):
     actor_id: str = Field(min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
+    data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
 
 
 class CloseIncidentRequest(StrictApiModel):
@@ -175,6 +177,7 @@ class InvestigationRunResponse(StrictApiModel):
     id: UUID
     incident_id: UUID
     mode: InvestigationMode
+    data_source_mode: InvestigationDataSourceMode
     status: InvestigationRunStatus
     prompt_version: str
     graph_thread_id: str | None

@@ -14,6 +14,7 @@ from opsswarm.incidents import IncidentNotFound
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.models import (
     HypothesisStatus,
+    InvestigationDataSourceMode,
     InvestigationMode,
     InvestigationRunStatus,
     RootCause,
@@ -173,6 +174,7 @@ def _investigation_summary(
     return WorkroomInvestigationSummary(
         id=row.id,
         mode=InvestigationMode(row.mode),
+        data_source_mode=InvestigationDataSourceMode(row.data_source_mode),
         status=InvestigationRunStatus(row.status),
         prompt_version=row.prompt_version,
         model_name=row.model_name,

@@ -6,7 +6,11 @@ from opsswarm.investigation.scenarios import (
     RELEASE_500_SCENARIO,
     FrozenScenarioDataSource,
 )
-from opsswarm.investigation.tools import EvidenceCollector, create_investigation_tools
+from opsswarm.investigation.tools import (
+    INVESTIGATION_TOOL_NAMES,
+    EvidenceCollector,
+    create_investigation_tools,
+)
 
 
 def test_read_only_tools_return_stable_evidence_and_record_calls() -> None:
@@ -25,6 +29,7 @@ def test_read_only_tools_return_stable_evidence_and_record_calls() -> None:
     assert change_result[0]["evidence_id"] == "change-order-release-rc1"
     assert collector.returned_ids == RELEASE_500_SCENARIO.required_evidence_ids
     assert collector.tool_call_count == 3
+    assert collector.called_tool_names == INVESTIGATION_TOOL_NAMES
 
 
 def test_tool_rejects_unbounded_lookback() -> None:

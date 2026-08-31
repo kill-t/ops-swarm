@@ -40,7 +40,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 - `log`、`metric` 或 `change` 类型。
 - 数据来源、简短摘要、UTC 观察时间和结构化属性。
 
-`InvestigationDataSource` 是框架无关的只读协议。`FrozenScenarioDataSource` 为评测返回固定证据；`PrometheusOnlyInvestigationDataSource`、`LokiOnlyInvestigationDataSource` 与 `ChangeApiOnlyInvestigationDataSource` 已分别返回真实指标、日志和变更 Evidence，未负责的端口明确返回空集合。后续统一现场数据源继续实现同一协议，不需要修改 Agent 的业务输入。
+`InvestigationDataSource` 是框架无关的只读协议。`FrozenScenarioDataSource` 为评测返回固定证据；`LiveInvestigationDataSource` 按日志、指标和变更分别委托 `LokiOnlyInvestigationDataSource`、`PrometheusOnlyInvestigationDataSource` 与 `ChangeApiOnlyInvestigationDataSource`。两种实现共享 Agent 业务输入，但不会在同一次运行内混用或自动回退。
 
 ### 3.2 结构化结论
 
@@ -58,7 +58,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 | `query_service_metrics` | 读取标准化指标证据 | 服务名；回看 1～60 分钟 |
 | `list_recent_changes` | 读取标准化变更证据 | 服务名；回看 1～24 小时 |
 
-工具没有 Shell、SQL、容器控制或写接口。系统提示词只是第一层约束；真正安全边界来自没有向模型注册危险能力、Pydantic 参数校验、数据源权限和返回证据校验。
+工具没有 Shell、SQL、容器控制或写接口。系统提示词只是第一层约束；真正安全边界来自没有向模型注册危险能力、Pydantic 参数校验、数据源权限和返回证据校验。三个工具均完成后，LangChain 中间件只保留结构化结论工具，防止模型重复访问现场；默认最多执行 6 次调查工具调用，递归限制负责最终终止。
 
 处置建议只是结构化语义，模型不能执行它。`rollback_release`、`rollback_configuration` 和 `restore_dependency` 都必须设置 `requires_human_approval=true`；只有 `continue_investigation` 不要求审批。后续还要由持久化审批、能力映射和白名单执行器独立校验，新增建议枚举不会自动获得执行权限。
 
@@ -87,7 +87,7 @@ LangChain 的高层 Agent 循环负责让模型选择工具、读取工具结果
 
 - 当前只有一个故障场景，指标只能证明管线和判分可重复，不能代表模型泛化能力。
 - 调查运行、结构化结果和评测指标已经持久化；Agent 内部节点级进度尚未 checkpoint。
-- 持久调查 Worker 仍使用冻结证据；真实 Prometheus、Loki 与变更服务目前分别接入三个工具冒烟，统一现场数据源尚未接入。
+- 持久调查 Worker 已支持冻结与现场两种显式模式；冻结模式用于公平评测，现场模式不计算依赖固定真值的准确率。
 - 当前 Agent loop 没有 checkpoint、并行调查节点和质疑循环；保存基线后才使用 LangGraph 增加这些能力。
 - Token、成本、耗时和模型版本只有真实模型评测才有意义，后续作为显式端到端评测记录。
 

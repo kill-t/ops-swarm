@@ -57,7 +57,11 @@ Pydantic 投影模型额外校验阶段不能跳过前置记录。Incident 可�
 {
   "incident_id": "00000000-0000-0000-0000-000000000000",
   "incident_version": 5,
-  "investigation": { "status": "succeeded", "mode": "multi_agent" },
+  "investigation": {
+    "status": "succeeded",
+    "mode": "multi_agent",
+    "data_source_mode": "live"
+  },
   "evidence_board": {
     "evidence_count": 3,
     "specialist_report_count": 3,
@@ -85,7 +89,7 @@ SSE 收到新的 `incident.status_changed` 后重新读取投影，因为重要�
 
 ## 6. 展示与测试
 
-前端使用六张固定阶段卡片。尚未到达的阶段明确显示等待原因，不用空白或颜色猜测状态；桌面为三列、平板为两列、390 像素窄屏为单列。
+前端使用六张固定阶段卡片。调查卡片把 `frozen` 映射为“冻结基准”、把 `live` 映射为“真实现场”，与 Agent 模式和模型名一起展示；尚未到达的阶段明确显示等待原因，不用空白或颜色猜测状态。桌面为三列、平板为两列、390 像素窄屏为单列。
 
 验收覆盖：
 

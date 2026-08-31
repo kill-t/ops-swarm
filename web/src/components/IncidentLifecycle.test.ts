@@ -10,6 +10,7 @@ const SNAPSHOT: IncidentWorkroomSnapshot = {
   investigation: {
     id: "run-001",
     mode: "multi_agent",
+    data_source_mode: "live",
     status: "succeeded",
     prompt_version: "multi-agent-parallel-v1",
     model_name: "fake-model",
@@ -46,6 +47,7 @@ describe("Incident 调查与处置链路", () => {
     });
 
     expect(wrapper.text()).toContain("multi_agent");
+    expect(wrapper.text()).toContain("真实现场 · fake-model");
     expect(wrapper.text()).toContain("3 条证据 · 3 份报告");
     expect(wrapper.text()).toContain("新版本导致接口大量返回 500");
     expect(wrapper.text()).toContain("尚未生成计划");

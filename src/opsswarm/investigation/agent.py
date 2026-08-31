@@ -1,6 +1,15 @@
 """基于 LangChain 的单 Agent 调查循环。"""
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+    wrap_model_call,
+)
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -15,6 +24,7 @@ from opsswarm.investigation.models import (
     InvestigationRunResult,
 )
 from opsswarm.investigation.tools import (
+    INVESTIGATION_TOOL_NAMES,
     EvidenceCollector,
     InvestigationDataSource,
     create_investigation_tools,
@@ -29,6 +39,10 @@ SYSTEM_PROMPT = """你是 OpsSwarm 的单 Agent 调查基线。
 依赖不可用用 restore_dependency；证据不足或没有明确受控动作时用 continue_investigation。
 最终必须返回约定的结构化调查结论。"""
 
+TOOL_POLICY_PROMPT = """日志、指标和最近变更工具各调用一次，并优先在第一轮并行调用。
+工具返回的是当前调查时间窗的完整只读快照，不要重复查询同一个工具。
+收到三类工具结果后立即提交结构化调查结论，不再调用调查工具。"""
+
 
 class SingleAgentInvestigator:
     """为每次调查创建隔离的工具统计器并校验证据引用。"""
@@ -39,7 +53,7 @@ class SingleAgentInvestigator:
         model: BaseChatModel,
         data_source: InvestigationDataSource,
         recursion_limit: int = 12,
-        max_tool_calls: int | None = None,
+        max_tool_calls: int | None = 6,
     ) -> None:
         if recursion_limit < 2:
             raise ValueError("recursion_limit 不能小于 2")
@@ -64,7 +78,8 @@ class SingleAgentInvestigator:
         workflow = create_agent(
             model=self._model,
             tools=tools,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=f"{SYSTEM_PROMPT}\n{TOOL_POLICY_PROMPT}",
+            middleware=(_force_conclusion_after_complete_evidence(collector),),
             response_format=ToolStrategy(
                 InvestigationConclusion,
                 handle_errors=False,
@@ -114,3 +129,23 @@ class SingleAgentInvestigator:
             f"开始时间：{request.started_at.isoformat()}\n"
             "请查询日志、指标和最近变更，并给出带证据的最可能根因。"
         )
+
+
+def _force_conclusion_after_complete_evidence(
+    collector: EvidenceCollector,
+) -> AgentMiddleware[Any, Any, InvestigationConclusion]:
+    """三类现场快照齐备后只保留结构化结论工具，阻止重复外部查询。"""
+
+    @wrap_model_call(name="ForceInvestigationConclusion")
+    async def force_conclusion(
+        request: ModelRequest[Any],
+        handler: Callable[
+            [ModelRequest[Any]],
+            Awaitable[ModelResponse[InvestigationConclusion]],
+        ],
+    ) -> ModelResponse[InvestigationConclusion]:
+        if collector.called_tool_names >= INVESTIGATION_TOOL_NAMES:
+            request = request.override(tools=[], tool_choice="required")
+        return await handler(request)
+
+    return force_conclusion

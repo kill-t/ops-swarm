@@ -12,6 +12,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from opsswarm.investigation.errors import InvestigationToolBudgetExceeded
 from opsswarm.investigation.models import EvidenceObservation
 
+QUERY_LOGS_TOOL_NAME = "query_service_logs"
+QUERY_METRICS_TOOL_NAME = "query_service_metrics"
+LIST_CHANGES_TOOL_NAME = "list_recent_changes"
+INVESTIGATION_TOOL_NAMES = frozenset(
+    {
+        QUERY_LOGS_TOOL_NAME,
+        QUERY_METRICS_TOOL_NAME,
+        LIST_CHANGES_TOOL_NAME,
+    }
+)
+
 
 class InvestigationDataSource(Protocol):
     """把真实观测系统与 Agent 框架隔离的只读端口。"""
@@ -66,6 +77,7 @@ class EvidenceCollector:
     tool_call_count: int = 0
     max_tool_calls: int | None = None
     _observations: dict[str, EvidenceObservation] = field(default_factory=dict, repr=False)
+    _called_tool_names: set[str] = field(default_factory=set, repr=False)
     _lock: Lock = field(default_factory=Lock, repr=False)
 
     @property
@@ -82,13 +94,27 @@ class EvidenceCollector:
         with self._lock:
             return tuple(self._observations[key] for key in sorted(self._observations))
 
-    def record(self, observations: Sequence[EvidenceObservation]) -> None:
+    @property
+    def called_tool_names(self) -> frozenset[str]:
+        """返回本轮已经完成的调查工具名，供 Agent 收敛策略读取。"""
+
+        with self._lock:
+            return frozenset(self._called_tool_names)
+
+    def record(
+        self,
+        tool_name: str,
+        observations: Sequence[EvidenceObservation],
+    ) -> None:
         """并行工具调用时也原子更新本轮统计。"""
 
         with self._lock:
+            if tool_name not in INVESTIGATION_TOOL_NAMES:
+                raise ValueError(f"未知调查工具：{tool_name}")
             if self.max_tool_calls is not None and self.tool_call_count >= self.max_tool_calls:
                 raise InvestigationToolBudgetExceeded("调查工具调用次数超过显式预算")
             self.tool_call_count += 1
+            self._called_tool_names.add(tool_name)
             for item in observations:
                 existing = self._observations.get(item.evidence_id)
                 if existing is not None and existing != item:
@@ -108,7 +134,7 @@ def create_investigation_tools(
 ) -> tuple[BaseTool, ...]:
     """为单次调查创建三个只读、有界且可审计的 LangChain 工具。"""
 
-    @langchain_tool("query_service_logs", args_schema=ServiceMinuteQuery)
+    @langchain_tool(QUERY_LOGS_TOOL_NAME, args_schema=ServiceMinuteQuery)
     def query_service_logs(
         service_name: str,
         lookback_minutes: int = 15,
@@ -119,10 +145,10 @@ def create_investigation_tools(
             service_name=service_name,
             lookback_minutes=lookback_minutes,
         )
-        collector.record(observations)
+        collector.record(QUERY_LOGS_TOOL_NAME, observations)
         return _serialize_observations(observations)
 
-    @langchain_tool("query_service_metrics", args_schema=ServiceMinuteQuery)
+    @langchain_tool(QUERY_METRICS_TOOL_NAME, args_schema=ServiceMinuteQuery)
     def query_service_metrics(
         service_name: str,
         lookback_minutes: int = 15,
@@ -133,10 +159,10 @@ def create_investigation_tools(
             service_name=service_name,
             lookback_minutes=lookback_minutes,
         )
-        collector.record(observations)
+        collector.record(QUERY_METRICS_TOOL_NAME, observations)
         return _serialize_observations(observations)
 
-    @langchain_tool("list_recent_changes", args_schema=ServiceHourQuery)
+    @langchain_tool(LIST_CHANGES_TOOL_NAME, args_schema=ServiceHourQuery)
     def list_recent_changes(
         service_name: str,
         lookback_hours: int = 6,
@@ -147,7 +173,7 @@ def create_investigation_tools(
             service_name=service_name,
             lookback_hours=lookback_hours,
         )
-        collector.record(observations)
+        collector.record(LIST_CHANGES_TOOL_NAME, observations)
         return _serialize_observations(observations)
 
     return query_service_logs, query_service_metrics, list_recent_changes

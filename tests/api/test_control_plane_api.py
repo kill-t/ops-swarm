@@ -611,6 +611,36 @@ async def test_start_multi_agent_investigation_persists_graph_thread(
     assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
 
 
+async def test_start_live_investigation_persists_explicit_data_source_mode(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-live-source-001"),
+    )
+    incident_id = created.json()["incident"]["id"]
+
+    started = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "使用真实现场证据",
+            "mode": "single_agent",
+            "data_source_mode": "live",
+        },
+    )
+
+    assert started.status_code == 200
+    investigation = started.json()["investigation"]
+    assert investigation["data_source_mode"] == "live"
+    assert investigation["metrics"] is None
+
+    workroom = await control_client.get(f"/api/v1/incidents/{incident_id}/workroom")
+    assert workroom.status_code == 200
+    assert workroom.json()["investigation"]["data_source_mode"] == "live"
+
+
 async def test_completed_investigation_exposes_normalized_evidence_board(
     control_client: httpx2.AsyncClient,
     database_session_factory: async_sessionmaker[AsyncSession],
@@ -1226,6 +1256,29 @@ async def test_start_investigation_rejects_unknown_mode(
             "actor_id": "engineer-001",
             "reason": "非法模式",
             "mode": "swarm_everything",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "request_validation_error"
+
+
+async def test_start_investigation_rejects_unknown_data_source_mode(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-invalid-data-source-mode"),
+    )
+    incident_id = created.json()["incident"]["id"]
+
+    response = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "非法数据来源模式",
+            "data_source_mode": "automatic_fallback",
         },
     )
 

@@ -8,12 +8,18 @@ from opsswarm.investigation.agent import SingleAgentInvestigator
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.evaluation import evaluate_investigation
 from opsswarm.investigation.models import (
+    InvestigationDataSourceMode,
     InvestigationMode,
     InvestigationRequest,
     MultiAgentInvestigationResult,
     WorkItemKind,
 )
-from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
+from opsswarm.investigation.scenarios import (
+    RELEASE_500_SCENARIO,
+    FrozenScenarioDataSource,
+    InvestigationScenario,
+)
+from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.worker.runner import InvestigationProcessor, ProcessorContext, ProcessorOutcome
 
 
@@ -35,29 +41,57 @@ class CheckpointedParallelInvestigator(Protocol):
         """从已有线程恢复调查图。"""
 
 
-class LangChainBaselineProcessor:
-    """使用冻结演练数据运行真实可注入模型；不连接生产遥测。"""
+class LangChainInvestigationProcessor:
+    """运行单 Agent，并只在提供冻结真值时计算准确率。"""
 
-    def __init__(self, *, model: BaseChatModel, model_name: str) -> None:
+    def __init__(
+        self,
+        *,
+        model: BaseChatModel,
+        model_name: str,
+        data_source: InvestigationDataSource,
+        data_source_mode: InvestigationDataSourceMode,
+        evaluation_scenario: InvestigationScenario | None,
+    ) -> None:
         self._investigator = SingleAgentInvestigator(
             model=model,
-            data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
+            data_source=data_source,
         )
         self._model_name = model_name
+        self._data_source_mode = data_source_mode
+        self._evaluation_scenario = evaluation_scenario
 
     async def process(self, context: ProcessorContext) -> ProcessorOutcome:
         _require_route(
             context,
             mode=InvestigationMode.SINGLE_AGENT,
             kind=WorkItemKind.RUN_SINGLE_AGENT_INVESTIGATION,
+            data_source_mode=self._data_source_mode,
         )
         artifacts = await self._investigator.investigate_with_evidence(context.request)
         return ProcessorOutcome(
             result=artifacts.result,
             evidence_items=artifacts.evidence_items,
             hypothesis_challenge=challenge_investigation(artifacts),
-            metrics=evaluate_investigation(artifacts.result, RELEASE_500_SCENARIO),
+            metrics=(
+                evaluate_investigation(artifacts.result, self._evaluation_scenario)
+                if self._evaluation_scenario is not None
+                else None
+            ),
             model_name=self._model_name,
+        )
+
+
+class LangChainBaselineProcessor(LangChainInvestigationProcessor):
+    """兼容既有冻结基线的单 Agent 处理器。"""
+
+    def __init__(self, *, model: BaseChatModel, model_name: str) -> None:
+        super().__init__(
+            model=model,
+            model_name=model_name,
+            data_source=FrozenScenarioDataSource(RELEASE_500_SCENARIO),
+            data_source_mode=InvestigationDataSourceMode.FROZEN,
+            evaluation_scenario=RELEASE_500_SCENARIO,
         )
 
 
@@ -69,15 +103,20 @@ class LangGraphMultiAgentProcessor:
         *,
         investigator: CheckpointedParallelInvestigator,
         model_name: str,
+        data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        evaluation_scenario: InvestigationScenario | None = RELEASE_500_SCENARIO,
     ) -> None:
         self._investigator = investigator
         self._model_name = model_name
+        self._data_source_mode = data_source_mode
+        self._evaluation_scenario = evaluation_scenario
 
     async def process(self, context: ProcessorContext) -> ProcessorOutcome:
         _require_route(
             context,
             mode=InvestigationMode.MULTI_AGENT,
             kind=WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION,
+            data_source_mode=self._data_source_mode,
         )
         thread_id = context.graph_thread_id
         if thread_id is None:
@@ -95,7 +134,11 @@ class LangGraphMultiAgentProcessor:
             evidence_items=outcome.evidence_items,
             specialist_reports=outcome.specialist_reports,
             hypothesis_challenge=outcome.hypothesis_challenge,
-            metrics=evaluate_investigation(result, RELEASE_500_SCENARIO),
+            metrics=(
+                evaluate_investigation(result, self._evaluation_scenario)
+                if self._evaluation_scenario is not None
+                else None
+            ),
             model_name=self._model_name,
         )
 
@@ -123,6 +166,11 @@ def _require_route(
     *,
     mode: InvestigationMode,
     kind: WorkItemKind,
+    data_source_mode: InvestigationDataSourceMode,
 ) -> None:
-    if context.mode is not mode or context.work_item_kind is not kind:
+    if (
+        context.mode is not mode
+        or context.work_item_kind is not kind
+        or context.data_source_mode is not data_source_mode
+    ):
         raise RuntimeError("调查运行模式与持久任务类型不匹配")
