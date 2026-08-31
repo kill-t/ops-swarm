@@ -23,8 +23,19 @@ class ChangeRecordRow(Base):
             name="uq_change_records_source_external_id",
         ),
         CheckConstraint(
-            "source = 'fault-lab-change-simulator'",
+            "source IN ('fault-lab-change-simulator', 'ci-deployment-ingestion')",
             name="ck_change_records_source",
+        ),
+        CheckConstraint(
+            "(source = 'fault-lab-change-simulator' AND source_identity = 'local-admin') OR "
+            "(source = 'ci-deployment-ingestion' AND source_identity <> 'local-admin' AND "
+            "source_identity ~ '^[a-z0-9][a-z0-9._-]{0,63}$')",
+            name="ck_change_records_source_identity",
+        ),
+        CheckConstraint(
+            "source <> 'ci-deployment-ingestion' OR "
+            "(change_type = 'deployment' AND details ? 'code_reference')",
+            name="ck_change_records_ci_deployment",
         ),
         CheckConstraint(
             "service_name = 'order-service'",
@@ -67,6 +78,7 @@ class ChangeRecordRow(Base):
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
     source: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_identity: Mapped[str] = mapped_column(String(64), nullable=False)
     external_change_id: Mapped[str] = mapped_column(String(100), nullable=False)
     service_name: Mapped[str] = mapped_column(String(100), nullable=False)
     change_type: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -135,16 +135,17 @@ class ChangeApiOnlyInvestigationDataSource:
 
         earliest = response.generated_at - timedelta(hours=lookback_hours)
         record_ids: set[UUID] = set()
-        external_ids: set[str] = set()
+        external_ids: set[tuple[str, str]] = set()
         observations: list[EvidenceObservation] = []
         for record in response.items:
-            if record.record_id in record_ids or record.change.external_change_id in external_ids:
+            external_identity = (record.source, record.change.external_change_id)
+            if record.record_id in record_ids or external_identity in external_ids:
                 raise InvestigationDataSourceFailure(
                     error_code="change_duplicate_record",
                     message="变更调查响应包含重复记录",
                 )
             record_ids.add(record.record_id)
-            external_ids.add(record.change.external_change_id)
+            external_ids.add(external_identity)
             if not earliest <= record.occurred_at <= response.generated_at:
                 raise InvestigationDataSourceFailure(
                     error_code="change_invalid_timestamp",
@@ -213,6 +214,8 @@ class ChangeApiOnlyInvestigationDataSource:
             "change_type": change.change_type,
             "external_change_id": change.external_change_id,
             "completed": change.completed,
+            "record_source": record.source,
+            "source_identity": record.source_identity,
         }
         if isinstance(change, DeploymentChange):
             attributes = {

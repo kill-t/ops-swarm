@@ -42,7 +42,7 @@ flowchart LR
 
 `change_records` 独立于 Incident。真实变更通常发生在告警和 Incident 创建之前，因此表不建立 Incident 外键；调查通过 `service_name` 和发生时间窗做相关性分析，进入 Evidence Board 后才与具体调查运行绑定。
 
-表保存 UUID、来源、外部变更号、服务、类型、精确 JSONB、内容 SHA-256、发生与记录时间。数据库约束固定来源、服务、类型、JSON 对象、摘要格式和时间顺序；`(source, external_change_id)` 唯一。
+表保存 UUID、来源、来源身份、外部变更号、服务、类型、精确 JSONB、内容 SHA-256、发生与记录时间。数据库约束固定来源、来源身份配对、服务、类型、JSON 对象、摘要格式和时间顺序；`(source, external_change_id)` 唯一。第 48 步新增的 CI/CD 来源只允许带完整代码引用的部署事实，本地管理入口仍固定为模拟器来源与 `local-admin` 身份。
 
 仓储使用 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`：首次写入返回 `201`；相同编号与相同规范内容返回原记录及 `deduplicated=true`、HTTP `200`；相同编号但内容不同返回 `409`。并发重复由唯一约束收敛为一条记录，不依赖“先查询再插入”。应用不提供更新或删除 API，Alembic 在表中存在记录时拒绝有损降级，服务重启后仍从 PostgreSQL 读取历史。
 
@@ -56,15 +56,15 @@ Agent 适配器进一步限制：
 - 路径和查询参数由代码固定，关闭系统代理继承，请求超时不超过 10 秒；
 - 响应最大 128 KiB，Pydantic 拒绝未知字段和未知变更类型；
 - 查询生成时间必须新鲜，记录必须位于请求窗口，入库时间不能异常晚于响应；
-- 记录 UUID 或外部编号重复、结果截断、非 2xx、坏 JSON、时间漂移都作为有限错误失败关闭，不能解释成“近期没有变更”。
+- 记录 UUID 或同一来源内的外部编号重复、结果截断、非 2xx、坏 JSON、时间漂移都作为有限错误失败关闭，不能解释成“近期没有变更”。
 
-通过校验后，一条记录对应一条 `change-simulator` Evidence。属性保留现有质疑与计划规则需要的 `change_type`、版本、配置前后值、依赖操作和 `completed`，同时增加外部变更号供审计；后续部署记录还可携带固定仓库与完整 Commit SHA，并由 [部署代码来源关联](46-deployment-commit-provenance.md) 与 GitHub Evidence 精确匹配。不把数据库行或任意原始 JSON 交给模型。
+通过校验后，一条记录对应一条 `change-simulator` Evidence。这个名称代表稳定的调查适配器，不等于上游事实都来自模拟器；属性通过 `record_source` 和 `source_identity` 保留真实持久来源。其余属性保留现有质疑与计划规则需要的 `change_type`、版本、配置前后值、依赖操作和 `completed`，同时增加外部变更号供审计；部署记录还可携带固定仓库与完整 Commit SHA，并由 [部署代码来源关联](46-deployment-commit-provenance.md) 与 GitHub Evidence 精确匹配。不把数据库行或任意原始 JSON 交给模型。
 
 ## 6. Compose 与数据库边界
 
 `change-service` 使用共享 `ops-swarm-runtime:local` 镜像，只加入 `control` 网络，通过 `control-migrate` 成功后启动。宿主端口仅绑定 `127.0.0.1:18002`，容器使用只读根文件系统、`/tmp` 临时卷、移除全部 capabilities 并禁止提权。
 
-记录写入既有业务数据库 `opsswarm` 和既有 `control-db-data` 卷，不新增 PostgreSQL 容器或数据卷。这样 Docker Desktop 中能看到一个项目 PostgreSQL 和一个 `change-service` 容器；重启变更服务不会丢记录。当前本地进程仍共用业务数据库账号，最小权限主要由网络与代码边界实现；生产化前必须拆分数据库角色。管理接口也没有生产鉴权，只适用于 localhost 与 Compose 私网故障演练。
+记录写入既有业务数据库 `opsswarm` 和既有 `control-db-data` 卷，不新增 PostgreSQL 容器或数据卷。这样 Docker Desktop 中能看到一个项目 PostgreSQL 和一个 `change-service` 容器；重启变更服务不会丢记录。当前本地进程仍共用业务数据库账号，最小权限主要由网络与代码边界实现；生产化前必须拆分数据库角色。本地管理接口没有生产鉴权，只适用于 localhost 与 Compose 私网故障演练；自动化部署事实改走[受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)。
 
 ## 7. 运行方式
 

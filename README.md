@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付四十七个小切片：前四十六步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源与部署 Commit 确定性关联；第 47 步把部署版本、固定仓库、完整 Commit SHA 和匹配状态展示到 Incident 作战室。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件、调查至验证六阶段摘要、部署代码来源和逐次 Worker 历史，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
+项目已交付四十八个小切片：前四十七步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 确定性关联与作战室展示；第 48 步增加默认关闭的受限 CI/CD 部署事件摄取，以 HMAC、固定仓库、事件时效、来源身份和 PostgreSQL 幂等保护可信代码引用。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。当前页面可以读取 Incident、实时事件、调查至验证六阶段摘要、部署代码来源和逐次 Worker 历史，也可以从持久评测历史下钻到实验配置、重复序号、单/多 Agent 指标、Token、成本、失败计数和逐场景证据；暂不提供浏览器状态变更命令。
 
 ## 为什么做 OpsSwarm
 
@@ -76,6 +76,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [GitHub 只读变更调查数据源](docs/architecture/45-github-readonly-change-source.md)
 - [部署版本与 GitHub Commit 确定性关联](docs/architecture/46-deployment-commit-provenance.md)
 - [作战室部署代码来源展示](docs/architecture/47-deployment-provenance-workroom.md)
+- [受限 CI/CD 部署事件摄取](docs/architecture/48-cicd-deployment-event-ingestion.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -99,6 +100,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 17. 建立服务、代码仓库、部署版本与 Commit SHA 的确定性映射。
 18. 在 Incident 作战室只读展示部署代码来源和匹配状态。
 19. 设计受限 CI/CD 部署事件摄取，自动写入可信代码引用。
+20. 补充构建产物 digest，让 Commit、镜像与运行版本形成确定性来源链。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -271,7 +273,7 @@ GitHub 文本只作为不可信证据数据输入 Agent，不能改变工具、�
 
 本机私有仓库无模型冒烟已经完成，现场 Worker 也已使用 `simulator_and_github` 常驻运行。部署事实现在可以携带固定仓库和完整 Commit SHA；组合来源只有在两者与 GitHub Commit Evidence 精确相等时才标记 `matched`。没有声明来源的历史部署保持 `not_declared`，当前窗口未观察到提交时标记 `commit_not_observed`，不会把任意最近提交误判为已经上线。作战室通过当前调查的持久 Evidence Board 展示这些状态，并再次校验关联 Evidence 与 GitHub Commit URL 白名单；页面不会重新查询 GitHub。
 
-变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定记录；查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
+变更服务作为 Compose 常驻容器运行在 `127.0.0.1:18002`。本地管理接口只接受发布、数据库连接池配置和 Redis 维护三种固定演练记录；默认关闭的 CI/CD 入口只接受 HMAC 认证、固定仓库、完整 Commit SHA 和成功状态的部署事实。查询接口仅支持 `order-service` 与 1～24 小时时间窗。记录保存在业务 PostgreSQL，重启 `change-service` 不会丢失。
 
 ## OpenTelemetry 调查追踪
 

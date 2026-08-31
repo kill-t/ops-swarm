@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.change_records import (
+    CI_DEPLOYMENT_SOURCE,
     ChangeRecordIdempotencyConflict,
     ChangeRecordStore,
     ConfigurationChange,
@@ -96,6 +97,51 @@ async def test_same_external_id_is_idempotent_but_content_drift_conflicts(
         )
 
 
+async def test_ci_source_is_isolated_and_rejects_deployment_time_drift(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store = ChangeRecordStore(database_session_factory)
+    change = DeploymentChange(
+        external_change_id="shared-delivery-1",
+        from_version="stable",
+        to_version="rc1",
+        code_reference=DeploymentCodeReference(
+            repository="kill-t/ops-swarm",
+            commit_sha=COMMIT_SHA,
+        ),
+    )
+    local = await store.record(change, occurred_at=NOW, recorded_at=NOW)
+    ci = await store.record(
+        change,
+        occurred_at=NOW - timedelta(minutes=1),
+        recorded_at=NOW,
+        source=CI_DEPLOYMENT_SOURCE,
+        source_identity="github-actions-production",
+    )
+
+    assert local.record.record_id != ci.record.record_id
+    assert ci.record.source == CI_DEPLOYMENT_SOURCE
+    assert ci.record.source_identity == "github-actions-production"
+
+    with pytest.raises(ChangeRecordIdempotencyConflict):
+        await store.record(
+            change,
+            occurred_at=NOW - timedelta(minutes=2),
+            recorded_at=NOW,
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="github-actions-production",
+        )
+
+    with pytest.raises(ChangeRecordIdempotencyConflict):
+        await store.record(
+            change,
+            occurred_at=NOW - timedelta(minutes=1),
+            recorded_at=NOW,
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="rotated-pipeline-identity",
+        )
+
+
 async def test_concurrent_same_change_creates_one_record(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -152,6 +198,7 @@ async def test_database_rejects_malformed_deployment_code_reference(
                     insert(ChangeRecordRow).values(
                         id=uuid4(),
                         source="fault-lab-change-simulator",
+                        source_identity="local-admin",
                         external_change_id="invalid-code-reference",
                         service_name="order-service",
                         change_type="deployment",
@@ -166,6 +213,78 @@ async def test_database_rejects_malformed_deployment_code_reference(
                             },
                             "completed": True,
                         },
+                        content_hash="0" * 64,
+                        occurred_at=NOW,
+                        recorded_at=NOW,
+                    )
+                )
+
+
+@pytest.mark.parametrize(
+    ("source", "source_identity", "change_type", "details"),
+    [
+        (
+            "fault-lab-change-simulator",
+            "github-actions-production",
+            "deployment",
+            {
+                "change_type": "deployment",
+                "external_change_id": "invalid-source-identity",
+                "from_version": "stable",
+                "to_version": "rc1",
+                "completed": True,
+            },
+        ),
+        (
+            "ci-deployment-ingestion",
+            "local-admin",
+            "deployment",
+            {
+                "change_type": "deployment",
+                "external_change_id": "invalid-admin-identity",
+                "from_version": "stable",
+                "to_version": "rc1",
+                "code_reference": {
+                    "repository": "kill-t/ops-swarm",
+                    "commit_sha": COMMIT_SHA,
+                },
+                "completed": True,
+            },
+        ),
+        (
+            "ci-deployment-ingestion",
+            "github-actions-production",
+            "configuration",
+            {
+                "change_type": "configuration",
+                "external_change_id": "invalid-ci-type",
+                "key": "database_pool_size",
+                "from_value": 50,
+                "to_value": 5,
+                "completed": True,
+            },
+        ),
+    ],
+)
+async def test_database_enforces_source_identity_and_ci_deployment_contract(
+    database_session_factory: async_sessionmaker[AsyncSession],
+    source: str,
+    source_identity: str,
+    change_type: str,
+    details: dict[str, object],
+) -> None:
+    async with database_session_factory() as session:
+        with pytest.raises(IntegrityError):
+            async with session.begin():
+                await session.execute(
+                    insert(ChangeRecordRow).values(
+                        id=uuid4(),
+                        source=source,
+                        source_identity=source_identity,
+                        external_change_id=details["external_change_id"],
+                        service_name="order-service",
+                        change_type=change_type,
+                        details=details,
                         content_hash="0" * 64,
                         occurred_at=NOW,
                         recorded_at=NOW,

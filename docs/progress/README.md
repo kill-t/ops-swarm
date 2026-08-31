@@ -88,3 +88,4 @@
 - [45 - GitHub 只读变更调查数据源](45-github-readonly-change-source.md)
 - [46 - 部署版本与 GitHub Commit 确定性关联](46-deployment-commit-provenance.md)
 - [47 - 作战室展示部署代码来源](47-deployment-provenance-workroom.md)
+- [48 - 受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)

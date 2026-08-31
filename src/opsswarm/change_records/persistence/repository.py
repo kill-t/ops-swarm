@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import cast
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -12,12 +13,16 @@ from opsswarm.change_records.errors import ChangeRecordIdempotencyConflict
 from opsswarm.change_records.models import (
     CHANGE_SOURCE,
     CHANGE_SPEC_ADAPTER,
+    CI_DEPLOYMENT_SOURCE,
+    LOCAL_ADMIN_SOURCE_IDENTITY,
     MAX_CHANGE_RECORDS,
     SUPPORTED_SERVICE,
     ChangeRecord,
     ChangeRecordPage,
+    ChangeRecordSource,
     ChangeRecordWriteResult,
     ChangeSpec,
+    SourceIdentity,
     change_content_hash,
 )
 from opsswarm.change_records.persistence.tables import ChangeRecordRow
@@ -35,11 +40,15 @@ class ChangeRecordStore:
         *,
         occurred_at: datetime,
         recorded_at: datetime,
+        source: ChangeRecordSource = CHANGE_SOURCE,
+        source_identity: SourceIdentity = LOCAL_ADMIN_SOURCE_IDENTITY,
     ) -> ChangeRecordWriteResult:
         """按来源与外部变更号幂等追加；内容漂移时拒绝复用。"""
 
         candidate = ChangeRecord(
             record_id=uuid4(),
+            source=source,
+            source_identity=source_identity,
             occurred_at=occurred_at,
             recorded_at=recorded_at,
             change=change,
@@ -48,6 +57,7 @@ class ChangeRecordStore:
         values = {
             "id": candidate.record_id,
             "source": candidate.source,
+            "source_identity": candidate.source_identity,
             "external_change_id": change.external_change_id,
             "service_name": candidate.service_name,
             "change_type": change.change_type,
@@ -71,13 +81,20 @@ class ChangeRecordStore:
 
             existing = await session.scalar(
                 select(ChangeRecordRow).where(
-                    ChangeRecordRow.source == CHANGE_SOURCE,
+                    ChangeRecordRow.source == candidate.source,
                     ChangeRecordRow.external_change_id == change.external_change_id,
                 )
             )
             if existing is None:
                 raise RuntimeError("变更记录幂等冲突后未找到已有记录")
             if existing.content_hash != content_hash:
+                raise ChangeRecordIdempotencyConflict(change.external_change_id)
+            if existing.source_identity != candidate.source_identity:
+                raise ChangeRecordIdempotencyConflict(change.external_change_id)
+            if (
+                candidate.source == CI_DEPLOYMENT_SOURCE
+                and existing.occurred_at != candidate.occurred_at
+            ):
                 raise ChangeRecordIdempotencyConflict(change.external_change_id)
             return ChangeRecordWriteResult(record=_record_from_row(existing), deduplicated=True)
 
@@ -122,8 +139,6 @@ class ChangeRecordStore:
 
 def _record_from_row(row: ChangeRecordRow) -> ChangeRecord:
     change = CHANGE_SPEC_ADAPTER.validate_python(row.details)
-    if row.source != CHANGE_SOURCE:
-        raise ValueError("变更记录来源不符合固定契约")
     if row.service_name != SUPPORTED_SERVICE:
         raise ValueError("变更记录服务不符合固定契约")
     if row.external_change_id != change.external_change_id:
@@ -134,7 +149,8 @@ def _record_from_row(row: ChangeRecordRow) -> ChangeRecord:
         raise ValueError("变更记录内容摘要校验失败")
     return ChangeRecord(
         record_id=row.id,
-        source=row.source,
+        source=cast(ChangeRecordSource, row.source),
+        source_identity=row.source_identity,
         service_name=row.service_name,
         occurred_at=row.occurred_at,
         recorded_at=row.recorded_at,

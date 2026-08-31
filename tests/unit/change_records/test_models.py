@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from opsswarm.change_records.models import (
+    CI_DEPLOYMENT_SOURCE,
     ChangeRecord,
     ConfigurationChange,
     DependencyMaintenanceChange,
@@ -121,4 +122,47 @@ def test_record_requires_timezone_and_monotonic_timestamps() -> None:
             occurred_at=current_time + timedelta(seconds=1),
             recorded_at=current_time,
             change=change,
+        )
+
+
+def test_ci_record_requires_non_admin_identity_and_full_deployment_reference() -> None:
+    current_time = datetime(2026, 8, 30, 12, tzinfo=UTC)
+    deployment = DeploymentChange(
+        external_change_id="delivery-1",
+        from_version="stable",
+        to_version="rc1",
+        code_reference=DeploymentCodeReference(
+            repository="kill-t/ops-swarm",
+            commit_sha=COMMIT_SHA,
+        ),
+    )
+
+    record = ChangeRecord(
+        record_id=UUID(int=2),
+        source=CI_DEPLOYMENT_SOURCE,
+        source_identity="github-actions-production",
+        occurred_at=current_time,
+        recorded_at=current_time,
+        change=deployment,
+    )
+
+    assert record.source_identity == "github-actions-production"
+
+    with pytest.raises(ValidationError):
+        ChangeRecord(
+            record_id=UUID(int=3),
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="local-admin",
+            occurred_at=current_time,
+            recorded_at=current_time,
+            change=deployment,
+        )
+    with pytest.raises(ValidationError):
+        ChangeRecord(
+            record_id=UUID(int=4),
+            source=CI_DEPLOYMENT_SOURCE,
+            source_identity="github-actions-production",
+            occurred_at=current_time,
+            recorded_at=current_time,
+            change=DependencyMaintenanceChange(external_change_id="redis-ci-1"),
         )

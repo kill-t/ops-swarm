@@ -1,8 +1,13 @@
-"""确定性变更记录模拟器。"""
+"""确定性变更记录与受限部署事件摄取。"""
 
+from opsswarm.change_records.deployment_ingestion import (
+    DeploymentEvent,
+    DeploymentIngestionSettings,
+)
 from opsswarm.change_records.errors import ChangeRecordIdempotencyConflict
 from opsswarm.change_records.models import (
     CHANGE_SOURCE,
+    CI_DEPLOYMENT_SOURCE,
     SUPPORTED_SERVICE,
     ChangeRecord,
     ChangeRecordListResponse,
@@ -17,6 +22,7 @@ from opsswarm.change_records.persistence import ChangeRecordStore
 
 __all__ = [
     "CHANGE_SOURCE",
+    "CI_DEPLOYMENT_SOURCE",
     "SUPPORTED_SERVICE",
     "ChangeRecord",
     "ChangeRecordIdempotencyConflict",
@@ -28,4 +34,6 @@ __all__ = [
     "DependencyMaintenanceChange",
     "DeploymentChange",
     "DeploymentCodeReference",
+    "DeploymentEvent",
+    "DeploymentIngestionSettings",
 ]

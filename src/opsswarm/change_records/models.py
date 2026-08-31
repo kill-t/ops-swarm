@@ -11,6 +11,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 CHANGE_SOURCE: Literal["fault-lab-change-simulator"] = "fault-lab-change-simulator"
+CI_DEPLOYMENT_SOURCE: Literal["ci-deployment-ingestion"] = "ci-deployment-ingestion"
+LOCAL_ADMIN_SOURCE_IDENTITY: Literal["local-admin"] = "local-admin"
+ChangeRecordSource = Literal["fault-lab-change-simulator", "ci-deployment-ingestion"]
 SUPPORTED_SERVICE: Literal["order-service"] = "order-service"
 MAX_CHANGE_RECORDS = 100
 ExternalChangeId = Annotated[
@@ -30,6 +33,10 @@ RepositorySlug = Annotated[
     ),
 ]
 CommitSha = Annotated[str, Field(pattern=r"^[0-9a-f]{40,64}$")]
+SourceIdentity = Annotated[
+    str,
+    Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$"),
+]
 
 
 class _StrictModel(BaseModel):
@@ -106,7 +113,8 @@ class ChangeRecord(_StrictModel):
     """追加写入 PostgreSQL 后的不可变变更事实。"""
 
     record_id: UUID
-    source: Literal["fault-lab-change-simulator"] = CHANGE_SOURCE
+    source: ChangeRecordSource = CHANGE_SOURCE
+    source_identity: SourceIdentity = LOCAL_ADMIN_SOURCE_IDENTITY
     service_name: Literal["order-service"] = SUPPORTED_SERVICE
     occurred_at: datetime
     recorded_at: datetime
@@ -123,6 +131,18 @@ class ChangeRecord(_StrictModel):
     def require_timestamp_order(self) -> Self:
         if self.occurred_at > self.recorded_at:
             raise ValueError("变更发生时间不能晚于记录时间")
+        return self
+
+    @model_validator(mode="after")
+    def require_source_contract(self) -> Self:
+        if self.source == CHANGE_SOURCE:
+            if self.source_identity != LOCAL_ADMIN_SOURCE_IDENTITY:
+                raise ValueError("本地变更模拟器必须使用固定来源身份")
+            return self
+        if self.source_identity == LOCAL_ADMIN_SOURCE_IDENTITY:
+            raise ValueError("CI/CD 摄取不能伪装成本地管理身份")
+        if not isinstance(self.change, DeploymentChange) or self.change.code_reference is None:
+            raise ValueError("CI/CD 摄取只接受带完整代码引用的部署事实")
         return self
 
 

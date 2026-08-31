@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from opsswarm.change_records.models import (
+    CI_DEPLOYMENT_SOURCE,
     ChangeRecord,
     ChangeRecordListResponse,
     ConfigurationChange,
@@ -37,10 +38,14 @@ def _record(
     change: DeploymentChange | ConfigurationChange | DependencyMaintenanceChange,
     *,
     minutes_ago: int,
+    source: str = "fault-lab-change-simulator",
+    source_identity: str = "local-admin",
 ) -> ChangeRecord:
     occurred_at = GENERATED_AT - timedelta(minutes=minutes_ago)
     return ChangeRecord(
         record_id=UUID(int=identifier),
+        source=source,  # type: ignore[arg-type]
+        source_identity=source_identity,
         occurred_at=occurred_at,
         recorded_at=occurred_at,
         change=change,
@@ -136,6 +141,8 @@ def test_change_tool_runs_fixed_query_and_collects_three_normalized_evidence() -
     assert attributes_by_type["deployment"]["repository"] == "kill-t/ops-swarm"
     assert attributes_by_type["deployment"]["commit_sha"] == COMMIT_SHA
     assert attributes_by_type["deployment"]["code_reference_status"] == "declared"
+    assert attributes_by_type["deployment"]["record_source"] == "fault-lab-change-simulator"
+    assert attributes_by_type["deployment"]["source_identity"] == "local-admin"
     assert attributes_by_type["configuration"]["to_value"] == 5
     assert attributes_by_type["dependency_maintenance"]["dependency"] == "redis"
     assert len(requests) == 1
@@ -155,6 +162,42 @@ def test_empty_response_is_honest_empty_evidence() -> None:
     )
 
     assert result == ()
+
+
+def test_same_external_id_from_different_sources_remains_two_auditable_facts() -> None:
+    change = DeploymentChange(
+        external_change_id="delivery-shared",
+        from_version="stable",
+        to_version="rc1",
+        code_reference=DeploymentCodeReference(
+            repository="kill-t/ops-swarm",
+            commit_sha=COMMIT_SHA,
+        ),
+    )
+    response = _response(
+        items=(
+            _record(1, change, minutes_ago=2),
+            _record(
+                2,
+                change,
+                minutes_ago=1,
+                source=CI_DEPLOYMENT_SOURCE,
+                source_identity="github-actions-production",
+            ),
+        )
+    )
+    transport, _ = _transport(response)
+
+    observations = _source(transport).list_recent_changes(
+        service_name="order-service",
+        lookback_hours=6,
+    )
+
+    assert len(observations) == 2
+    assert {item.attributes["record_source"] for item in observations} == {
+        "fault-lab-change-simulator",
+        CI_DEPLOYMENT_SOURCE,
+    }
 
 
 def test_logs_and_metrics_return_empty_without_network_call() -> None:
