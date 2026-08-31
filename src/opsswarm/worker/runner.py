@@ -1,6 +1,9 @@
-"""单次领取并处理持久调查任务的 Worker。"""
+"""单次或常驻领取并处理持久调查任务的 Worker。"""
 
+import asyncio
+import logging
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Protocol, Self
 
@@ -25,6 +28,8 @@ from opsswarm.investigation.models import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.observability import extract_trace_context, mark_span_error
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorOutcome(StrictModel):
@@ -78,6 +83,7 @@ class InvestigationWorker:
         worker_id: str,
         clock: Callable[[], datetime],
         lease_duration: timedelta = timedelta(minutes=2),
+        processing_timeout: timedelta = timedelta(seconds=100),
         base_retry_delay: timedelta = timedelta(seconds=5),
         max_retry_delay: timedelta = timedelta(minutes=5),
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
@@ -87,11 +93,16 @@ class InvestigationWorker:
             raise ValueError("base_retry_delay 不能小于 0")
         if max_retry_delay < base_retry_delay:
             raise ValueError("max_retry_delay 不能小于 base_retry_delay")
+        if processing_timeout <= timedelta(0):
+            raise ValueError("processing_timeout 必须大于 0")
+        if processing_timeout >= lease_duration:
+            raise ValueError("processing_timeout 必须小于 lease_duration")
         self._store = store
         self._processor = processor
         self._worker_id = worker_id
         self._clock = clock
         self._lease_duration = lease_duration
+        self._processing_timeout = processing_timeout
         self._base_retry_delay = base_retry_delay
         self._max_retry_delay = max_retry_delay
         self._data_source_mode = data_source_mode
@@ -108,6 +119,14 @@ class InvestigationWorker:
         )
         if claimed is None:
             return False
+        logger.info(
+            "领取调查任务 work_item_id=%s run_id=%s mode=%s data_source_mode=%s attempt=%s",
+            claimed.work_item.id,
+            claimed.run.id,
+            claimed.run.mode.value,
+            claimed.run.data_source_mode.value,
+            claimed.work_item.attempt_count,
+        )
         lease_token = claimed.work_item.lease_token
         if lease_token is None:
             raise RuntimeError("已领取任务缺少 lease_token")
@@ -130,14 +149,17 @@ class InvestigationWorker:
             set_status_on_exception=False,
         ) as span:
             try:
-                outcome = await self._processor.process(
-                    ProcessorContext(
-                        request=claimed.request,
-                        mode=claimed.run.mode,
-                        data_source_mode=claimed.run.data_source_mode,
-                        work_item_kind=claimed.work_item.kind,
-                        graph_thread_id=claimed.run.graph_thread_id,
-                    )
+                outcome = await asyncio.wait_for(
+                    self._processor.process(
+                        ProcessorContext(
+                            request=claimed.request,
+                            mode=claimed.run.mode,
+                            data_source_mode=claimed.run.data_source_mode,
+                            work_item_kind=claimed.work_item.kind,
+                            graph_thread_id=claimed.run.graph_thread_id,
+                        )
+                    ),
+                    timeout=self._processing_timeout.total_seconds(),
                 )
             except Exception as error:
                 mark_span_error(span, error)
@@ -147,6 +169,12 @@ class InvestigationWorker:
                     occurred_at=self._clock(),
                     error=_safe_error(error),
                     retry_delay=self._retry_delay(claimed.work_item.attempt_count),
+                )
+                logger.warning(
+                    "调查任务进入重试 work_item_id=%s run_id=%s error_code=%s",
+                    claimed.work_item.id,
+                    claimed.run.id,
+                    type(error).__name__[:100],
                 )
                 return True
 
@@ -162,7 +190,35 @@ class InvestigationWorker:
                 model_name=outcome.model_name,
             )
             span.set_status(Status(StatusCode.OK))
+            logger.info(
+                "完成调查任务 work_item_id=%s run_id=%s",
+                claimed.work_item.id,
+                claimed.run.id,
+            )
         return True
+
+    async def run_forever(
+        self,
+        *,
+        poll_interval: timedelta,
+        stop_event: asyncio.Event | None = None,
+    ) -> None:
+        """持续领取任务；停止后不再领取新任务，当前任务先完成结算。"""
+
+        if not timedelta(milliseconds=100) <= poll_interval <= timedelta(minutes=1):
+            raise ValueError("poll_interval 必须在 100 毫秒到 1 分钟之间")
+        while stop_event is None or not stop_event.is_set():
+            processed = await self.run_once()
+            if processed:
+                continue
+            if stop_event is None:
+                await asyncio.sleep(poll_interval.total_seconds())
+                continue
+            with suppress(TimeoutError):
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=poll_interval.total_seconds(),
+                )
 
     def _retry_delay(self, attempt_count: int) -> timedelta:
         multiplier = 2 ** max(attempt_count - 1, 0)

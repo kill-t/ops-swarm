@@ -5,7 +5,7 @@ from typing import Any, Literal, Self, cast
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ThinkingMode = Literal["provider_default", "enabled", "disabled"]
@@ -23,6 +23,15 @@ class LlmSettings(BaseSettings):
     temperature: float = Field(default=0, ge=0, le=2)
     thinking_mode: ThinkingMode = "provider_default"
     structured_output_method: StructuredOutputMethod = "json_schema"
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def normalize_optional_base_url(cls, value: object) -> object:
+        """Compose 的空可选变量等价于未配置，不传递无效空地址。"""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def ensure_real_model_is_explicit(self) -> Self:

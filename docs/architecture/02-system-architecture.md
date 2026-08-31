@@ -155,6 +155,7 @@ LangGraph 1.x 用于：
 
 - 控制面不引入专用 Redis 队列，避免演练环境 Redis 故障影响控制面，也减少 MVP 基础设施。
 - Worker 通过 `SELECT ... FOR UPDATE SKIP LOCKED` 原子领取可执行任务。
+- 调查 Worker 按 `frozen` 与 `live` 分为两个 Compose 常驻工作池；停机时先停止新领取，再在宽限期内结算当前任务。
 - 超过租约时间的任务可以重新领取；处理语义是至少一次，不承诺恰好一次。
 - `incident_events.id` 是全局递增游标。SSE 将它写入 `id:`，客户端重连时使用 `Last-Event-ID`。
 - API 先从数据库补发大于游标的事件，再进入短轮询或通知等待；数据库始终是时间线事实来源。
@@ -177,7 +178,7 @@ LangGraph 1.x 用于：
 - `database_pool_size`：固定演练负载需要 10 个连接；容量低于 10 时订单固定返回 `database_pool_timeout`，容量恢复为 50 后饱和度为 `0.2` 且订单恢复。状态接口同时返回饱和度和等待数，为后续只读验证探针提供稳定信号。
 - Redis 网络依赖：`order-service` 经固定 TCP 故障代理对独立 `lab-redis` 执行真实 `PING`；代理断开时订单固定返回 `redis_connection_unavailable`，通过 CAS 恢复连通后不可用比例变为 `0.0` 且订单恢复。
 
-当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。`LiveInvestigationDataSource` 按证据类型委托三个失败关闭的只读适配器，现场调查 Worker 已能完整提交 Evidence Board；冻结 Worker 仍作为默认值服务可重复评测。分布式 trace 尚未接入。
+当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。`LiveInvestigationDataSource` 按证据类型委托三个失败关闭的只读适配器，现场与冻结调查由独立常驻工作池运行。OpenTelemetry 使 API、持久队列、Agent 节点和只读工具请求保持跨进程 trace 关联。
 
 如果多个故障同时存在，固定按版本故障、连接池故障、Redis 故障排序，避免一次请求的错误类型受分支顺序或随机数影响。版本与连接池状态保存在订单服务进程，Redis 断连状态保存在单副本代理进程；服务重启后都回到安全默认值。故障状态不是 Incident、审批或执行审计的业务事实。管理接口只暴露在 Compose 内网或 localhost，不作为生产接口设计；执行器仍不能访问 Docker Socket，Redis 代理后端也不能在运行时改变。
 

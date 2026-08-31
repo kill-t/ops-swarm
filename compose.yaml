@@ -1,5 +1,46 @@
 x-opsswarm-runtime: &opsswarm-runtime
   image: ops-swarm-runtime:local
+  build:
+    context: .
+    dockerfile: docker/fault-lab.Dockerfile
+
+x-investigation-worker: &investigation-worker
+  <<: *opsswarm-runtime
+  init: true
+  command:
+    - python
+    - -m
+    - opsswarm.worker.main
+  restart: unless-stopped
+  stop_grace_period: 2m
+  environment: &investigation-worker-environment
+    OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+    OPSSWARM_CHECKPOINT_DATABASE_URL: postgresql://opsswarm:local-development-only@control-db:5432/opsswarm_checkpoints
+    OPSSWARM_WORKER_POLL_INTERVAL_SECONDS: ${OPSSWARM_WORKER_POLL_INTERVAL_SECONDS:-1}
+    OPSSWARM_WORKER_LEASE_DURATION_SECONDS: ${OPSSWARM_WORKER_LEASE_DURATION_SECONDS:-120}
+    OPSSWARM_WORKER_PROCESSING_TIMEOUT_SECONDS: ${OPSSWARM_WORKER_PROCESSING_TIMEOUT_SECONDS:-100}
+    OPSSWARM_WORKER_BASE_RETRY_DELAY_SECONDS: ${OPSSWARM_WORKER_BASE_RETRY_DELAY_SECONDS:-5}
+    OPSSWARM_WORKER_MAX_RETRY_DELAY_SECONDS: ${OPSSWARM_WORKER_MAX_RETRY_DELAY_SECONDS:-300}
+    OPSSWARM_OTEL_ENABLED: ${OPSSWARM_OTEL_ENABLED:-false}
+    OPSSWARM_OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    OPSSWARM_OTEL_SAMPLE_RATIO: ${OPSSWARM_OTEL_SAMPLE_RATIO:-1}
+    OPSSWARM_OTEL_EXPORT_TIMEOUT_SECONDS: ${OPSSWARM_OTEL_EXPORT_TIMEOUT_SECONDS:-2}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+    LLM_MODEL: ${LLM_MODEL:-}
+    LLM_BASE_URL: ${LLM_BASE_URL:-}
+    LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0}
+    LLM_THINKING_MODE: ${LLM_THINKING_MODE:-provider_default}
+    LLM_STRUCTURED_OUTPUT_METHOD: ${LLM_STRUCTURED_OUTPUT_METHOD:-json_schema}
+  depends_on:
+    control-migrate:
+      condition: service_completed_successfully
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
 
 services:
   jaeger:
@@ -41,9 +82,6 @@ services:
 
   control-migrate:
     <<: *opsswarm-runtime
-    build:
-      context: .
-      dockerfile: docker/fault-lab.Dockerfile
     command:
       - alembic
       - upgrade
@@ -279,6 +317,35 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
+      - lab
+
+  investigation-worker-frozen:
+    <<: *investigation-worker
+    environment:
+      <<: *investigation-worker-environment
+      OPSSWARM_WORKER_DATA_SOURCE_MODE: frozen
+    networks:
+      - control
+
+  investigation-worker-live:
+    <<: *investigation-worker
+    environment:
+      <<: *investigation-worker-environment
+      OPSSWARM_WORKER_DATA_SOURCE_MODE: live
+      OPSSWARM_INVESTIGATION_PROMETHEUS_BASE_URL: http://prometheus:9090
+      OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
+      OPSSWARM_INVESTIGATION_CHANGE_BASE_URL: http://change-service:8000
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+      change-service:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    networks:
+      - control
       - lab
 
   verification-worker:

@@ -32,6 +32,18 @@ def test_openai_compatible_model_is_created_without_network_request(
     assert model.temperature == 0
 
 
+def test_blank_base_url_is_treated_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Compose 传入空字符串时仍使用供应商默认地址。"""
+
+    monkeypatch.setenv("LLM_API_KEY", "test-only-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("LLM_BASE_URL", "   ")
+
+    settings = LlmSettings()
+
+    assert settings.base_url is None
+
+
 def test_model_factory_applies_explicit_provider_compatibility(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

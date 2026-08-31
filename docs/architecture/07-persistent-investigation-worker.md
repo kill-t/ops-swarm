@@ -4,7 +4,7 @@
 
 单 Agent 基线已经证明工具循环和离线评测可以重复运行，但进程内调用无法抵抗 API 或 Worker 重启。本阶段把“开始调查”变成一个持久化业务动作：Incident 状态、调查运行和待处理任务在同一个 PostgreSQL 事务中创建，再由独立 Worker 领取。
 
-初始切片只运行 `single_agent`；当前已经在相同任务租约边界内增加 `multi_agent` 模式和 checkpoint 恢复。常驻轮询、SSE 和真实观测平台仍未实现。
+初始切片只运行 `single_agent`；当前已经在相同任务租约边界内增加 `multi_agent` 模式、checkpoint 恢复、可重放 SSE、OpenTelemetry 追踪和常驻工作池。
 
 ## 2. 事务与进程边界
 
@@ -92,26 +92,27 @@ uv run alembic upgrade head
 uv run python -m opsswarm.control_plane.main --host 127.0.0.1 --port 8000
 ```
 
-当前 Worker 每次启动至多处理一个任务，然后退出：
+默认入口持续轮询，Compose 将冻结和现场数据拆成两个工作池：
 
 ```powershell
 $env:LLM_API_KEY = "本地模型服务密钥"
 $env:LLM_MODEL = "模型名称"
 $env:LLM_BASE_URL = "可选 OpenAI 兼容地址"
 $env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
-uv run python -m opsswarm.worker.main
+docker compose up -d investigation-worker-frozen investigation-worker-live
+uv run python -m opsswarm.worker.main --once
 ```
 
 未显式设置密钥和模型名时 Worker 拒绝启动，持续集成也不会调用真实模型。Worker 默认只领取 `frozen` 任务；显式设置 `OPSSWARM_WORKER_DATA_SOURCE_MODE=live` 后只领取 `live` 任务。模式随运行持久化，失败重试和 LangGraph 恢复不会切换数据源。
 
 ## 7. 当前限制与下一步
 
-- Worker 是单次命令，没有轮询间隔、信号处理、心跳或优雅停机。
-- 现场与冻结模式需要分别启动；后续守护进程应部署为两个独立工作池。
+- Compose 已将现场与冻结模式部署为两个独立常驻工作池，详见 [冻结与现场常驻调查工作池](42-persistent-investigation-worker-pools.md)。
+- 空闲轮询无需心跳；执行中仍依靠固定租约和硬超时，尚未增加长任务租约续期。
 - 任务只保存最近错误与总尝试次数，尚未建立每次 Worker 尝试的独立历史和模型费用遥测。
 - API 没有身份认证，开始调查的 `actor_id` 仍是不可信审计声明。
 
-后续优先把单次命令改为可优雅停机的常驻工作池，并通过 OpenTelemetry 关联 API 投递、任务尝试、Agent 节点和工具调用。无论内部实现怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
+后续优先把每次 Worker 尝试持久化，保存开始/结束、结果、稳定错误类型、Token 和估算费用。无论内部实现怎样变化，API 投递、任务租约、checkpoint 和最终结果审计保持稳定边界。
 
 ## 8. 面试表达
 

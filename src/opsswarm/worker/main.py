@@ -1,10 +1,14 @@
-"""独立 Worker 的单次处理命令入口。"""
+"""独立调查 Worker 的常驻与单次诊断入口。"""
 
+import argparse
 import asyncio
+import logging
 import os
+import signal
 import socket
 import sys
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 from opsswarm.checkpoints import (
     CheckpointSettings,
@@ -33,13 +37,27 @@ from opsswarm.worker.processor import (
 from opsswarm.worker.runner import InvestigationWorker
 from opsswarm.worker.settings import InvestigationWorkerSettings
 
+logger = logging.getLogger(__name__)
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-async def run_once() -> bool:
-    """使用显式模型配置处理一个持久任务，并确保释放数据库连接池。"""
+def parse_arguments(arguments: Sequence[str] | None = None) -> bool:
+    """解析一次处理模式；默认作为常驻轮询进程运行。"""
+
+    parser = argparse.ArgumentParser(description="启动 OpsSwarm 调查 Worker")
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="至多处理一个匹配任务后退出，便于本地诊断",
+    )
+    return bool(parser.parse_args(arguments).once)
+
+
+async def run(*, once: bool) -> bool | None:
+    """使用显式模型配置处理一次或持续轮询，并释放所有资源。"""
 
     database_settings = DatabaseSettings()
     checkpoint_settings = CheckpointSettings()
@@ -49,7 +67,9 @@ async def run_once() -> bool:
         database_settings.database_url,
     )
     database = Database(database_settings.database_url)
-    tracing_runtime = create_tracing_runtime("opsswarm-investigation-worker")
+    tracing_runtime = create_tracing_runtime(
+        f"opsswarm-investigation-worker-{worker_settings.data_source_mode.value}"
+    )
     tracer = tracing_runtime.get_tracer(__name__)
     try:
         llm_settings = LlmSettings.from_dotenv()
@@ -97,21 +117,48 @@ async def run_once() -> bool:
                 processor=processor,
                 worker_id=f"{socket.gethostname()}-{os.getpid()}"[:100],
                 clock=utc_now,
+                lease_duration=timedelta(seconds=worker_settings.lease_duration_seconds),
+                processing_timeout=timedelta(seconds=worker_settings.processing_timeout_seconds),
+                base_retry_delay=timedelta(seconds=worker_settings.base_retry_delay_seconds),
+                max_retry_delay=timedelta(seconds=worker_settings.max_retry_delay_seconds),
                 data_source_mode=worker_settings.data_source_mode,
                 tracer=tracer,
             )
-            return await worker.run_once()
+            logger.info(
+                "启动调查 Worker mode=%s data_source_mode=%s poll_interval_seconds=%s",
+                "once" if once else "forever",
+                worker_settings.data_source_mode.value,
+                worker_settings.poll_interval_seconds,
+            )
+            if once:
+                return await worker.run_once()
+            stop_event = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            if sys.platform != "win32":
+                loop.add_signal_handler(signal.SIGTERM, stop_event.set)
+                loop.add_signal_handler(signal.SIGINT, stop_event.set)
+            await worker.run_forever(
+                poll_interval=timedelta(seconds=worker_settings.poll_interval_seconds),
+                stop_event=stop_event,
+            )
+            return None
     finally:
         await database.dispose()
         tracing_runtime.shutdown()
 
 
-def main() -> None:
-    """运行一次后退出，后续守护循环由独立切片实现。"""
+def main(arguments: Sequence[str] | None = None) -> None:
+    """默认常驻运行；Windows 显式使用 Psycopg 兼容事件循环。"""
 
+    once = parse_arguments(arguments)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     loop_factory = create_selector_event_loop if sys.platform == "win32" else None
-    processed = asyncio.run(run_once(), loop_factory=loop_factory)
-    print("已处理一个调查任务" if processed else "当前没有可处理的调查任务")
+    try:
+        processed = asyncio.run(run(once=once), loop_factory=loop_factory)
+    except KeyboardInterrupt:
+        return
+    if once:
+        print("已处理一个调查任务" if processed else "当前没有可处理的调查任务")
 
 
 if __name__ == "__main__":

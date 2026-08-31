@@ -467,6 +467,28 @@ class FailingProcessor:
         raise TimeoutError("模型调用超时")
 
 
+class StopAfterRecordingProcessor(RecordingProcessor):
+    """完成当前任务后发出停止信号。"""
+
+    def __init__(self, stop_event: asyncio.Event) -> None:
+        super().__init__()
+        self.stop_event = stop_event
+
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+        outcome = await super().process(context)
+        self.stop_event.set()
+        return outcome
+
+
+class SlowProcessor:
+    """模拟超过 Worker 硬超时的调查调用。"""
+
+    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+        del context
+        await asyncio.sleep(1)
+        return make_outcome()
+
+
 def clock_from(values: Iterator[datetime]) -> datetime:
     return next(values)
 
@@ -757,6 +779,75 @@ async def test_worker_failure_is_safely_summarized_and_requeued(
     )
 
     assert await worker.run_once() is True
+    work = await store.get_work_item(started.work_item.id)
+    run = await store.get_run(started.run.id)
+    assert work.status is WorkItemStatus.PENDING
+    assert work.available_at == BASE_TIME + timedelta(seconds=8)
+    assert work.last_error == WorkItemError(
+        error_code="TimeoutError",
+        message="调查处理器调用超时",
+    )
+    assert run.status is InvestigationRunStatus.QUEUED
+
+
+async def test_daemon_worker_finishes_claimed_task_before_stopping(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(
+        database_session_factory,
+        suffix="graceful-stop",
+    )
+    stop_event = asyncio.Event()
+    processor = StopAfterRecordingProcessor(stop_event)
+    times = iter(
+        [
+            BASE_TIME + timedelta(seconds=2),
+            BASE_TIME + timedelta(seconds=3),
+        ]
+    )
+    worker = InvestigationWorker(
+        store=store,
+        processor=processor,
+        worker_id="worker-graceful-stop",
+        clock=lambda: clock_from(times),
+        lease_duration=timedelta(seconds=10),
+        processing_timeout=timedelta(seconds=5),
+    )
+
+    await worker.run_forever(
+        poll_interval=timedelta(milliseconds=100),
+        stop_event=stop_event,
+    )
+
+    assert len(processor.contexts) == 1
+    assert (await store.get_work_item(started.work_item.id)).status is WorkItemStatus.COMPLETED
+    assert (await store.get_run(started.run.id)).status is InvestigationRunStatus.SUCCEEDED
+
+
+async def test_worker_processing_timeout_uses_existing_retry_path(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store, started = await start_investigation(
+        database_session_factory,
+        suffix="hard-timeout",
+    )
+    times = iter(
+        [
+            BASE_TIME + timedelta(seconds=2),
+            BASE_TIME + timedelta(seconds=3),
+        ]
+    )
+    worker = InvestigationWorker(
+        store=store,
+        processor=SlowProcessor(),
+        worker_id="worker-hard-timeout",
+        clock=lambda: clock_from(times),
+        lease_duration=timedelta(seconds=10),
+        processing_timeout=timedelta(milliseconds=10),
+    )
+
+    assert await worker.run_once() is True
+
     work = await store.get_work_item(started.work_item.id)
     run = await store.get_run(started.run.id)
     assert work.status is WorkItemStatus.PENDING

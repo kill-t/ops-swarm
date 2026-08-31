@@ -101,7 +101,7 @@ Alembic `0003_multi_agent_worker`：
 
 - 两种模式当前使用同一冻结场景，还不是实际监控平台数据。
 - 本切片完成时专业报告只存在于图结果对象；后续切片已将其提升为业务事实。
-- Worker 仍是单次命令，没有守护循环、心跳或优雅停机。
+- Worker 已在后续切片部署为两个可优雅停机的常驻工作池，详见 [工作池设计](42-persistent-investigation-worker-pools.md)。
 - 多 Agent 成本、Token 和节点耗时尚未持久化。
 - checkpoint 已持久化，但没有容量和过期清理任务。
 
