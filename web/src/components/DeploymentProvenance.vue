@@ -12,11 +12,28 @@ type ProvenanceStatus =
 type ArtifactStatus = "declared" | "not_declared" | "invalid";
 type RuntimeArtifactStatus =
   | "matched"
+  | "rolling_update"
+  | "partial_mismatch"
   | "mismatched"
   | "unavailable"
   | "historical"
   | "not_declared"
   | "invalid";
+type RuntimeInstanceClassification = "target" | "previous" | "unexpected";
+
+interface RuntimeInventoryInstance {
+  instanceId: string;
+  imageRepository: string;
+  imageDigest: string;
+  startedAt: string;
+  classification: RuntimeInstanceClassification;
+}
+
+interface ParsedRuntimeInventory {
+  present: boolean;
+  valid: boolean;
+  instances: RuntimeInventoryInstance[];
+}
 
 interface DeploymentProvenanceItem {
   evidenceId: string;
@@ -31,6 +48,12 @@ interface DeploymentProvenanceItem {
   runtimeImageDigest: string | null;
   runtimeInstanceId: string | null;
   runtimeStartedAt: string | null;
+  runtimeInstances: RuntimeInventoryInstance[];
+  runtimeInstanceCount: number | null;
+  runtimeMatchingInstanceCount: number | null;
+  runtimePreviousInstanceCount: number | null;
+  runtimeUnexpectedInstanceCount: number | null;
+  runtimeRolloutPhase: string | null;
   runtimeArtifactStatus: RuntimeArtifactStatus;
   status: ProvenanceStatus;
   githubUrl: string | null;
@@ -49,6 +72,7 @@ const commitShaPattern = /^[0-9a-f]{40,64}$/;
 const imageRepositoryPattern = /^[a-z0-9][a-z0-9._-]*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:\/[a-z0-9][a-z0-9._-]*)+$/;
 const imageDigestPattern = /^sha256:[0-9a-f]{64}$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const maxRolloutDurationMilliseconds = 30 * 60 * 1000;
 const statusLabels: Record<ProvenanceStatus, string> = {
   matched: "已精确匹配",
   commit_not_observed: "时间窗未观察到",
@@ -69,9 +93,11 @@ const artifactStatusLabels: Record<ArtifactStatus, string> = {
   invalid: "镜像来源异常",
 };
 const runtimeArtifactStatusLabels: Record<RuntimeArtifactStatus, string> = {
-  matched: "当前运行身份一致",
-  mismatched: "当前运行身份不一致",
-  unavailable: "未取得运行身份",
+  matched: "全部运行实例一致",
+  rolling_update: "受控滚动发布中",
+  partial_mismatch: "部分运行实例不一致",
+  mismatched: "全部运行实例不一致",
+  unavailable: "未取得运行清单",
   historical: "历史部署不参与当前核对",
   not_declared: "无构建产物可核对",
   invalid: "运行核对数据异常",
@@ -113,36 +139,78 @@ function artifactStatus(
   return "invalid";
 }
 
-function runtimeArtifactStatus(
-  item: EvidenceItem,
+function integerAttribute(item: EvidenceItem, key: string): number | null {
+  const value = item.attributes[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function hasAttribute(item: EvidenceItem, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(item.attributes, key);
+}
+
+function parseRuntimeInventory(item: EvidenceItem): ParsedRuntimeInventory {
+  if (!hasAttribute(item, "runtime_instances")) {
+    return { present: false, valid: true, instances: [] };
+  }
+  const rawInstances = item.attributes.runtime_instances;
+  if (!Array.isArray(rawInstances) || rawInstances.length === 0 || rawInstances.length > 64) {
+    return { present: true, valid: false, instances: [] };
+  }
+  const instances: RuntimeInventoryInstance[] = [];
+  const instanceIds = new Set<string>();
+  const expectedKeys = [
+    "classification",
+    "image_digest",
+    "image_repository",
+    "instance_id",
+    "started_at",
+  ];
+  for (const rawInstance of rawInstances) {
+    if (rawInstance === null || Array.isArray(rawInstance) || typeof rawInstance !== "object") {
+      return { present: true, valid: false, instances: [] };
+    }
+    if (Object.keys(rawInstance).sort().join("|") !== expectedKeys.join("|")) {
+      return { present: true, valid: false, instances: [] };
+    }
+    const instanceId = rawInstance.instance_id;
+    const imageRepository = rawInstance.image_repository;
+    const imageDigest = rawInstance.image_digest;
+    const startedAt = rawInstance.started_at;
+    const classification = rawInstance.classification;
+    if (
+      typeof instanceId !== "string" ||
+      !uuidPattern.test(instanceId) ||
+      instanceIds.has(instanceId) ||
+      typeof imageRepository !== "string" ||
+      !imageRepositoryPattern.test(imageRepository) ||
+      typeof imageDigest !== "string" ||
+      !imageDigestPattern.test(imageDigest) ||
+      typeof startedAt !== "string" ||
+      !Number.isFinite(Date.parse(startedAt)) ||
+      (classification !== "target" &&
+        classification !== "previous" &&
+        classification !== "unexpected")
+    ) {
+      return { present: true, valid: false, instances: [] };
+    }
+    instanceIds.add(instanceId);
+    instances.push({ instanceId, imageRepository, imageDigest, startedAt, classification });
+  }
+  return { present: true, valid: true, instances };
+}
+
+function legacyRuntimeArtifactStatus(
+  rawStatus: string,
   declaredRepository: string | null,
   declaredDigest: string | null,
-  artifactReferenceStatus: ArtifactStatus,
   runtimeRepository: string | null,
   runtimeDigest: string | null,
   runtimeInstanceId: string | null,
   runtimeStartedAt: string | null,
+  runtimeIdentitySource: string | null,
 ): RuntimeArtifactStatus {
-  const rawStatus = stringAttribute(item, "runtime_artifact_status");
-  const runtimeIdentitySource = stringAttribute(item, "runtime_identity_source");
-  const runtimeFieldsAbsent =
-    runtimeRepository === null &&
-    runtimeDigest === null &&
-    runtimeInstanceId === null &&
-    runtimeStartedAt === null &&
-    runtimeIdentitySource === null;
-  if (artifactReferenceStatus === "not_declared") {
-    return (rawStatus === null || rawStatus === "not_declared") && runtimeFieldsAbsent
-      ? "not_declared"
-      : "invalid";
-  }
-  if (artifactReferenceStatus !== "declared") return "invalid";
-  if (rawStatus === "historical") {
-    return runtimeFieldsAbsent ? "historical" : "invalid";
-  }
-  if (rawStatus === null || rawStatus === "unavailable") {
-    return runtimeFieldsAbsent ? "unavailable" : "invalid";
-  }
   if (
     (rawStatus !== "matched" && rawStatus !== "mismatched") ||
     runtimeRepository === null ||
@@ -160,6 +228,189 @@ function runtimeArtifactStatus(
   const actuallyMatches =
     declaredRepository === runtimeRepository && declaredDigest === runtimeDigest;
   return (rawStatus === "matched") === actuallyMatches ? rawStatus : "invalid";
+}
+
+function runtimeArtifactStatus(
+  item: EvidenceItem,
+  declaredRepository: string | null,
+  declaredDigest: string | null,
+  artifactReferenceStatus: ArtifactStatus,
+  runtimeRepository: string | null,
+  runtimeDigest: string | null,
+  runtimeInstanceId: string | null,
+  runtimeStartedAt: string | null,
+  inventory: ParsedRuntimeInventory,
+): RuntimeArtifactStatus {
+  const rawStatus = stringAttribute(item, "runtime_artifact_status");
+  const runtimeIdentitySource = stringAttribute(item, "runtime_identity_source");
+  const inventoryFieldNames = [
+    "runtime_instance_count",
+    "runtime_matching_instance_count",
+    "runtime_previous_instance_count",
+    "runtime_unexpected_instance_count",
+    "runtime_instances",
+    "runtime_rollout_phase",
+    "runtime_inventory_reported_at",
+    "runtime_previous_image_repository",
+    "runtime_previous_image_digest",
+    "runtime_rollout_id",
+    "runtime_rollout_started_at",
+    "runtime_rollout_deadline_at",
+    "runtime_rollout_target_image_repository",
+    "runtime_rollout_target_image_digest",
+  ];
+  const inventoryFieldsAbsent = inventoryFieldNames.every((key) => !hasAttribute(item, key));
+  const legacyFieldsAbsent =
+    runtimeRepository === null &&
+    runtimeDigest === null &&
+    runtimeInstanceId === null &&
+    runtimeStartedAt === null;
+  const allRuntimeFieldsAbsent =
+    legacyFieldsAbsent && inventoryFieldsAbsent && runtimeIdentitySource === null;
+  if (artifactReferenceStatus === "not_declared") {
+    return (rawStatus === null || rawStatus === "not_declared") && allRuntimeFieldsAbsent
+      ? "not_declared"
+      : "invalid";
+  }
+  if (artifactReferenceStatus !== "declared") return "invalid";
+  if (rawStatus === "historical") {
+    return allRuntimeFieldsAbsent ? "historical" : "invalid";
+  }
+  if (rawStatus === null || rawStatus === "unavailable") {
+    return allRuntimeFieldsAbsent ? "unavailable" : "invalid";
+  }
+  if (!inventory.present) {
+    return legacyRuntimeArtifactStatus(
+      rawStatus,
+      declaredRepository,
+      declaredDigest,
+      runtimeRepository,
+      runtimeDigest,
+      runtimeInstanceId,
+      runtimeStartedAt,
+      runtimeIdentitySource,
+    );
+  }
+  if (
+    !inventory.valid ||
+    !legacyFieldsAbsent ||
+    runtimeIdentitySource !== "deployment-environment" ||
+    declaredRepository === null ||
+    declaredDigest === null
+  ) {
+    return "invalid";
+  }
+
+  const instanceCount = integerAttribute(item, "runtime_instance_count");
+  const matchingCount = integerAttribute(item, "runtime_matching_instance_count");
+  const previousCount = integerAttribute(item, "runtime_previous_instance_count");
+  const unexpectedCount = integerAttribute(item, "runtime_unexpected_instance_count");
+  const previousRepository = stringAttribute(item, "runtime_previous_image_repository");
+  const previousDigest = stringAttribute(item, "runtime_previous_image_digest");
+  const hasValidPreviousArtifact =
+    previousRepository !== null &&
+    imageRepositoryPattern.test(previousRepository) &&
+    previousDigest !== null &&
+    imageDigestPattern.test(previousDigest);
+  if ((previousRepository === null) !== (previousDigest === null)) return "invalid";
+
+  let actualMatchingCount = 0;
+  let actualPreviousCount = 0;
+  let actualUnexpectedCount = 0;
+  for (const instance of inventory.instances) {
+    let classification: RuntimeInstanceClassification;
+    if (
+      instance.imageRepository === declaredRepository &&
+      instance.imageDigest === declaredDigest
+    ) {
+      classification = "target";
+      actualMatchingCount += 1;
+    } else if (
+      hasValidPreviousArtifact &&
+      instance.imageRepository === previousRepository &&
+      instance.imageDigest === previousDigest
+    ) {
+      classification = "previous";
+      actualPreviousCount += 1;
+    } else {
+      classification = "unexpected";
+      actualUnexpectedCount += 1;
+    }
+    if (instance.classification !== classification) return "invalid";
+  }
+  if (
+    instanceCount !== inventory.instances.length ||
+    matchingCount !== actualMatchingCount ||
+    previousCount !== actualPreviousCount ||
+    unexpectedCount !== actualUnexpectedCount
+  ) {
+    return "invalid";
+  }
+
+  const rolloutPhase = stringAttribute(item, "runtime_rollout_phase");
+  const reportedAt = stringAttribute(item, "runtime_inventory_reported_at");
+  const reportedTimestamp = reportedAt === null ? Number.NaN : Date.parse(reportedAt);
+  if (
+    (rolloutPhase !== "stable" && rolloutPhase !== "progressing") ||
+    !Number.isFinite(reportedTimestamp) ||
+    inventory.instances.some((instance) => Date.parse(instance.startedAt) > reportedTimestamp)
+  ) {
+    return "invalid";
+  }
+  let rolloutActive = false;
+  if (rolloutPhase === "stable") {
+    const rolloutKeys = inventoryFieldNames.slice(9);
+    if (rolloutKeys.some((key) => hasAttribute(item, key))) return "invalid";
+  } else {
+    const rolloutId = stringAttribute(item, "runtime_rollout_id");
+    const rolloutStartedAt = stringAttribute(item, "runtime_rollout_started_at");
+    const rolloutDeadlineAt = stringAttribute(item, "runtime_rollout_deadline_at");
+    const rolloutTargetRepository = stringAttribute(
+      item,
+      "runtime_rollout_target_image_repository",
+    );
+    const rolloutTargetDigest = stringAttribute(item, "runtime_rollout_target_image_digest");
+    const startedTimestamp = rolloutStartedAt === null ? Number.NaN : Date.parse(rolloutStartedAt);
+    const deadlineTimestamp =
+      rolloutDeadlineAt === null ? Number.NaN : Date.parse(rolloutDeadlineAt);
+    if (
+      rolloutId === null ||
+      !uuidPattern.test(rolloutId) ||
+      !Number.isFinite(startedTimestamp) ||
+      !Number.isFinite(deadlineTimestamp) ||
+      startedTimestamp >= deadlineTimestamp ||
+      deadlineTimestamp - startedTimestamp > maxRolloutDurationMilliseconds ||
+      startedTimestamp > reportedTimestamp ||
+      rolloutTargetRepository === null ||
+      !imageRepositoryPattern.test(rolloutTargetRepository) ||
+      rolloutTargetDigest === null ||
+      !imageDigestPattern.test(rolloutTargetDigest)
+    ) {
+      return "invalid";
+    }
+    rolloutActive =
+      rolloutTargetRepository === declaredRepository &&
+      rolloutTargetDigest === declaredDigest &&
+      startedTimestamp <= reportedTimestamp &&
+      reportedTimestamp <= deadlineTimestamp;
+  }
+
+  let expectedStatus: RuntimeArtifactStatus;
+  if (actualMatchingCount === inventory.instances.length) {
+    expectedStatus = "matched";
+  } else if (
+    actualMatchingCount > 0 &&
+    actualPreviousCount > 0 &&
+    actualUnexpectedCount === 0 &&
+    rolloutActive
+  ) {
+    expectedStatus = "rolling_update";
+  } else if (actualMatchingCount > 0) {
+    expectedStatus = "partial_mismatch";
+  } else {
+    expectedStatus = "mismatched";
+  }
+  return rawStatus === expectedStatus ? expectedStatus : "invalid";
 }
 
 function safeGitHubCommitUrl(
@@ -268,6 +519,22 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
       const runtimeImageDigest = stringAttribute(item, "runtime_image_digest");
       const runtimeInstanceId = stringAttribute(item, "runtime_instance_id");
       const runtimeStartedAt = stringAttribute(item, "runtime_started_at");
+      const runtimeInventory = parseRuntimeInventory(item);
+      const validatedRuntimeStatus = runtimeArtifactStatus(
+        item,
+        imageRepository,
+        imageDigest,
+        artifactReferenceStatus,
+        runtimeImageRepository,
+        runtimeImageDigest,
+        runtimeInstanceId,
+        runtimeStartedAt,
+        runtimeInventory,
+      );
+      const inventoryCanBeDisplayed =
+        runtimeInventory.present &&
+        runtimeInventory.valid &&
+        validatedRuntimeStatus !== "invalid";
       const provenance = provenanceStatus(item, repository, commitSha);
       return {
         evidenceId: item.evidence_id,
@@ -282,16 +549,23 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
         runtimeImageDigest,
         runtimeInstanceId,
         runtimeStartedAt,
-        runtimeArtifactStatus: runtimeArtifactStatus(
-          item,
-          imageRepository,
-          imageDigest,
-          artifactReferenceStatus,
-          runtimeImageRepository,
-          runtimeImageDigest,
-          runtimeInstanceId,
-          runtimeStartedAt,
-        ),
+        runtimeInstances: inventoryCanBeDisplayed ? runtimeInventory.instances : [],
+        runtimeInstanceCount: inventoryCanBeDisplayed
+          ? integerAttribute(item, "runtime_instance_count")
+          : null,
+        runtimeMatchingInstanceCount: inventoryCanBeDisplayed
+          ? integerAttribute(item, "runtime_matching_instance_count")
+          : null,
+        runtimePreviousInstanceCount: inventoryCanBeDisplayed
+          ? integerAttribute(item, "runtime_previous_instance_count")
+          : null,
+        runtimeUnexpectedInstanceCount: inventoryCanBeDisplayed
+          ? integerAttribute(item, "runtime_unexpected_instance_count")
+          : null,
+        runtimeRolloutPhase: inventoryCanBeDisplayed
+          ? stringAttribute(item, "runtime_rollout_phase")
+          : null,
+        runtimeArtifactStatus: validatedRuntimeStatus,
         status: provenance.status,
         githubUrl: provenance.githubUrl,
         summary: item.summary,
@@ -315,6 +589,16 @@ function artifactStatusLabel(status: ArtifactStatus): string {
 
 function runtimeArtifactStatusLabel(status: RuntimeArtifactStatus): string {
   return runtimeArtifactStatusLabels[status];
+}
+
+function rolloutPhaseLabel(phase: string | null): string {
+  return phase === "progressing" ? "滚动发布中" : phase === "stable" ? "稳定" : "—";
+}
+
+function instanceClassificationLabel(classification: RuntimeInstanceClassification): string {
+  if (classification === "target") return "目标版本";
+  if (classification === "previous") return "上一版本";
+  return "非预期版本";
 }
 
 function formatTime(value: string): string {
@@ -404,23 +688,60 @@ function formatTime(value: string): string {
               {{ runtimeArtifactStatusLabel(deployment.runtimeArtifactStatus) }}
             </dd>
           </div>
-          <div>
-            <dt>运行镜像仓库</dt>
-            <dd><code>{{ deployment.runtimeImageRepository ?? "—" }}</code></dd>
-          </div>
-          <div>
-            <dt>运行镜像摘要</dt>
-            <dd><code>{{ deployment.runtimeImageDigest ?? "—" }}</code></dd>
-          </div>
-          <div>
-            <dt>运行实例 ID</dt>
-            <dd><code>{{ deployment.runtimeInstanceId ?? "—" }}</code></dd>
-          </div>
-          <div>
-            <dt>实例启动时间</dt>
-            <dd>{{ deployment.runtimeStartedAt ? formatTime(deployment.runtimeStartedAt) : "—" }}</dd>
-          </div>
+          <template v-if="deployment.runtimeInstances.length > 0">
+            <div>
+              <dt>运行实例总数</dt>
+              <dd>{{ deployment.runtimeInstanceCount }}</dd>
+            </div>
+            <div>
+              <dt>目标版本实例</dt>
+              <dd>{{ deployment.runtimeMatchingInstanceCount }}</dd>
+            </div>
+            <div>
+              <dt>上一版本实例</dt>
+              <dd>{{ deployment.runtimePreviousInstanceCount }}</dd>
+            </div>
+            <div>
+              <dt>非预期实例</dt>
+              <dd>{{ deployment.runtimeUnexpectedInstanceCount }}</dd>
+            </div>
+            <div>
+              <dt>发布阶段</dt>
+              <dd>{{ rolloutPhaseLabel(deployment.runtimeRolloutPhase) }}</dd>
+            </div>
+          </template>
+          <template v-else>
+            <div>
+              <dt>运行镜像仓库</dt>
+              <dd><code>{{ deployment.runtimeImageRepository ?? "—" }}</code></dd>
+            </div>
+            <div>
+              <dt>运行镜像摘要</dt>
+              <dd><code>{{ deployment.runtimeImageDigest ?? "—" }}</code></dd>
+            </div>
+            <div>
+              <dt>运行实例 ID</dt>
+              <dd><code>{{ deployment.runtimeInstanceId ?? "—" }}</code></dd>
+            </div>
+            <div>
+              <dt>实例启动时间</dt>
+              <dd>{{ deployment.runtimeStartedAt ? formatTime(deployment.runtimeStartedAt) : "—" }}</dd>
+            </div>
+          </template>
         </dl>
+
+        <ol v-if="deployment.runtimeInstances.length > 0" class="runtime-instance-list">
+          <li
+            v-for="instance in deployment.runtimeInstances"
+            :key="instance.instanceId"
+            :class="`runtime-instance-${instance.classification}`"
+          >
+            <span>{{ instanceClassificationLabel(instance.classification) }}</span>
+            <code>{{ instance.instanceId }}</code>
+            <code>{{ instance.imageRepository }}@{{ instance.imageDigest }}</code>
+            <small>启动于 {{ formatTime(instance.startedAt) }}</small>
+          </li>
+        </ol>
 
         <a
           v-if="deployment.githubUrl"

@@ -1083,10 +1083,12 @@ p {
 }
 
 .runtime-artifact-status-mismatched,
+.runtime-artifact-status-partial_mismatch,
 .runtime-artifact-status-invalid {
   color: var(--danger) !important;
 }
 
+.runtime-artifact-status-rolling_update,
 .runtime-artifact-status-unavailable,
 .runtime-artifact-status-historical {
   color: var(--amber) !important;
@@ -1097,6 +1099,47 @@ p {
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   white-space: normal;
   word-break: break-all;
+}
+
+.runtime-instance-list {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtime-instance-list li {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) minmax(230px, 0.8fr) minmax(280px, 1.8fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #293b4b;
+  border-radius: 8px;
+  background: #0f1a24;
+  color: #9fb3c4;
+  font-size: 10px;
+}
+
+.runtime-instance-list code {
+  min-width: 0;
+  color: #b9d8e8;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.runtime-instance-target > span {
+  color: var(--cyan);
+}
+
+.runtime-instance-previous > span {
+  color: var(--amber);
+}
+
+.runtime-instance-unexpected > span {
+  color: var(--danger);
 }
 
 .provenance-link {
@@ -1446,6 +1489,10 @@ p {
   }
 
   .provenance-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-instance-list li {
     grid-template-columns: 1fr;
   }
 

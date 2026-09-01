@@ -6,7 +6,11 @@ import type { EvidenceBoardSnapshot, EvidenceItem } from "../types/evidence-boar
 
 const COMMIT_SHA = "a".repeat(40);
 const IMAGE_DIGEST = `sha256:${"c".repeat(64)}`;
+const PREVIOUS_IMAGE_DIGEST = `sha256:${"d".repeat(64)}`;
 const RUNTIME_INSTANCE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const SECOND_RUNTIME_INSTANCE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const ROLLOUT_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const IMAGE_REPOSITORY = "ghcr.io/kill-t/ops-swarm-order-service";
 
 function evidenceItem(overrides: Partial<EvidenceItem>): EvidenceItem {
   return {
@@ -78,7 +82,7 @@ describe("部署代码来源", () => {
     expect(wrapper.text()).toContain("ghcr.io/kill-t/ops-swarm-order-service");
     expect(wrapper.text()).toContain(IMAGE_DIGEST);
     expect(wrapper.text()).toContain("已声明不可变摘要");
-    expect(wrapper.text()).toContain("当前运行身份一致");
+    expect(wrapper.text()).toContain("全部运行实例一致");
     expect(wrapper.text()).toContain(RUNTIME_INSTANCE_ID);
     const link = wrapper.get(".provenance-link");
     expect(link.attributes("href")).toBe(
@@ -177,11 +181,152 @@ describe("部署代码来源", () => {
       props: { board: board([deployment]), loading: false, error: null },
     });
 
-    expect(wrapper.text()).toContain("当前运行身份不一致");
+    expect(wrapper.text()).toContain("全部运行实例不一致");
     expect(wrapper.text()).toContain(runtimeDigest);
     expect(wrapper.get(".runtime-artifact-status").classes()).toContain(
       "runtime-artifact-status-mismatched",
     );
+  });
+
+  it("展示通过严格校验的多实例滚动发布", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: IMAGE_REPOSITORY,
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "rolling_update",
+        runtime_instance_count: 2,
+        runtime_matching_instance_count: 1,
+        runtime_previous_instance_count: 1,
+        runtime_unexpected_instance_count: 0,
+        runtime_instances: [
+          {
+            instance_id: RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: IMAGE_DIGEST,
+            started_at: "2026-08-31T07:59:00Z",
+            classification: "target",
+          },
+          {
+            instance_id: SECOND_RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: PREVIOUS_IMAGE_DIGEST,
+            started_at: "2026-08-31T07:30:00Z",
+            classification: "previous",
+          },
+        ],
+        runtime_rollout_phase: "progressing",
+        runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
+        runtime_identity_source: "deployment-environment",
+        runtime_previous_image_repository: IMAGE_REPOSITORY,
+        runtime_previous_image_digest: PREVIOUS_IMAGE_DIGEST,
+        runtime_rollout_id: ROLLOUT_ID,
+        runtime_rollout_started_at: "2026-08-31T07:55:00Z",
+        runtime_rollout_deadline_at: "2026-08-31T08:05:00Z",
+        runtime_rollout_target_image_repository: IMAGE_REPOSITORY,
+        runtime_rollout_target_image_digest: IMAGE_DIGEST,
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("受控滚动发布中");
+    expect(wrapper.text()).toContain("运行实例总数2");
+    expect(wrapper.text()).toContain("目标版本实例1");
+    expect(wrapper.text()).toContain("上一版本实例1");
+    expect(wrapper.text()).toContain("非预期实例0");
+    expect(wrapper.text()).toContain("滚动发布中");
+    expect(wrapper.text()).toContain(SECOND_RUNTIME_INSTANCE_ID);
+    expect(wrapper.findAll(".runtime-instance-list li")).toHaveLength(2);
+
+    deployment.attributes.runtime_rollout_deadline_at = "2026-08-31T09:00:00Z";
+    const invalidWindow = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+    expect(invalidWindow.text()).toContain("运行核对数据异常");
+  });
+
+  it("稳定期出现未知实例时显示部分不一致", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: IMAGE_REPOSITORY,
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "partial_mismatch",
+        runtime_instance_count: 2,
+        runtime_matching_instance_count: 1,
+        runtime_previous_instance_count: 0,
+        runtime_unexpected_instance_count: 1,
+        runtime_instances: [
+          {
+            instance_id: RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: IMAGE_DIGEST,
+            started_at: "2026-08-31T07:59:00Z",
+            classification: "target",
+          },
+          {
+            instance_id: SECOND_RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: PREVIOUS_IMAGE_DIGEST,
+            started_at: "2026-08-31T07:30:00Z",
+            classification: "unexpected",
+          },
+        ],
+        runtime_rollout_phase: "stable",
+        runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
+        runtime_identity_source: "deployment-environment",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("部分运行实例不一致");
+    expect(wrapper.text()).toContain("非预期版本");
+    expect(wrapper.get(".runtime-artifact-status").classes()).toContain(
+      "runtime-artifact-status-partial_mismatch",
+    );
+  });
+
+  it("多实例计数或分类与原始字段矛盾时拒绝展示可信结论", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: IMAGE_REPOSITORY,
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "matched",
+        runtime_instance_count: 2,
+        runtime_matching_instance_count: 2,
+        runtime_previous_instance_count: 0,
+        runtime_unexpected_instance_count: 0,
+        runtime_instances: [
+          {
+            instance_id: RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: IMAGE_DIGEST,
+            started_at: "2026-08-31T07:59:00Z",
+            classification: "unexpected",
+          },
+        ],
+        runtime_rollout_phase: "stable",
+        runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
+        runtime_identity_source: "deployment-environment",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("运行核对数据异常");
+    expect(wrapper.find(".runtime-instance-list").exists()).toBe(false);
   });
 
   it("后端匹配结论与字段矛盾时拒绝显示一致", () => {
@@ -205,7 +350,7 @@ describe("部署代码来源", () => {
     });
 
     expect(wrapper.text()).toContain("运行核对数据异常");
-    expect(wrapper.text()).not.toContain("当前运行身份一致");
+    expect(wrapper.text()).not.toContain("全部运行实例一致");
   });
 
   it("历史部署保留摘要但不与当前实例比较", () => {

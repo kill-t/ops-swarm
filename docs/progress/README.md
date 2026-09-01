@@ -91,3 +91,4 @@
 - [48 - 受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)
 - [49 - 部署构建产物摘要](49-deployment-artifact-digest.md)
 - [50 - 运行实例构建产物核对](50-runtime-artifact-verification.md)
+- [51 - 多实例运行清单与滚动发布判定](51-runtime-inventory-rollout.md)

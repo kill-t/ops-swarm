@@ -18,7 +18,11 @@ from opsswarm.change_records.models import (
     DeploymentCodeReference,
     SourceContractVersion,
 )
-from opsswarm.fault_lab.runtime_metadata import RuntimeMetadataResponse
+from opsswarm.fault_lab.runtime_metadata import (
+    RuntimeArtifactInstance,
+    RuntimeInventoryResponse,
+    RuntimeRolloutContext,
+)
 from opsswarm.investigation.changes import (
     MAX_RESPONSE_BYTES,
     ChangeApiOnlyInvestigationDataSource,
@@ -36,20 +40,67 @@ GENERATED_AT = datetime.fromtimestamp(NOW, UTC)
 COMMIT_SHA = "a" * 40
 IMAGE_DIGEST = "sha256:" + "b" * 64
 RUNTIME_INSTANCE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+SECOND_RUNTIME_INSTANCE_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+ROLLOUT_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+PREVIOUS_IMAGE_DIGEST = "sha256:" + "c" * 64
 
 
-def _runtime_response(
+def _runtime_inventory(
     *,
     image_repository: str = "ghcr.io/kill-t/ops-swarm-order-service",
     image_digest: str = IMAGE_DIGEST,
     reported_at: datetime = GENERATED_AT,
-) -> RuntimeMetadataResponse:
-    return RuntimeMetadataResponse(
-        instance_id=RUNTIME_INSTANCE_ID,
-        image_repository=image_repository,
-        image_digest=image_digest,
-        started_at=reported_at - timedelta(minutes=10),
+) -> RuntimeInventoryResponse:
+    return RuntimeInventoryResponse(
+        instances=(
+            RuntimeArtifactInstance(
+                instance_id=RUNTIME_INSTANCE_ID,
+                image_repository=image_repository,
+                image_digest=image_digest,
+                started_at=reported_at - timedelta(minutes=10),
+            ),
+        ),
         reported_at=reported_at,
+    )
+
+
+def _two_instance_inventory(
+    *,
+    primary_digest: str = IMAGE_DIGEST,
+    second_digest: str = PREVIOUS_IMAGE_DIGEST,
+    rollout_phase: str = "progressing",
+    rollout_target_digest: str = IMAGE_DIGEST,
+    deadline_at: datetime = GENERATED_AT + timedelta(minutes=5),
+) -> RuntimeInventoryResponse:
+    rollout = (
+        RuntimeRolloutContext()
+        if rollout_phase == "stable"
+        else RuntimeRolloutContext(
+            phase="progressing",
+            rollout_id=ROLLOUT_ID,
+            started_at=GENERATED_AT - timedelta(minutes=5),
+            deadline_at=deadline_at,
+            target_image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            target_image_digest=rollout_target_digest,
+        )
+    )
+    return RuntimeInventoryResponse(
+        instances=(
+            RuntimeArtifactInstance(
+                instance_id=RUNTIME_INSTANCE_ID,
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=primary_digest,
+                started_at=GENERATED_AT - timedelta(minutes=2),
+            ),
+            RuntimeArtifactInstance(
+                instance_id=SECOND_RUNTIME_INSTANCE_ID,
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=second_digest,
+                started_at=GENERATED_AT - timedelta(minutes=30),
+            ),
+        ),
+        rollout=rollout,
+        reported_at=GENERATED_AT,
     )
 
 
@@ -123,29 +174,94 @@ def _response(
     )
 
 
+def _rollout_change_response(*, include_older: bool = False) -> ChangeRecordListResponse:
+    older = _record(
+        10,
+        DeploymentChange(
+            external_change_id="release-older",
+            from_version="v0",
+            to_version="stable",
+            code_reference=DeploymentCodeReference(
+                repository="kill-t/ops-swarm",
+                commit_sha="d" * 40,
+            ),
+            artifact_reference=DeploymentArtifactReference(
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest="sha256:" + "d" * 64,
+            ),
+        ),
+        minutes_ago=3,
+        source=CI_DEPLOYMENT_SOURCE,
+        source_identity="github-actions-production",
+        source_contract_version=2,
+    )
+    previous = _record(
+        11,
+        DeploymentChange(
+            external_change_id="release-previous",
+            from_version="stable",
+            to_version="rc1",
+            code_reference=DeploymentCodeReference(
+                repository="kill-t/ops-swarm",
+                commit_sha="c" * 40,
+            ),
+            artifact_reference=DeploymentArtifactReference(
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=PREVIOUS_IMAGE_DIGEST,
+            ),
+        ),
+        minutes_ago=2,
+        source=CI_DEPLOYMENT_SOURCE,
+        source_identity="github-actions-production",
+        source_contract_version=2,
+    )
+    current = _record(
+        12,
+        DeploymentChange(
+            external_change_id="release-current",
+            from_version="rc1",
+            to_version="rc2",
+            code_reference=DeploymentCodeReference(
+                repository="kill-t/ops-swarm",
+                commit_sha=COMMIT_SHA,
+            ),
+            artifact_reference=DeploymentArtifactReference(
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+            ),
+        ),
+        minutes_ago=1,
+        source=CI_DEPLOYMENT_SOURCE,
+        source_identity="github-actions-production",
+        source_contract_version=2,
+    )
+    items = (older, previous, current) if include_older else (previous, current)
+    return _response(items=items)
+
+
 def _transport(
     response: ChangeRecordListResponse | None = None,
     *,
     status_code: int = 200,
-    runtime_response: RuntimeMetadataResponse | None = None,
+    runtime_inventory: RuntimeInventoryResponse | None = None,
     runtime_status_code: int = 200,
 ) -> tuple[httpx2.MockTransport, list[httpx2.Request]]:
     requests: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        if request.url.path == "/api/v1/runtime-metadata":
+        if request.url.path == "/api/v1/runtime-inventory":
             if runtime_status_code != 200:
                 return httpx2.Response(
                     runtime_status_code,
                     json={
-                        "error_code": "runtime_metadata_unavailable",
-                        "message": "运行元数据未启用",
+                        "error_code": "runtime_inventory_unavailable",
+                        "message": "运行清单未启用",
                     },
                 )
             return httpx2.Response(
                 200,
-                content=(runtime_response or _runtime_response()).model_dump_json(),
+                content=(runtime_inventory or _runtime_inventory()).model_dump_json(),
                 headers={"content-type": "application/json"},
             )
         if status_code != 200:
@@ -200,13 +316,16 @@ def test_change_tool_runs_fixed_query_and_collects_three_normalized_evidence() -
     assert attributes_by_type["deployment"]["source_identity"] == "github-actions-production"
     assert attributes_by_type["deployment"]["runtime_artifact_status"] == "matched"
     assert attributes_by_type["deployment"]["deployment_position"] == "current"
-    assert attributes_by_type["deployment"]["runtime_instance_id"] == str(RUNTIME_INSTANCE_ID)
-    assert attributes_by_type["deployment"]["runtime_image_digest"] == IMAGE_DIGEST
+    assert attributes_by_type["deployment"]["runtime_instance_count"] == 1
+    assert attributes_by_type["deployment"]["runtime_matching_instance_count"] == 1
+    assert attributes_by_type["deployment"]["runtime_previous_instance_count"] == 0
+    assert attributes_by_type["deployment"]["runtime_unexpected_instance_count"] == 0
+    assert attributes_by_type["deployment"]["runtime_rollout_phase"] == "stable"
     assert attributes_by_type["configuration"]["to_value"] == 5
     assert attributes_by_type["dependency_maintenance"]["dependency"] == "redis"
     assert len(requests) == 2
     assert requests[0].url.path == "/api/v1/changes"
-    assert requests[1].url.path == "/api/v1/runtime-metadata"
+    assert requests[1].url.path == "/api/v1/runtime-inventory"
     assert dict(requests[0].url.params) == {
         "service_name": "order-service",
         "lookback_hours": "6",
@@ -215,7 +334,7 @@ def test_change_tool_runs_fixed_query_and_collects_three_normalized_evidence() -
 
 def test_runtime_digest_mismatch_and_disabled_metadata_are_explicit() -> None:
     mismatch_transport, _ = _transport(
-        runtime_response=_runtime_response(image_digest="sha256:" + "c" * 64)
+        runtime_inventory=_runtime_inventory(image_digest="sha256:" + "c" * 64)
     )
     unavailable_transport, _ = _transport(runtime_status_code=503)
 
@@ -235,9 +354,9 @@ def test_runtime_digest_mismatch_and_disabled_metadata_are_explicit() -> None:
         item for item in unavailable if item.attributes["change_type"] == "deployment"
     )
     assert mismatch_deployment.attributes["runtime_artifact_status"] == "mismatched"
-    assert mismatch_deployment.attributes["runtime_image_digest"] == "sha256:" + "c" * 64
+    assert mismatch_deployment.attributes["runtime_unexpected_instance_count"] == 1
     assert unavailable_deployment.attributes["runtime_artifact_status"] == "unavailable"
-    assert "runtime_image_digest" not in unavailable_deployment.attributes
+    assert "runtime_instances" not in unavailable_deployment.attributes
 
 
 def test_only_latest_deployment_is_compared_with_current_runtime() -> None:
@@ -298,25 +417,131 @@ def test_only_latest_deployment_is_compared_with_current_runtime() -> None:
         item.attributes["external_change_id"]: item.attributes for item in observations
     }
     assert by_external_id["release-old"]["runtime_artifact_status"] == "historical"
-    assert "runtime_image_digest" not in by_external_id["release-old"]
+    assert "runtime_instances" not in by_external_id["release-old"]
     assert by_external_id["release-current"]["runtime_artifact_status"] == "matched"
-    assert [request.url.path for request in requests].count("/api/v1/runtime-metadata") == 1
+    assert [request.url.path for request in requests].count("/api/v1/runtime-inventory") == 1
+
+
+def test_active_rollout_accepts_target_and_immediate_previous_instances() -> None:
+    transport, _ = _transport(
+        _rollout_change_response(),
+        runtime_inventory=_two_instance_inventory(),
+    )
+
+    observations = _source(transport).list_recent_changes(
+        service_name="order-service",
+        lookback_hours=6,
+    )
+
+    current = next(
+        item for item in observations if item.attributes["external_change_id"] == "release-current"
+    )
+    assert current.attributes["runtime_artifact_status"] == "rolling_update"
+    assert current.attributes["runtime_instance_count"] == 2
+    assert current.attributes["runtime_matching_instance_count"] == 1
+    assert current.attributes["runtime_previous_instance_count"] == 1
+    assert current.attributes["runtime_unexpected_instance_count"] == 0
+    assert current.attributes["runtime_rollout_phase"] == "progressing"
+    assert current.attributes["runtime_rollout_id"] == str(ROLLOUT_ID)
+    assert [instance["classification"] for instance in current.attributes["runtime_instances"]] == [
+        "target",
+        "previous",
+    ]
 
 
 @pytest.mark.parametrize(
-    ("runtime_response", "error_code"),
+    ("inventory", "expected_status", "unexpected_count"),
     [
         (
-            _runtime_response(reported_at=GENERATED_AT - timedelta(seconds=11)),
-            "runtime_metadata_stale_response",
+            _two_instance_inventory(rollout_phase="stable"),
+            "partial_mismatch",
+            0,
+        ),
+        (
+            _two_instance_inventory(
+                deadline_at=GENERATED_AT - timedelta(seconds=1),
+            ),
+            "partial_mismatch",
+            0,
+        ),
+        (
+            _two_instance_inventory(
+                rollout_target_digest=PREVIOUS_IMAGE_DIGEST,
+            ),
+            "partial_mismatch",
+            0,
+        ),
+        (
+            _two_instance_inventory(second_digest="sha256:" + "d" * 64),
+            "partial_mismatch",
+            1,
+        ),
+        (
+            _two_instance_inventory(
+                primary_digest=PREVIOUS_IMAGE_DIGEST,
+                second_digest=PREVIOUS_IMAGE_DIGEST,
+            ),
+            "mismatched",
+            0,
         ),
     ],
 )
-def test_untrusted_runtime_metadata_fails_closed(
-    runtime_response: RuntimeMetadataResponse,
+def test_mixed_instances_require_exact_active_rollout_contract(
+    inventory: RuntimeInventoryResponse,
+    expected_status: str,
+    unexpected_count: int,
+) -> None:
+    transport, _ = _transport(
+        _rollout_change_response(),
+        runtime_inventory=inventory,
+    )
+
+    observations = _source(transport).list_recent_changes(
+        service_name="order-service",
+        lookback_hours=6,
+    )
+
+    current = next(
+        item for item in observations if item.attributes["external_change_id"] == "release-current"
+    )
+    assert current.attributes["runtime_artifact_status"] == expected_status
+    assert current.attributes["runtime_unexpected_instance_count"] == unexpected_count
+
+
+def test_older_deployment_artifact_is_not_accepted_as_rollout_previous() -> None:
+    inventory = _two_instance_inventory(second_digest="sha256:" + "d" * 64)
+    transport, _ = _transport(
+        _rollout_change_response(include_older=True),
+        runtime_inventory=inventory,
+    )
+
+    observations = _source(transport).list_recent_changes(
+        service_name="order-service",
+        lookback_hours=6,
+    )
+
+    current = next(
+        item for item in observations if item.attributes["external_change_id"] == "release-current"
+    )
+    assert current.attributes["runtime_artifact_status"] == "partial_mismatch"
+    assert current.attributes["runtime_previous_instance_count"] == 0
+    assert current.attributes["runtime_unexpected_instance_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("runtime_inventory", "error_code"),
+    [
+        (
+            _runtime_inventory(reported_at=GENERATED_AT - timedelta(seconds=11)),
+            "runtime_inventory_stale_response",
+        ),
+    ],
+)
+def test_untrusted_runtime_inventory_fails_closed(
+    runtime_inventory: RuntimeInventoryResponse,
     error_code: str,
 ) -> None:
-    transport, _ = _transport(runtime_response=runtime_response)
+    transport, _ = _transport(runtime_inventory=runtime_inventory)
 
     with pytest.raises(InvestigationDataSourceFailure) as captured:
         _source(transport).list_recent_changes(
@@ -327,11 +552,11 @@ def test_untrusted_runtime_metadata_fails_closed(
     assert captured.value.error_code == error_code
 
 
-def test_invalid_runtime_metadata_contract_fails_closed() -> None:
+def test_invalid_runtime_inventory_contract_fails_closed() -> None:
     change_payload = _response().model_dump_json()
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        if request.url.path == "/api/v1/runtime-metadata":
+        if request.url.path == "/api/v1/runtime-inventory":
             return httpx2.Response(200, json={"service_name": "order-service"})
         return httpx2.Response(200, content=change_payload)
 
@@ -342,14 +567,14 @@ def test_invalid_runtime_metadata_contract_fails_closed() -> None:
             lookback_hours=6,
         )
 
-    assert captured.value.error_code == "runtime_metadata_invalid_response"
+    assert captured.value.error_code == "runtime_inventory_invalid_response"
 
 
 def test_untrusted_503_is_not_treated_as_intentional_runtime_disable() -> None:
     change_payload = _response().model_dump_json()
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        if request.url.path == "/api/v1/runtime-metadata":
+        if request.url.path == "/api/v1/runtime-inventory":
             return httpx2.Response(503, json={"status": "proxy unavailable"})
         return httpx2.Response(200, content=change_payload)
 
@@ -360,7 +585,7 @@ def test_untrusted_503_is_not_treated_as_intentional_runtime_disable() -> None:
             lookback_hours=6,
         )
 
-    assert captured.value.error_code == "runtime_metadata_invalid_response"
+    assert captured.value.error_code == "runtime_inventory_invalid_response"
 
 
 def test_empty_response_is_honest_empty_evidence() -> None:

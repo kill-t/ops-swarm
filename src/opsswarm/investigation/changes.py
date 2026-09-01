@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -18,11 +20,13 @@ from opsswarm.change_records.models import (
     ChangeRecordListResponse,
     ConfigurationChange,
     DependencyMaintenanceChange,
+    DeploymentArtifactReference,
     DeploymentChange,
 )
 from opsswarm.fault_lab.runtime_metadata import (
-    RuntimeMetadataResponse,
-    RuntimeMetadataUnavailableResponse,
+    RuntimeArtifactInstance,
+    RuntimeInventoryResponse,
+    RuntimeInventoryUnavailableResponse,
 )
 from opsswarm.investigation.errors import (
     InvestigationDataSourceFailure,
@@ -35,9 +39,27 @@ DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:18001"
 ALLOWED_CHANGE_HOSTS = frozenset({"127.0.0.1", "localhost", "change-service"})
 ALLOWED_RUNTIME_HOSTS = frozenset({"127.0.0.1", "localhost", "order-service"})
 MAX_RESPONSE_BYTES = 128 * 1024
-MAX_RUNTIME_RESPONSE_BYTES = 16 * 1024
+MAX_RUNTIME_INVENTORY_RESPONSE_BYTES = 64 * 1024
 MAX_RESPONSE_AGE_SECONDS = 10.0
 MAX_FUTURE_CLOCK_SKEW_SECONDS = 5.0
+
+RuntimeArtifactStatus = Literal[
+    "matched",
+    "rolling_update",
+    "partial_mismatch",
+    "mismatched",
+]
+
+
+@dataclass(frozen=True)
+class RuntimeArtifactAssessment:
+    """多实例身份与当前、上一部署产物的确定性分类结果。"""
+
+    status: RuntimeArtifactStatus
+    matching_count: int
+    previous_count: int
+    unexpected_count: int
+    instances: list[JsonValue]
 
 
 class ChangeInvestigationSettings(BaseSettings):
@@ -193,26 +215,34 @@ class ChangeApiOnlyInvestigationDataSource:
         deployment_records = tuple(
             record for record in response.items if isinstance(record.change, DeploymentChange)
         )
-        current_deployment = (
-            max(
+        ordered_deployments = tuple(
+            sorted(
                 deployment_records,
                 key=lambda record: (record.occurred_at, record.recorded_at, record.record_id),
             )
-            if deployment_records
+        )
+        current_deployment = ordered_deployments[-1] if ordered_deployments else None
+        previous_deployment = ordered_deployments[-2] if len(ordered_deployments) >= 2 else None
+        previous_artifact = (
+            previous_deployment.change.artifact_reference
+            if previous_deployment is not None
+            and isinstance(previous_deployment.change, DeploymentChange)
+            and previous_deployment.change.completed
             else None
         )
-        runtime_metadata = None
+        runtime_inventory = None
         if (
             current_deployment is not None
             and isinstance(current_deployment.change, DeploymentChange)
             and current_deployment.change.artifact_reference is not None
         ):
-            runtime_metadata = self._get_runtime_metadata(request_time=request_time)
+            runtime_inventory = self._get_runtime_inventory(request_time=request_time)
 
         observations = tuple(
             self._to_evidence(
                 record,
-                runtime_metadata=runtime_metadata,
+                runtime_inventory=runtime_inventory,
+                previous_artifact=previous_artifact,
                 is_current_deployment=(
                     current_deployment is not None
                     and record.record_id == current_deployment.record_id
@@ -255,11 +285,11 @@ class ChangeApiOnlyInvestigationDataSource:
             )
         return payload
 
-    def _get_runtime_metadata(
+    def _get_runtime_inventory(
         self,
         *,
         request_time: datetime,
-    ) -> RuntimeMetadataResponse | None:
+    ) -> RuntimeInventoryResponse | None:
         try:
             with httpx2.Client(
                 base_url=self._settings.runtime_base_url,
@@ -267,52 +297,52 @@ class ChangeApiOnlyInvestigationDataSource:
                 transport=self._runtime_transport,
                 trust_env=False,
             ) as client:
-                response = client.get("/api/v1/runtime-metadata")
+                response = client.get("/api/v1/runtime-inventory")
         except httpx2.TimeoutException as error:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_timeout",
-                message="运行元数据查询超时",
+                error_code="runtime_inventory_timeout",
+                message="运行清单查询超时",
             ) from error
         except httpx2.HTTPError as error:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_unavailable",
-                message="运行元数据查询不可用",
+                error_code="runtime_inventory_unavailable",
+                message="运行清单查询不可用",
             ) from error
         payload = response.content
-        if len(payload) > MAX_RUNTIME_RESPONSE_BYTES:
+        if len(payload) > MAX_RUNTIME_INVENTORY_RESPONSE_BYTES:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_response_too_large",
-                message="运行元数据响应超过允许大小",
+                error_code="runtime_inventory_response_too_large",
+                message="运行清单响应超过允许大小",
             )
         if response.status_code == 503:
             try:
-                RuntimeMetadataUnavailableResponse.model_validate_json(payload)
+                RuntimeInventoryUnavailableResponse.model_validate_json(payload)
             except (ValidationError, ValueError) as error:
                 raise InvestigationDataSourceFailure(
-                    error_code="runtime_metadata_invalid_response",
-                    message="运行元数据禁用响应不符合精确契约",
+                    error_code="runtime_inventory_invalid_response",
+                    message="运行清单禁用响应不符合精确契约",
                 ) from error
             return None
         if not 200 <= response.status_code < 300:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_unexpected_status",
-                message="运行元数据查询返回了非预期状态",
+                error_code="runtime_inventory_unexpected_status",
+                message="运行清单查询返回了非预期状态",
                 http_status=response.status_code,
             )
         try:
-            metadata = RuntimeMetadataResponse.model_validate_json(payload)
+            inventory = RuntimeInventoryResponse.model_validate_json(payload)
         except (ValidationError, ValueError) as error:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_invalid_response",
-                message="运行元数据响应不符合精确契约",
+                error_code="runtime_inventory_invalid_response",
+                message="运行清单响应不符合精确契约",
             ) from error
-        difference = (metadata.reported_at - request_time).total_seconds()
+        difference = (inventory.reported_at - request_time).total_seconds()
         if difference > MAX_FUTURE_CLOCK_SKEW_SECONDS or difference < -MAX_RESPONSE_AGE_SECONDS:
             raise InvestigationDataSourceFailure(
-                error_code="runtime_metadata_stale_response",
-                message="运行元数据报告时间异常或已经过期",
+                error_code="runtime_inventory_stale_response",
+                message="运行清单报告时间异常或已经过期",
             )
-        return metadata
+        return inventory
 
     @staticmethod
     def _validate_response_time(
@@ -328,10 +358,93 @@ class ChangeApiOnlyInvestigationDataSource:
             )
 
     @staticmethod
+    def _assess_runtime_inventory(
+        *,
+        declared_artifact: DeploymentArtifactReference,
+        previous_artifact: DeploymentArtifactReference | None,
+        inventory: RuntimeInventoryResponse,
+    ) -> RuntimeArtifactAssessment:
+        instance_results: list[JsonValue] = []
+        matching_count = 0
+        previous_count = 0
+        unexpected_count = 0
+        for instance in inventory.instances:
+            if ChangeApiOnlyInvestigationDataSource._matches_artifact(
+                instance,
+                declared_artifact,
+            ):
+                classification = "target"
+                matching_count += 1
+            elif previous_artifact is not None and (
+                ChangeApiOnlyInvestigationDataSource._matches_artifact(
+                    instance,
+                    previous_artifact,
+                )
+            ):
+                classification = "previous"
+                previous_count += 1
+            else:
+                classification = "unexpected"
+                unexpected_count += 1
+            instance_result: dict[str, JsonValue] = {
+                "instance_id": str(instance.instance_id),
+                "image_repository": instance.image_repository,
+                "image_digest": instance.image_digest,
+                "started_at": instance.started_at.isoformat(),
+                "classification": classification,
+            }
+            instance_results.append(instance_result)
+
+        instance_count = len(inventory.instances)
+        rollout = inventory.rollout
+        rollout_target_matches = (
+            rollout.target_image_repository == declared_artifact.image_repository
+            and rollout.target_image_digest == declared_artifact.image_digest
+        )
+        rollout_window_active = (
+            rollout.phase == "progressing"
+            and rollout.started_at is not None
+            and rollout.deadline_at is not None
+            and rollout.started_at <= inventory.reported_at <= rollout.deadline_at
+        )
+        if matching_count == instance_count:
+            status: RuntimeArtifactStatus = "matched"
+        elif (
+            matching_count > 0
+            and previous_count > 0
+            and unexpected_count == 0
+            and rollout_target_matches
+            and rollout_window_active
+        ):
+            status = "rolling_update"
+        elif matching_count > 0:
+            status = "partial_mismatch"
+        else:
+            status = "mismatched"
+        return RuntimeArtifactAssessment(
+            status=status,
+            matching_count=matching_count,
+            previous_count=previous_count,
+            unexpected_count=unexpected_count,
+            instances=instance_results,
+        )
+
+    @staticmethod
+    def _matches_artifact(
+        instance: RuntimeArtifactInstance,
+        artifact: DeploymentArtifactReference,
+    ) -> bool:
+        return (
+            instance.image_repository == artifact.image_repository
+            and instance.image_digest == artifact.image_digest
+        )
+
+    @staticmethod
     def _to_evidence(
         record: ChangeRecord,
         *,
-        runtime_metadata: RuntimeMetadataResponse | None,
+        runtime_inventory: RuntimeInventoryResponse | None,
+        previous_artifact: DeploymentArtifactReference | None,
         is_current_deployment: bool,
     ) -> EvidenceObservation:
         change = record.change
@@ -344,7 +457,7 @@ class ChangeApiOnlyInvestigationDataSource:
             "source_contract_version": record.source_contract_version,
         }
         if isinstance(change, DeploymentChange):
-            attributes = {
+            attributes: dict[str, JsonValue] = {
                 **common_attributes,
                 "from_version": change.from_version,
                 "to_version": change.to_version,
@@ -384,27 +497,60 @@ class ChangeApiOnlyInvestigationDataSource:
                 )
                 if not is_current_deployment:
                     summary += " 这是历史部署事实，不与当前运行实例比较。"
-                elif runtime_metadata is not None:
-                    runtime_matches = (
-                        runtime_metadata.image_repository
-                        == change.artifact_reference.image_repository
-                        and runtime_metadata.image_digest == change.artifact_reference.image_digest
+                elif runtime_inventory is not None:
+                    assessment = ChangeApiOnlyInvestigationDataSource._assess_runtime_inventory(
+                        declared_artifact=change.artifact_reference,
+                        previous_artifact=previous_artifact,
+                        inventory=runtime_inventory,
                     )
                     attributes.update(
-                        runtime_artifact_status=("matched" if runtime_matches else "mismatched"),
-                        runtime_instance_id=str(runtime_metadata.instance_id),
-                        runtime_image_repository=runtime_metadata.image_repository,
-                        runtime_image_digest=runtime_metadata.image_digest,
-                        runtime_started_at=runtime_metadata.started_at.isoformat(),
-                        runtime_identity_source=runtime_metadata.identity_source,
+                        runtime_artifact_status=assessment.status,
+                        runtime_instance_count=len(runtime_inventory.instances),
+                        runtime_matching_instance_count=assessment.matching_count,
+                        runtime_previous_instance_count=assessment.previous_count,
+                        runtime_unexpected_instance_count=assessment.unexpected_count,
+                        runtime_instances=assessment.instances,
+                        runtime_rollout_phase=runtime_inventory.rollout.phase,
+                        runtime_inventory_reported_at=runtime_inventory.reported_at.isoformat(),
+                        runtime_identity_source=runtime_inventory.identity_source,
                     )
-                    summary += (
-                        " 当前运行身份与部署产物一致。"
-                        if runtime_matches
-                        else " 当前运行身份与该部署产物不一致。"
-                    )
+                    if previous_artifact is not None:
+                        attributes.update(
+                            runtime_previous_image_repository=(previous_artifact.image_repository),
+                            runtime_previous_image_digest=previous_artifact.image_digest,
+                        )
+                    rollout = runtime_inventory.rollout
+                    if rollout.phase == "progressing":
+                        assert rollout.rollout_id is not None
+                        assert rollout.started_at is not None
+                        assert rollout.deadline_at is not None
+                        assert rollout.target_image_repository is not None
+                        assert rollout.target_image_digest is not None
+                        attributes.update(
+                            runtime_rollout_id=str(rollout.rollout_id),
+                            runtime_rollout_started_at=rollout.started_at.isoformat(),
+                            runtime_rollout_deadline_at=rollout.deadline_at.isoformat(),
+                            runtime_rollout_target_image_repository=(
+                                rollout.target_image_repository
+                            ),
+                            runtime_rollout_target_image_digest=rollout.target_image_digest,
+                        )
+                    if assessment.status == "matched":
+                        summary += f" {assessment.matching_count} 个运行实例均与部署产物一致。"
+                    elif assessment.status == "rolling_update":
+                        summary += (
+                            f" 滚动发布进行中：{assessment.matching_count} 个目标实例、"
+                            f"{assessment.previous_count} 个上一版本实例。"
+                        )
+                    elif assessment.status == "partial_mismatch":
+                        summary += (
+                            f" 仅 {assessment.matching_count}/{len(runtime_inventory.instances)} "
+                            "个运行实例与部署产物一致。"
+                        )
+                    else:
+                        summary += " 所有运行实例均与该部署产物不一致。"
                 else:
-                    summary += " 当前运行身份未启用，无法核对实际启动声明。"
+                    summary += " 当前运行清单未启用，无法核对实例集合。"
         elif isinstance(change, ConfigurationChange):
             attributes = {
                 **common_attributes,

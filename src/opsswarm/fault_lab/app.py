@@ -39,6 +39,9 @@ from opsswarm.fault_lab.redis_dependency import (
     RemoteRedisDependencyBackend,
 )
 from opsswarm.fault_lab.runtime_metadata import (
+    RuntimeArtifactInstance,
+    RuntimeInventoryResponse,
+    RuntimeInventoryUnavailableResponse,
     RuntimeMetadataResponse,
     RuntimeMetadataSettings,
     RuntimeMetadataUnavailableResponse,
@@ -103,7 +106,20 @@ def create_app(
         else RuntimeMetadataSettings()
     )
     runtime_identity = runtime_settings.identity()
+    runtime_declaration = runtime_settings.declaration()
     runtime_started_at = runtime_clock()
+    runtime_instances: tuple[RuntimeArtifactInstance, ...] = ()
+    if runtime_identity is not None:
+        primary_instance = RuntimeArtifactInstance(
+            **runtime_identity.model_dump(),
+            started_at=runtime_started_at,
+        )
+        runtime_instances = (primary_instance, *runtime_declaration.additional_instances)
+        RuntimeInventoryResponse(
+            instances=runtime_instances,
+            rollout=runtime_declaration.rollout,
+            reported_at=runtime_started_at,
+        )
     dependency_backend = redis_backend
     if dependency_backend is None:
         dependency_backend = (
@@ -154,6 +170,32 @@ def create_app(
         return RuntimeMetadataResponse(
             **runtime_identity.model_dump(),
             started_at=runtime_started_at,
+            reported_at=runtime_clock(),
+        )
+
+    @app.get(
+        "/api/v1/runtime-inventory",
+        response_model=RuntimeInventoryResponse,
+        responses={
+            503: {
+                "model": RuntimeInventoryUnavailableResponse,
+                "description": "部署平台没有为当前服务注入运行实例清单",
+            }
+        },
+        tags=["运行元数据"],
+    )
+    def get_runtime_inventory() -> RuntimeInventoryResponse | JSONResponse:
+        """报告有界实例清单和发布窗口，不读取容器运行时或服务发现。"""
+
+        if runtime_identity is None:
+            unavailable = RuntimeInventoryUnavailableResponse()
+            return JSONResponse(
+                status_code=503,
+                content=unavailable.model_dump(mode="json"),
+            )
+        return RuntimeInventoryResponse(
+            instances=runtime_instances,
+            rollout=runtime_declaration.rollout,
             reported_at=runtime_clock(),
         )
 

@@ -10,7 +10,12 @@ from pydantic import ValidationError
 
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
-from opsswarm.fault_lab.runtime_metadata import RuntimeMetadataSettings
+from opsswarm.fault_lab.runtime_metadata import (
+    RuntimeArtifactInstance,
+    RuntimeInventoryDeclaration,
+    RuntimeMetadataSettings,
+    RuntimeRolloutContext,
+)
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
 INSTANCE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -32,11 +37,17 @@ def test_health_endpoint(client: TestClient) -> None:
 
 def test_runtime_metadata_is_disabled_by_default(client: TestClient) -> None:
     response = client.get("/api/v1/runtime-metadata")
+    inventory_response = client.get("/api/v1/runtime-inventory")
 
     assert response.status_code == 503
     assert response.json() == {
         "error_code": "runtime_metadata_unavailable",
         "message": "运行元数据未启用",
+    }
+    assert inventory_response.status_code == 503
+    assert inventory_response.json() == {
+        "error_code": "runtime_inventory_unavailable",
+        "message": "运行清单未启用",
     }
 
 
@@ -55,6 +66,7 @@ def test_runtime_metadata_reports_complete_startup_identity() -> None:
         )
     ) as client:
         response = client.get("/api/v1/runtime-metadata")
+        inventory_response = client.get("/api/v1/runtime-inventory")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -67,6 +79,134 @@ def test_runtime_metadata_reports_complete_startup_identity() -> None:
         "started_at": "2026-08-31T12:00:00Z",
         "reported_at": "2026-08-31T12:00:00Z",
     }
+    assert inventory_response.status_code == 200
+    assert inventory_response.json() == {
+        "schema_version": 1,
+        "service_name": "order-service",
+        "identity_source": "deployment-environment",
+        "instances": [
+            {
+                "instance_id": str(INSTANCE_ID),
+                "image_repository": "ghcr.io/kill-t/ops-swarm-order-service",
+                "image_digest": IMAGE_DIGEST,
+                "started_at": "2026-08-31T12:00:00Z",
+            }
+        ],
+        "rollout": {
+            "phase": "stable",
+            "rollout_id": None,
+            "started_at": None,
+            "deadline_at": None,
+            "target_image_repository": None,
+            "target_image_digest": None,
+        },
+        "reported_at": "2026-08-31T12:00:00Z",
+    }
+
+
+def test_runtime_inventory_reports_additional_instance_and_rollout_window() -> None:
+    previous_digest = "sha256:" + "c" * 64
+    declaration = RuntimeInventoryDeclaration(
+        additional_instances=(
+            RuntimeArtifactInstance(
+                instance_id=UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=previous_digest,
+                started_at=datetime(2026, 8, 31, 11, 30, tzinfo=UTC),
+            ),
+        ),
+        rollout=RuntimeRolloutContext(
+            phase="progressing",
+            rollout_id=UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+            started_at=datetime(2026, 8, 31, 11, 55, tzinfo=UTC),
+            deadline_at=datetime(2026, 8, 31, 12, 5, tzinfo=UTC),
+            target_image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            target_image_digest=IMAGE_DIGEST,
+        ),
+    )
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+        inventory_declaration=declaration.model_dump_json(),
+    )
+    with TestClient(
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_clock=lambda: NOW,
+        )
+    ) as client:
+        response = client.get("/api/v1/runtime-inventory")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert len(body["instances"]) == 2
+    assert body["instances"][1]["image_digest"] == previous_digest
+    assert body["rollout"]["phase"] == "progressing"
+    assert body["rollout"]["target_image_digest"] == IMAGE_DIGEST
+
+
+def test_runtime_inventory_rejects_duplicate_current_instance() -> None:
+    declaration = RuntimeInventoryDeclaration(
+        additional_instances=(
+            RuntimeArtifactInstance(
+                instance_id=INSTANCE_ID,
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+                started_at=NOW,
+            ),
+        )
+    )
+
+    with pytest.raises(ValidationError):
+        RuntimeMetadataSettings(
+            metadata_enabled=True,
+            instance_id=str(INSTANCE_ID),
+            image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            image_digest=IMAGE_DIGEST,
+            inventory_declaration=declaration.model_dump_json(),
+        )
+
+
+def test_runtime_inventory_rejects_instance_that_has_not_started() -> None:
+    declaration = RuntimeInventoryDeclaration(
+        additional_instances=(
+            RuntimeArtifactInstance(
+                instance_id=UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+                started_at=datetime(2026, 8, 31, 12, 1, tzinfo=UTC),
+            ),
+        )
+    )
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+        inventory_declaration=declaration.model_dump_json(),
+    )
+
+    with pytest.raises(ValidationError):
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_clock=lambda: NOW,
+        )
+
+
+def test_runtime_inventory_rejects_rollout_window_over_thirty_minutes() -> None:
+    with pytest.raises(ValidationError):
+        RuntimeRolloutContext(
+            phase="progressing",
+            rollout_id=UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+            started_at=NOW,
+            deadline_at=datetime(2026, 8, 31, 12, 31, tzinfo=UTC),
+            target_image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            target_image_digest=IMAGE_DIGEST,
+        )
 
 
 @pytest.mark.parametrize(
