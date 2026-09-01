@@ -3,7 +3,10 @@
 from opsswarm.approval.persistence.records import (
     ApprovalDecisionOutcome,
     ApprovalRequestCreation,
+    PendingApprovalIncident,
+    PendingApprovalPage,
     StoredApprovalRequest,
+    StoredPendingApproval,
 )
 from opsswarm.approval.persistence.repository import (
     ApprovalRequestStore,
@@ -14,6 +17,9 @@ __all__ = [
     "ApprovalDecisionOutcome",
     "ApprovalRequestCreation",
     "ApprovalRequestStore",
+    "PendingApprovalIncident",
+    "PendingApprovalPage",
     "StoredApprovalRequest",
+    "StoredPendingApproval",
     "load_approval_request_in_session",
 ]

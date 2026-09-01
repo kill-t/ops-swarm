@@ -147,6 +147,51 @@ async def test_concurrent_submission_creates_one_request_and_one_state_transitio
     assert count == 1
 
 
+async def test_pending_queue_returns_exact_plan_and_removes_decided_request(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, started, plan, approval_store, request = await prepare_pending_request(
+        database_session_factory,
+        suffix="approval-queue",
+    )
+
+    page = await approval_store.list_pending(limit=10)
+
+    assert page.total == 1
+    assert len(page.items) == 1
+    item = page.items[0]
+    assert item.approval_request == request
+    assert item.incident.id == started.incident.incident.id
+    assert item.incident.display_number == started.incident.display_number
+    assert item.incident.status is IncidentStatus.AWAITING_APPROVAL
+    assert item.incident.version == 3
+    assert item.action_plan.id == plan.id
+    assert item.action_plan.status is ActionPlanStatus.AWAITING_APPROVAL
+    assert item.action_plan.steps == plan.steps
+
+    await approval_store.decide(
+        request.id,
+        decision=ApprovalDecision.REJECT,
+        expected_incident_version=3,
+        occurred_at=BASE_TIME + timedelta(seconds=6),
+        actor=HUMAN_ACTOR,
+        reason="队列测试拒绝计划",
+    )
+
+    empty_page = await approval_store.list_pending(limit=10)
+    assert empty_page.total == 0
+    assert empty_page.items == ()
+
+
+@pytest.mark.parametrize("limit", [0, 101, True])
+async def test_pending_queue_rejects_unbounded_limit(
+    database_session_factory: async_sessionmaker[AsyncSession],
+    limit: int,
+) -> None:
+    with pytest.raises(ValueError):
+        await ApprovalRequestStore(database_session_factory).list_pending(limit=limit)
+
+
 async def test_stale_version_rolls_back_all_changes_and_exact_version_fk_is_enforced(
     database_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

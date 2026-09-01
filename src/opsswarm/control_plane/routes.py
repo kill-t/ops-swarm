@@ -41,6 +41,7 @@ from opsswarm.control_plane.schemas import (
     InvestigationAttemptListResponse,
     InvestigationRunResponse,
     OperationExecutionResponse,
+    PendingApprovalPageResponse,
     RecordVerificationSampleResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
@@ -499,6 +500,19 @@ def create_router(clock: Clock) -> APIRouter:
         if not creation.created:
             response.status_code = status.HTTP_200_OK
         return CreateApprovalRequestResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/approval-requests",
+        response_model=PendingApprovalPageResponse,
+        tags=["审批"],
+    )
+    async def list_pending_approval_requests(
+        store: ApprovalRequestStoreDependency,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> PendingApprovalPageResponse:
+        """只读返回待审批队列，不在列表请求中自动作出决定。"""
+
+        return PendingApprovalPageResponse.from_page(await store.list_pending(limit=limit))
 
     @router.get(
         "/api/v1/approval-requests/{request_id}",

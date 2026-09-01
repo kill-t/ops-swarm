@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  decideApprovalRequest,
   getEvaluationRun,
   getEvidenceBoard,
   getIncidentWorkroom,
   listEvaluationRuns,
   listIncidents,
   listInvestigationAttempts,
+  listPendingApprovals,
 } from "./api";
 
 describe("控制面 API 客户端", () => {
@@ -142,6 +144,49 @@ describe("控制面 API 客户端", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/evaluation-runs/run%2F001",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("读取有界待审批队列", async () => {
+    const body = { items: [], total: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listPendingApprovals()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/approval-requests?limit=50",
+      expect.objectContaining({ method: "GET", headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("批准时只发送人工审计与 Incident 乐观锁", async () => {
+    const body = { decision_applied: true, approval_request: { status: "approved" } };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      expected_incident_version: 3,
+      actor_id: "engineer-001",
+      reason: "确认风险和恢复判据",
+    };
+
+    await expect(decideApprovalRequest("approval/001", "approve", input)).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/approval-requests/approval%2F001/actions/approve",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
     );
   });
 });

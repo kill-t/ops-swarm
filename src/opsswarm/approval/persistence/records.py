@@ -8,7 +8,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from opsswarm.approval.models import ApprovalRequestStatus
-from opsswarm.incidents import ActorType
+from opsswarm.incidents import ActorType, IncidentSeverity, IncidentStatus
+from opsswarm.planning.models import ActionPlanStatus
+from opsswarm.planning.persistence.records import StoredActionPlan
 
 
 class StoredApprovalRequest(BaseModel):
@@ -67,6 +69,70 @@ class StoredApprovalRequest(BaseModel):
         ):
             raise ValueError("过期必须记录为无操作者标识的系统决定")
         return self
+
+
+class PendingApprovalIncident(BaseModel):
+    """待审批列表需要的 Incident 最小快照。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    id: UUID
+    display_number: int = Field(ge=1)
+    service_name: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=200)
+    severity: IncidentSeverity
+    status: IncidentStatus
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+    @field_validator("updated_at")
+    @classmethod
+    def normalize_updated_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Incident 更新时间必须包含时区")
+        return value.astimezone(UTC)
+
+
+class StoredPendingApproval(BaseModel):
+    """完整待审批对象，便于工程师复核精确计划。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approval_request: StoredApprovalRequest
+    incident: PendingApprovalIncident
+    action_plan: StoredActionPlan
+
+    @model_validator(mode="after")
+    def validate_exact_binding(self) -> Self:
+        request = self.approval_request
+        if request.status is not ApprovalRequestStatus.PENDING:
+            raise ValueError("待审批投影只能包含 pending 请求")
+        if self.incident.status is not IncidentStatus.AWAITING_APPROVAL:
+            raise ValueError("待审批请求必须关联 awaiting_approval Incident")
+        if self.action_plan.status is not ActionPlanStatus.AWAITING_APPROVAL:
+            raise ValueError("待审批请求必须关联 awaiting_approval 计划")
+        if request.incident_id != self.incident.id:
+            raise ValueError("审批请求与 Incident 不一致")
+        if (
+            request.action_plan_id != self.action_plan.id
+            or request.action_plan_version != self.action_plan.version
+        ):
+            raise ValueError("审批请求没有绑定投影中的精确计划版本")
+        if not self.action_plan.requires_human_approval:
+            raise ValueError("待审批计划必须要求人工审批")
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class PendingApprovalPage:
+    """有界待审批队列及数据库中的总待办数。"""
+
+    items: tuple[StoredPendingApproval, ...]
+    total: int
+
+    def __post_init__(self) -> None:
+        if self.total < len(self.items):
+            raise ValueError("待审批总数不能小于当前页数量")
 
 
 @dataclass(frozen=True, slots=True)

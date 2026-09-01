@@ -25,6 +25,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `POST /api/v1/investigations/{run_id}/action-plans` | 首次生成草案 `201`；幂等重复 `200` | 不存在 `404`；调查或假设未就绪 `409` |
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |
 | `POST /api/v1/action-plans/{plan_id}/approval-requests` | 首次提交 `201`；同计划幂等重复 `200` | 计划不存在 `404`；版本、状态或完整性冲突 `409` |
+| `GET /api/v1/approval-requests` | 按最早过期顺序返回有界待审批队列和完整计划 | 查询参数错误 `422`；计划内容漂移 `409` |
 | `GET /api/v1/approval-requests/{request_id}` | 重验计划内容后返回限时审批请求 | 不存在 `404`；内容漂移 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/approve` | 首次批准 `decision_applied=true`；同向重试为 `false` | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
@@ -67,6 +68,8 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 请求绑定计划 ID、版本和内容 SHA-256，固定 30 分钟有效。GET 会重新校验计划策略与内容哈希。批准和拒绝是不可变终态；同方向重试返回原决定，相反方向返回冲突。决定到达时已经过期会先持久化 `expired` 并把 Incident 返回调查，再响应 `409`。
 
 批准把 Incident 迁移到 `mitigating`，但接口不调用执行器或环境工具。`actor_id` 只供本地审计，不能证明调用者身份。
+
+待审批队列 GET 默认返回最早到期的 50 条，`limit` 只能在 1～100 之间。每项包含审批请求、Incident 当前版本和完整计划，并复用单请求读取的风险策略及内容哈希校验。GET 不修改过期状态；真正提交决定时由同一事务按服务器时间收敛。页面契约和安全边界见 [本地审批中心与待办队列](54-approval-center-ui.md)。
 
 ### 2.4 受控执行语义
 

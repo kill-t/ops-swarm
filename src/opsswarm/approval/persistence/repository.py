@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.approval.errors import (
@@ -28,10 +28,19 @@ from opsswarm.approval.models import (
 from opsswarm.approval.persistence.records import (
     ApprovalDecisionOutcome,
     ApprovalRequestCreation,
+    PendingApprovalIncident,
+    PendingApprovalPage,
     StoredApprovalRequest,
+    StoredPendingApproval,
 )
 from opsswarm.approval.persistence.tables import ApprovalRequestRow
-from opsswarm.incidents import ActorType, IncidentAction, IncidentActor
+from opsswarm.incidents import (
+    ActorType,
+    IncidentAction,
+    IncidentActor,
+    IncidentSeverity,
+    IncidentStatus,
+)
 from opsswarm.incidents.errors import IncidentNotFound
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -168,6 +177,69 @@ class ApprovalRequestStore:
                 raise ApprovalRequestNotFound(request_id)
             return await load_approval_request_in_session(session, row)
 
+    async def list_pending(self, *, limit: int = 50) -> PendingApprovalPage:
+        """按最先过期顺序返回有界待办，并重验每个计划摘要。"""
+
+        if isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("limit 必须在 1 到 100 之间")
+        async with self._session_factory() as session:
+            total = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ApprovalRequestRow)
+                    .where(ApprovalRequestRow.status == ApprovalRequestStatus.PENDING.value)
+                )
+                or 0
+            )
+            rows = (
+                await session.execute(
+                    select(
+                        ApprovalRequestRow,
+                        ActionPlanRow,
+                        InvestigationRunRow,
+                        IncidentRow,
+                    )
+                    .join(ActionPlanRow, ApprovalRequestRow.action_plan_id == ActionPlanRow.id)
+                    .join(
+                        InvestigationRunRow,
+                        ActionPlanRow.investigation_run_id == InvestigationRunRow.id,
+                    )
+                    .join(IncidentRow, InvestigationRunRow.incident_id == IncidentRow.id)
+                    .where(ApprovalRequestRow.status == ApprovalRequestStatus.PENDING.value)
+                    .order_by(
+                        ApprovalRequestRow.expires_at,
+                        ApprovalRequestRow.created_at,
+                        ApprovalRequestRow.id,
+                    )
+                    .limit(limit)
+                )
+            ).all()
+            items: list[StoredPendingApproval] = []
+            for request_row, plan_row, run_row, incident_row in rows:
+                stored_plan = await load_action_plan_in_session(session, plan_row)
+                stored_request = _stored_approval_request(
+                    request_row,
+                    stored_plan=stored_plan,
+                    incident_id=run_row.incident_id,
+                )
+                items.append(
+                    StoredPendingApproval(
+                        approval_request=stored_request,
+                        incident=PendingApprovalIncident(
+                            id=incident_row.id,
+                            display_number=incident_row.display_number,
+                            service_name=incident_row.service_name,
+                            title=incident_row.title,
+                            severity=IncidentSeverity(incident_row.severity),
+                            status=IncidentStatus(incident_row.status),
+                            version=incident_row.version,
+                            updated_at=incident_row.updated_at,
+                        ),
+                        action_plan=stored_plan,
+                    )
+                )
+            return PendingApprovalPage(items=tuple(items), total=total)
+
     async def decide(
         self,
         request_id: UUID,
@@ -288,11 +360,26 @@ async def load_approval_request_in_session(
     if run_row is None:
         raise RuntimeError("审批请求关联的调查运行不存在")
     stored_plan = await load_action_plan_in_session(session, plan_row)
+    return _stored_approval_request(
+        row,
+        stored_plan=stored_plan,
+        incident_id=run_row.incident_id,
+    )
+
+
+def _stored_approval_request(
+    row: ApprovalRequestRow,
+    *,
+    stored_plan: StoredActionPlan,
+    incident_id: UUID,
+) -> StoredApprovalRequest:
+    """使用已加载计划构造请求，避免队列投影重复查询计划。"""
+
     if _content_hash(stored_plan) != row.plan_content_hash:
         raise ApprovalPlanIntegrityViolation(row.id)
     return StoredApprovalRequest(
         id=row.id,
-        incident_id=run_row.incident_id,
+        incident_id=incident_id,
         action_plan_id=row.action_plan_id,
         action_plan_version=row.action_plan_version,
         plan_content_hash=row.plan_content_hash,

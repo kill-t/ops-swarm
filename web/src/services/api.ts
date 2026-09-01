@@ -1,4 +1,10 @@
 import type { Incident, IncidentPage } from "../types/incidents";
+import type {
+  ApprovalDecision,
+  ApprovalDecisionInput,
+  ApprovalDecisionResponse,
+  PendingApprovalPage,
+} from "../types/approvals";
 import type { EvaluationRun, EvaluationRunPage } from "../types/evaluations";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { InvestigationAttemptList } from "../types/investigation-attempts";
@@ -28,10 +34,22 @@ export function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`;
 }
 
-async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+interface JsonRequestOptions {
+  method?: "GET" | "POST";
+  body?: object;
+  signal?: AbortSignal;
+}
+
+async function requestJson<T>(path: string, options: JsonRequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
   const response = await fetch(apiUrl(path), {
-    headers: { Accept: "application/json" },
-    signal,
+    method: options.method ?? "GET",
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   });
   if (!response.ok) {
     let body: ApiErrorBody = {};
@@ -50,11 +68,11 @@ async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 export function listIncidents(signal?: AbortSignal): Promise<IncidentPage> {
-  return requestJson<IncidentPage>("/api/v1/incidents?limit=100", signal);
+  return requestJson<IncidentPage>("/api/v1/incidents?limit=100", { signal });
 }
 
 export function getIncident(incidentId: string, signal?: AbortSignal): Promise<Incident> {
-  return requestJson<Incident>(`/api/v1/incidents/${encodeURIComponent(incidentId)}`, signal);
+  return requestJson<Incident>(`/api/v1/incidents/${encodeURIComponent(incidentId)}`, { signal });
 }
 
 export function getIncidentWorkroom(
@@ -63,7 +81,7 @@ export function getIncidentWorkroom(
 ): Promise<IncidentWorkroomSnapshot> {
   return requestJson<IncidentWorkroomSnapshot>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/workroom`,
-    signal,
+    { signal },
   );
 }
 
@@ -73,7 +91,7 @@ export function listInvestigationAttempts(
 ): Promise<InvestigationAttemptList> {
   return requestJson<InvestigationAttemptList>(
     `/api/v1/investigations/${encodeURIComponent(runId)}/attempts`,
-    signal,
+    { signal },
   );
 }
 
@@ -83,7 +101,7 @@ export function getEvidenceBoard(
 ): Promise<EvidenceBoardSnapshot> {
   return requestJson<EvidenceBoardSnapshot>(
     `/api/v1/investigations/${encodeURIComponent(runId)}/evidence-board`,
-    signal,
+    { signal },
   );
 }
 
@@ -92,12 +110,28 @@ export function listEvaluationRuns(
   signal?: AbortSignal,
 ): Promise<EvaluationRunPage> {
   const cursor = beforeSequence === undefined ? "" : `&before_sequence=${beforeSequence}`;
-  return requestJson<EvaluationRunPage>(`/api/v1/evaluation-runs?limit=50${cursor}`, signal);
+  return requestJson<EvaluationRunPage>(`/api/v1/evaluation-runs?limit=50${cursor}`, { signal });
 }
 
 export function getEvaluationRun(runId: string, signal?: AbortSignal): Promise<EvaluationRun> {
   return requestJson<EvaluationRun>(
     `/api/v1/evaluation-runs/${encodeURIComponent(runId)}`,
-    signal,
+    { signal },
+  );
+}
+
+export function listPendingApprovals(signal?: AbortSignal): Promise<PendingApprovalPage> {
+  return requestJson<PendingApprovalPage>("/api/v1/approval-requests?limit=50", { signal });
+}
+
+export function decideApprovalRequest(
+  requestId: string,
+  decision: ApprovalDecision,
+  input: ApprovalDecisionInput,
+  signal?: AbortSignal,
+): Promise<ApprovalDecisionResponse> {
+  return requestJson<ApprovalDecisionResponse>(
+    `/api/v1/approval-requests/${encodeURIComponent(requestId)}/actions/${decision}`,
+    { method: "POST", body: input, signal },
   );
 }

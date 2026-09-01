@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import IncidentWorkroomView from "./views/IncidentWorkroomView.vue";
 import EvaluationDashboardView from "./views/EvaluationDashboardView.vue";
+import ApprovalCenterView from "./views/ApprovalCenterView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -11,6 +12,11 @@ export const router = createRouter({
       path: "/incidents/:incidentId?",
       name: "incidents",
       component: IncidentWorkroomView,
+    },
+    {
+      path: "/approvals/:requestId?",
+      name: "approvals",
+      component: ApprovalCenterView,
     },
     {
       path: "/evaluations/:runId?",

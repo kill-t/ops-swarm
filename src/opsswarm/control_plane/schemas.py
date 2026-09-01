@@ -10,7 +10,9 @@ from opsswarm.approval.models import ApprovalRequestStatus
 from opsswarm.approval.persistence import (
     ApprovalDecisionOutcome,
     ApprovalRequestCreation,
+    PendingApprovalPage,
     StoredApprovalRequest,
+    StoredPendingApproval,
 )
 from opsswarm.evaluation.attempts import (
     EvaluationAttemptBudget,
@@ -473,6 +475,54 @@ class ApprovalRequestResponse(StrictApiModel):
     @classmethod
     def from_stored(cls, stored: StoredApprovalRequest) -> Self:
         return cls.model_validate(stored.model_dump())
+
+
+class PendingApprovalIncidentResponse(StrictApiModel):
+    """审批人识别事故和提交乐观锁所需的最小快照。"""
+
+    id: UUID
+    display_number: int
+    reference: str
+    service_name: str
+    title: str
+    severity: IncidentSeverity
+    status: IncidentStatus
+    version: int
+    updated_at: datetime
+
+
+class PendingApprovalResponse(StrictApiModel):
+    """一条待办包含精确审批绑定、Incident 版本和完整计划。"""
+
+    approval_request: ApprovalRequestResponse
+    incident: PendingApprovalIncidentResponse
+    action_plan: ActionPlanResponse
+
+    @classmethod
+    def from_stored(cls, stored: StoredPendingApproval) -> Self:
+        incident = stored.incident
+        return cls(
+            approval_request=ApprovalRequestResponse.from_stored(stored.approval_request),
+            incident=PendingApprovalIncidentResponse(
+                **incident.model_dump(),
+                reference=f"INC-{incident.display_number:06d}",
+            ),
+            action_plan=ActionPlanResponse.from_stored(stored.action_plan),
+        )
+
+
+class PendingApprovalPageResponse(StrictApiModel):
+    """有界待审批队列，total 用于提示是否还有未展示待办。"""
+
+    items: tuple[PendingApprovalResponse, ...]
+    total: int
+
+    @classmethod
+    def from_page(cls, page: PendingApprovalPage) -> Self:
+        return cls(
+            items=tuple(PendingApprovalResponse.from_stored(item) for item in page.items),
+            total=page.total,
+        )
 
 
 class CreateApprovalRequestResponse(StrictApiModel):

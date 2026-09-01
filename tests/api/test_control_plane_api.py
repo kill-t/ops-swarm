@@ -907,6 +907,23 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["status"] == "awaiting_approval"
     assert incident.json()["version"] == 3
 
+    pending_approvals = await control_client.get("/api/v1/approval-requests?limit=50")
+    assert pending_approvals.status_code == 200
+    pending_body = pending_approvals.json()
+    assert pending_body["total"] == 1
+    assert len(pending_body["items"]) == 1
+    pending_item = pending_body["items"][0]
+    assert pending_item["approval_request"] == approval_body["approval_request"]
+    assert pending_item["incident"]["id"] == created.json()["incident"]["id"]
+    assert pending_item["incident"]["reference"].startswith("INC-")
+    assert pending_item["incident"]["version"] == 3
+    assert pending_item["action_plan"]["id"] == plan_id
+    assert pending_item["action_plan"]["status"] == "awaiting_approval"
+    assert pending_item["action_plan"]["steps"][0]["parameters"] == {
+        "current_version": "2026.01.01-rc1",
+        "target_version": "stable",
+    }
+
     decision_payload = {
         "expected_incident_version": 3,
         "actor_id": "engineer-002",
@@ -922,6 +939,9 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert approved_body["approval_request"]["status"] == "approved"
     assert approved_body["approval_request"]["decided_by_type"] == "human"
     assert approved_body["approval_request"]["decided_by_id"] == "engineer-002"
+    decided_queue = await control_client.get("/api/v1/approval-requests?limit=50")
+    assert decided_queue.status_code == 200
+    assert decided_queue.json() == {"items": [], "total": 0}
 
     duplicate_decision = await control_client.post(
         f"/api/v1/approval-requests/{request_id}/actions/approve",

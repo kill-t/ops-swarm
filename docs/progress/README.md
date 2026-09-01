@@ -94,3 +94,4 @@
 - [51 - 多实例运行清单与滚动发布判定](51-runtime-inventory-rollout.md)
 - [52 - Ed25519 签名运行清单证明](52-signed-runtime-inventory-proof.md)
 - [53 - 独立部署控制器与动态证明刷新](53-deployment-controller-runtime-proof-refresh.md)
+- [54 - 本地审批中心与待办队列](54-approval-center-ui.md)
