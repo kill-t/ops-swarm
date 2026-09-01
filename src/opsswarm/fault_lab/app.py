@@ -51,7 +51,13 @@ from opsswarm.fault_lab.runtime_proof import (
     RuntimeInventoryProofVerificationError,
     bind_proof_to_runtime_identity,
     parse_runtime_inventory_proof,
+    parse_runtime_proof_public_keys,
     verify_runtime_inventory_proof,
+)
+from opsswarm.fault_lab.runtime_refresh import (
+    HttpRuntimeInventoryProofRefresher,
+    RuntimeInventoryProofRefresher,
+    RuntimeInventoryProofRefreshFailure,
 )
 from opsswarm.fault_lab.structured_logging import FaultKind, FaultLabEventLogger
 
@@ -100,6 +106,7 @@ def create_app(
     redis_backend: RedisDependencyBackend | None = None,
     event_logger: FaultLabEventLogger | None = None,
     runtime_metadata_settings: RuntimeMetadataSettings | None = None,
+    runtime_proof_refresher: RuntimeInventoryProofRefresher | None = None,
     runtime_clock: Callable[[], datetime] = _utc_now,
 ) -> FastAPI:
     """创建故障演练应用；生产入口默认访问真实 Redis。"""
@@ -118,8 +125,17 @@ def create_app(
     runtime_declaration = runtime_settings.declaration()
     runtime_proof_material = None
     runtime_proof_summary = None
+    dynamic_proof_refresher = None
     if runtime_identity is not None:
-        if runtime_settings.proof_enabled:
+        if runtime_settings.proof_refresh_enabled:
+            public_keys = parse_runtime_proof_public_keys(runtime_settings.proof_public_keys)
+            dynamic_proof_refresher = runtime_proof_refresher or HttpRuntimeInventoryProofRefresher(
+                base_url=runtime_settings.proof_refresh_base_url,
+                timeout_seconds=runtime_settings.proof_refresh_timeout_seconds,
+                public_keys=public_keys,
+                clock=runtime_clock,
+            )
+        elif runtime_settings.proof_enabled:
             proof_envelope, proof_public_keys = parse_runtime_inventory_proof(
                 runtime_settings.inventory_proof,
                 runtime_settings.proof_public_keys,
@@ -142,17 +158,18 @@ def create_app(
                 started_at=runtime_started_at,
             )
             runtime_instances = (primary_instance, *runtime_declaration.additional_instances)
-        RuntimeInventoryResponse(
-            identity_source=(
-                "deployment-controller-ed25519"
-                if runtime_proof_summary is not None
-                else "deployment-environment"
-            ),
-            instances=runtime_instances,
-            rollout=runtime_declaration.rollout,
-            proof=runtime_proof_summary,
-            reported_at=runtime_started_at,
-        )
+        if dynamic_proof_refresher is None:
+            RuntimeInventoryResponse(
+                identity_source=(
+                    "deployment-controller-ed25519"
+                    if runtime_proof_summary is not None
+                    else "deployment-environment"
+                ),
+                instances=runtime_instances,
+                rollout=runtime_declaration.rollout,
+                proof=runtime_proof_summary,
+                reported_at=runtime_started_at,
+            )
     dependency_backend = redis_backend
     if dependency_backend is None:
         dependency_backend = (
@@ -230,7 +247,32 @@ def create_app(
             )
         reported_at = runtime_clock()
         proof_summary = runtime_proof_summary
-        if runtime_proof_material is not None:
+        response_instances = runtime_instances
+        response_rollout = runtime_declaration.rollout
+        if dynamic_proof_refresher is not None:
+            try:
+                refreshed_proof = dynamic_proof_refresher.refresh(
+                    identity=runtime_identity,
+                )
+                # 应用边界再次强制绑定，不依赖具体刷新适配器的实现细节。
+                bind_proof_to_runtime_identity(refreshed_proof, runtime_identity)
+            except (
+                RuntimeInventoryProofRefreshFailure,
+                RuntimeInventoryProofVerificationError,
+            ) as exc:
+                unavailable_proof = RuntimeInventoryProofUnavailableResponse(
+                    error_code=exc.error_code,
+                    message=exc.message,
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content=unavailable_proof.model_dump(mode="json"),
+                )
+            reported_at = runtime_clock()
+            proof_summary = refreshed_proof.summary
+            response_instances = refreshed_proof.instances
+            response_rollout = refreshed_proof.rollout
+        elif runtime_proof_material is not None:
             proof_envelope, proof_public_keys = runtime_proof_material
             try:
                 verified_proof = verify_runtime_inventory_proof(
@@ -255,8 +297,8 @@ def create_app(
                 if proof_summary is not None
                 else "deployment-environment"
             ),
-            instances=runtime_instances,
-            rollout=runtime_declaration.rollout,
+            instances=response_instances,
+            rollout=response_rollout,
             proof=proof_summary,
             reported_at=reported_at,
         )

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
 from opsswarm.fault_lab.runtime_metadata import (
+    RuntimeArtifactIdentity,
     RuntimeArtifactInstance,
     RuntimeInventoryDeclaration,
     RuntimeMetadataSettings,
@@ -20,9 +21,12 @@ from opsswarm.fault_lab.runtime_metadata import (
 from opsswarm.fault_lab.runtime_proof import (
     RuntimeInventoryProofPayload,
     RuntimeProofPublicKeyRing,
+    VerifiedRuntimeInventoryProof,
     encode_ed25519_public_key,
     issue_runtime_inventory_proof,
+    verify_runtime_inventory_proof,
 )
+from opsswarm.fault_lab.runtime_refresh import RuntimeInventoryProofRefreshFailure
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
 INSTANCE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -265,6 +269,110 @@ def test_runtime_inventory_reports_verified_ed25519_proof() -> None:
         "algorithm": "Ed25519",
         "issued_at": "2026-08-31T11:59:59Z",
         "expires_at": "2026-08-31T12:02:00Z",
+    }
+
+
+def test_runtime_inventory_refreshes_a_new_proof_for_every_request() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key_ring = RuntimeProofPublicKeyRing(
+        keys={"local-controller-1": encode_ed25519_public_key(private_key)}
+    )
+    proof_ids = iter(
+        (
+            UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+            UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        )
+    )
+
+    class FreshProofRefresher:
+        def refresh(
+            self,
+            *,
+            identity: RuntimeArtifactIdentity,
+        ) -> VerifiedRuntimeInventoryProof:
+            payload = RuntimeInventoryProofPayload(
+                proof_id=next(proof_ids),
+                issued_at=NOW,
+                expires_at=NOW + timedelta(minutes=2),
+                instances=(
+                    RuntimeArtifactInstance(
+                        **identity.model_dump(),
+                        started_at=NOW - timedelta(minutes=1),
+                    ),
+                ),
+            )
+            envelope = issue_runtime_inventory_proof(
+                payload,
+                key_id="local-controller-1",
+                private_key=private_key,
+            )
+            return verify_runtime_inventory_proof(
+                envelope,
+                key_ring,
+                current_time=NOW,
+            )
+
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+        proof_refresh_base_url="http://deployment-controller:8000",
+        proof_public_keys=key_ring.model_dump_json(),
+    )
+    with TestClient(
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_proof_refresher=FreshProofRefresher(),
+            runtime_clock=lambda: NOW,
+        )
+    ) as client:
+        first = client.get("/api/v1/runtime-inventory")
+        second = client.get("/api/v1/runtime-inventory")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["proof"]["proof_id"] != second.json()["proof"]["proof_id"]
+    assert first.json()["identity_source"] == "deployment-controller-ed25519"
+
+
+def test_runtime_inventory_refresh_failure_does_not_fallback_to_old_data() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    key_ring = RuntimeProofPublicKeyRing(
+        keys={"local-controller-1": encode_ed25519_public_key(private_key)}
+    )
+
+    class FailingProofRefresher:
+        def refresh(
+            self,
+            *,
+            identity: RuntimeArtifactIdentity,
+        ) -> VerifiedRuntimeInventoryProof:
+            raise RuntimeInventoryProofRefreshFailure()
+
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+        proof_refresh_base_url="http://deployment-controller:8000",
+        proof_public_keys=key_ring.model_dump_json(),
+    )
+    with TestClient(
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_proof_refresher=FailingProofRefresher(),
+            runtime_clock=lambda: NOW,
+        )
+    ) as client:
+        response = client.get("/api/v1/runtime-inventory")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error_code": "runtime_inventory_proof_refresh_failed",
+        "message": "运行证明动态刷新失败",
     }
 
 

@@ -203,6 +203,48 @@ services:
     networks:
       - lab
 
+  deployment-controller:
+    <<: *opsswarm-runtime
+    profiles:
+      - signed-runtime
+    init: true
+    command:
+      - uvicorn
+      - opsswarm.deployment_controller.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      OPSSWARM_DEPLOYMENT_CONTROLLER_PRIVATE_KEY: ${OPSSWARM_DEPLOYMENT_CONTROLLER_PRIVATE_KEY:-}
+      OPSSWARM_DEPLOYMENT_CONTROLLER_KEY_ID: ${OPSSWARM_DEPLOYMENT_CONTROLLER_KEY_ID:-local-controller-1}
+      OPSSWARM_DEPLOYMENT_CONTROLLER_INSTANCE_ID: ${OPSSWARM_RUNTIME_INSTANCE_ID:-}
+      OPSSWARM_DEPLOYMENT_CONTROLLER_IMAGE_REPOSITORY: ${OPSSWARM_RUNTIME_IMAGE_REPOSITORY:-}
+      OPSSWARM_DEPLOYMENT_CONTROLLER_IMAGE_DIGEST: ${OPSSWARM_RUNTIME_IMAGE_DIGEST:-}
+      OPSSWARM_DEPLOYMENT_CONTROLLER_INVENTORY_DECLARATION: "${OPSSWARM_RUNTIME_INVENTORY_DECLARATION:-}"
+      OPSSWARM_DEPLOYMENT_CONTROLLER_PROOF_LIFETIME_SECONDS: ${OPSSWARM_DEPLOYMENT_CONTROLLER_PROOF_LIFETIME_SECONDS:-120}
+    ports:
+      - "127.0.0.1:18003:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - lab
+
   order-service:
     <<: *opsswarm-runtime
     init: true
@@ -219,6 +261,8 @@ services:
       OPSSWARM_RUNTIME_INVENTORY_DECLARATION: "${OPSSWARM_RUNTIME_INVENTORY_DECLARATION:-}"
       OPSSWARM_RUNTIME_INVENTORY_PROOF: "${OPSSWARM_RUNTIME_INVENTORY_PROOF:-}"
       OPSSWARM_RUNTIME_PROOF_PUBLIC_KEYS: "${OPSSWARM_RUNTIME_PROOF_PUBLIC_KEYS:-}"
+      OPSSWARM_RUNTIME_PROOF_REFRESH_BASE_URL: ${OPSSWARM_RUNTIME_PROOF_REFRESH_BASE_URL:-}
+      OPSSWARM_RUNTIME_PROOF_REFRESH_TIMEOUT_SECONDS: ${OPSSWARM_RUNTIME_PROOF_REFRESH_TIMEOUT_SECONDS:-1}
     depends_on:
       redis-proxy:
         condition: service_healthy

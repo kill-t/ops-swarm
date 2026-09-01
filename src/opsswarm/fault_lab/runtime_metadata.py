@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from opsswarm.change_records.models import ContainerImageDigest, ImageRepository
@@ -20,6 +21,7 @@ RuntimeInventoryProofErrorCode = Literal[
     "runtime_inventory_proof_not_yet_valid",
     "runtime_inventory_proof_expired",
     "runtime_inventory_proof_invalid",
+    "runtime_inventory_proof_refresh_failed",
 ]
 
 
@@ -235,16 +237,47 @@ class RuntimeMetadataSettings(BaseSettings):
     )
     inventory_proof: str = Field(default="", max_length=MAX_RUNTIME_INVENTORY_PROOF_BYTES)
     proof_public_keys: str = Field(default="", max_length=MAX_RUNTIME_PROOF_PUBLIC_KEYS_BYTES)
+    proof_refresh_base_url: str = ""
+    proof_refresh_timeout_seconds: float = Field(default=1.0, gt=0, le=3)
+
+    @field_validator("proof_refresh_base_url")
+    @classmethod
+    def restrict_proof_refresh_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return ""
+        parsed = urlsplit(normalized)
+        allowed = (
+            parsed.scheme == "http"
+            and (
+                parsed.hostname == "deployment-controller"
+                and parsed.port == 8000
+                or parsed.hostname in {"localhost", "127.0.0.1"}
+                and parsed.port == 18003
+            )
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+        )
+        if not allowed:
+            raise ValueError("证明刷新地址只允许固定的本机或 Compose 部署控制器")
+        return normalized
 
     @model_validator(mode="after")
     def require_complete_identity_when_enabled(self) -> Self:
         if self.metadata_enabled:
             identity = self.identity()
             assert identity is not None
-            proof_enabled = bool(self.inventory_proof.strip() or self.proof_public_keys.strip())
+            static_proof = bool(self.inventory_proof.strip())
+            refresh_proof = bool(self.proof_refresh_base_url)
+            proof_enabled = bool(static_proof or refresh_proof or self.proof_public_keys.strip())
+            if static_proof and refresh_proof:
+                raise ValueError("静态签名证明与动态刷新不能同时启用")
             if proof_enabled:
-                if not self.inventory_proof.strip() or not self.proof_public_keys.strip():
-                    raise ValueError("签名运行清单必须同时提供证明和公钥环")
+                if not (static_proof or refresh_proof) or not self.proof_public_keys.strip():
+                    raise ValueError("签名运行清单必须提供证明来源和公钥环")
                 if self.inventory_declaration.strip():
                     raise ValueError("签名证明与未签名运行清单声明不能同时启用")
             else:
@@ -260,6 +293,7 @@ class RuntimeMetadataSettings(BaseSettings):
                 self.inventory_declaration,
                 self.inventory_proof,
                 self.proof_public_keys,
+                self.proof_refresh_base_url,
             )
         ):
             raise ValueError("运行身份关闭时不能注入实例清单或签名证明")
@@ -285,6 +319,16 @@ class RuntimeMetadataSettings(BaseSettings):
 
     @property
     def proof_enabled(self) -> bool:
-        """只有证明和公钥环成对出现时才进入签名模式。"""
+        """静态证明和公钥环成对出现时进入启动时签名模式。"""
 
-        return bool(self.inventory_proof.strip() and self.proof_public_keys.strip())
+        return bool(
+            self.inventory_proof.strip()
+            and self.proof_public_keys.strip()
+            and not self.proof_refresh_base_url
+        )
+
+    @property
+    def proof_refresh_enabled(self) -> bool:
+        """固定控制器地址与公钥环成对出现时进入动态刷新模式。"""
+
+        return bool(self.proof_refresh_base_url and self.proof_public_keys.strip())

@@ -170,6 +170,28 @@ def encode_ed25519_public_key(private_key: Ed25519PrivateKey) -> str:
     return _encode_base64url(public_bytes)
 
 
+def encode_ed25519_private_key(private_key: Ed25519PrivateKey) -> str:
+    """导出本地控制器配置使用的原始私钥；不得记录或提交返回值。"""
+
+    private_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    return _encode_base64url(private_bytes)
+
+
+def decode_ed25519_private_key(encoded_private_key: str) -> Ed25519PrivateKey:
+    """只供独立签发进程加载私钥，订单服务不会调用此函数。"""
+
+    private_bytes = _decode_base64url(
+        encoded_private_key,
+        expected_length=32,
+        field_name="Ed25519 私钥",
+    )
+    return Ed25519PrivateKey.from_private_bytes(private_bytes)
+
+
 def issue_runtime_inventory_proof(
     payload: RuntimeInventoryProofPayload,
     *,
@@ -194,8 +216,14 @@ def parse_runtime_inventory_proof(
 
     return (
         RuntimeInventoryProofEnvelope.model_validate_json(proof_json),
-        RuntimeProofPublicKeyRing.model_validate_json(public_keys_json),
+        parse_runtime_proof_public_keys(public_keys_json),
     )
+
+
+def parse_runtime_proof_public_keys(public_keys_json: str) -> RuntimeProofPublicKeyRing:
+    """独立解析预置公钥环，动态刷新时不会信任控制器返回的新公钥。"""
+
+    return RuntimeProofPublicKeyRing.model_validate_json(public_keys_json)
 
 
 def verify_runtime_inventory_proof(
