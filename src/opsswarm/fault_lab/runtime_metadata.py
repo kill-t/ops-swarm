@@ -12,7 +12,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from opsswarm.change_records.models import ContainerImageDigest, ImageRepository
 
 MAX_RUNTIME_INVENTORY_DECLARATION_BYTES = 64 * 1024
+MAX_RUNTIME_INVENTORY_PROOF_BYTES = 64 * 1024
+MAX_RUNTIME_PROOF_PUBLIC_KEYS_BYTES = 4 * 1024
+MAX_RUNTIME_PROOF_LIFETIME_SECONDS = 5 * 60
 MAX_ROLLOUT_DURATION_SECONDS = 30 * 60
+RuntimeInventoryProofErrorCode = Literal[
+    "runtime_inventory_proof_not_yet_valid",
+    "runtime_inventory_proof_expired",
+    "runtime_inventory_proof_invalid",
+]
 
 
 class _StrictModel(BaseModel):
@@ -133,14 +141,46 @@ class RuntimeInventoryDeclaration(_StrictModel):
         return self
 
 
+class RuntimeInventoryProofSummary(_StrictModel):
+    """服务端已经验签的证明摘要，不暴露签名原文或公钥。"""
+
+    proof_id: UUID
+    key_id: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$")]
+    algorithm: Literal["Ed25519"] = "Ed25519"
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def normalize_timeline(self) -> Self:
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+        ):
+            raise ValueError("运行证明时间必须包含时区")
+        issued_at = self.issued_at.astimezone(UTC)
+        expires_at = self.expires_at.astimezone(UTC)
+        if issued_at >= expires_at:
+            raise ValueError("运行证明过期时间必须晚于签发时间")
+        if (expires_at - issued_at).total_seconds() > MAX_RUNTIME_PROOF_LIFETIME_SECONDS:
+            raise ValueError("运行证明有效期不能超过 5 分钟")
+        object.__setattr__(self, "issued_at", issued_at)
+        object.__setattr__(self, "expires_at", expires_at)
+        return self
+
+
 class RuntimeInventoryResponse(_StrictModel):
-    """部署环境声明的有界实例清单，用于确定性识别滚动发布。"""
+    """部署系统声明的有界实例清单，用于确定性识别滚动发布。"""
 
     schema_version: Literal[1] = 1
     service_name: Literal["order-service"] = "order-service"
-    identity_source: Literal["deployment-environment"] = "deployment-environment"
+    identity_source: Literal["deployment-environment", "deployment-controller-ed25519"] = (
+        "deployment-environment"
+    )
     instances: Annotated[tuple[RuntimeArtifactInstance, ...], Field(min_length=1, max_length=64)]
     rollout: RuntimeRolloutContext = Field(default_factory=RuntimeRolloutContext)
+    proof: RuntimeInventoryProofSummary | None = None
     reported_at: datetime
 
     @model_validator(mode="after")
@@ -155,6 +195,13 @@ class RuntimeInventoryResponse(_StrictModel):
             raise ValueError("实例启动时间不能晚于清单报告时间")
         if self.rollout.started_at is not None and self.rollout.started_at > reported_at:
             raise ValueError("滚动发布开始时间不能晚于清单报告时间")
+        if self.identity_source == "deployment-environment" and self.proof is not None:
+            raise ValueError("未签名运行清单不能携带证明摘要")
+        if self.identity_source == "deployment-controller-ed25519":
+            if self.proof is None:
+                raise ValueError("签名运行清单必须携带证明摘要")
+            if not self.proof.issued_at <= reported_at < self.proof.expires_at:
+                raise ValueError("签名运行清单只能在证明有效期内报告")
         object.__setattr__(self, "reported_at", reported_at)
         return self
 
@@ -164,6 +211,13 @@ class RuntimeInventoryUnavailableResponse(_StrictModel):
 
     error_code: Literal["runtime_inventory_unavailable"] = "runtime_inventory_unavailable"
     message: str = "运行清单未启用"
+
+
+class RuntimeInventoryProofUnavailableResponse(_StrictModel):
+    """签名运行清单无法通过当前时刻的完整验证。"""
+
+    error_code: RuntimeInventoryProofErrorCode
+    message: str
 
 
 class RuntimeMetadataSettings(BaseSettings):
@@ -179,20 +233,36 @@ class RuntimeMetadataSettings(BaseSettings):
         default="",
         max_length=MAX_RUNTIME_INVENTORY_DECLARATION_BYTES,
     )
+    inventory_proof: str = Field(default="", max_length=MAX_RUNTIME_INVENTORY_PROOF_BYTES)
+    proof_public_keys: str = Field(default="", max_length=MAX_RUNTIME_PROOF_PUBLIC_KEYS_BYTES)
 
     @model_validator(mode="after")
     def require_complete_identity_when_enabled(self) -> Self:
         if self.metadata_enabled:
             identity = self.identity()
-            declaration = self.declaration()
             assert identity is not None
-            if any(
-                item.instance_id == identity.instance_id
-                for item in declaration.additional_instances
-            ):
-                raise ValueError("其他实例不能重复当前进程实例 ID")
-        elif self.inventory_declaration.strip():
-            raise ValueError("运行身份关闭时不能注入实例清单")
+            proof_enabled = bool(self.inventory_proof.strip() or self.proof_public_keys.strip())
+            if proof_enabled:
+                if not self.inventory_proof.strip() or not self.proof_public_keys.strip():
+                    raise ValueError("签名运行清单必须同时提供证明和公钥环")
+                if self.inventory_declaration.strip():
+                    raise ValueError("签名证明与未签名运行清单声明不能同时启用")
+            else:
+                declaration = self.declaration()
+                if any(
+                    item.instance_id == identity.instance_id
+                    for item in declaration.additional_instances
+                ):
+                    raise ValueError("其他实例不能重复当前进程实例 ID")
+        elif any(
+            value.strip()
+            for value in (
+                self.inventory_declaration,
+                self.inventory_proof,
+                self.proof_public_keys,
+            )
+        ):
+            raise ValueError("运行身份关闭时不能注入实例清单或签名证明")
         return self
 
     def identity(self) -> RuntimeArtifactIdentity | None:
@@ -212,3 +282,9 @@ class RuntimeMetadataSettings(BaseSettings):
         if not self.inventory_declaration.strip():
             return RuntimeInventoryDeclaration()
         return RuntimeInventoryDeclaration.model_validate_json(self.inventory_declaration)
+
+    @property
+    def proof_enabled(self) -> bool:
+        """只有证明和公钥环成对出现时才进入签名模式。"""
+
+        return bool(self.inventory_proof.strip() and self.proof_public_keys.strip())

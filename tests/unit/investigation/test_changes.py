@@ -20,6 +20,7 @@ from opsswarm.change_records.models import (
 )
 from opsswarm.fault_lab.runtime_metadata import (
     RuntimeArtifactInstance,
+    RuntimeInventoryProofSummary,
     RuntimeInventoryResponse,
     RuntimeRolloutContext,
 )
@@ -50,8 +51,10 @@ def _runtime_inventory(
     image_repository: str = "ghcr.io/kill-t/ops-swarm-order-service",
     image_digest: str = IMAGE_DIGEST,
     reported_at: datetime = GENERATED_AT,
+    signed: bool = False,
 ) -> RuntimeInventoryResponse:
     return RuntimeInventoryResponse(
+        identity_source=("deployment-controller-ed25519" if signed else "deployment-environment"),
         instances=(
             RuntimeArtifactInstance(
                 instance_id=RUNTIME_INSTANCE_ID,
@@ -59,6 +62,16 @@ def _runtime_inventory(
                 image_digest=image_digest,
                 started_at=reported_at - timedelta(minutes=10),
             ),
+        ),
+        proof=(
+            RuntimeInventoryProofSummary(
+                proof_id=UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+                key_id="controller-2026-09",
+                issued_at=reported_at - timedelta(seconds=1),
+                expires_at=reported_at + timedelta(minutes=2),
+            )
+            if signed
+            else None
         ),
         reported_at=reported_at,
     )
@@ -355,8 +368,28 @@ def test_runtime_digest_mismatch_and_disabled_metadata_are_explicit() -> None:
     )
     assert mismatch_deployment.attributes["runtime_artifact_status"] == "mismatched"
     assert mismatch_deployment.attributes["runtime_unexpected_instance_count"] == 1
+    assert mismatch_deployment.attributes["runtime_proof_status"] == "unsigned"
     assert unavailable_deployment.attributes["runtime_artifact_status"] == "unavailable"
     assert "runtime_instances" not in unavailable_deployment.attributes
+
+
+def test_verified_runtime_proof_is_preserved_in_evidence() -> None:
+    transport, _ = _transport(runtime_inventory=_runtime_inventory(signed=True))
+
+    observations = _source(transport).list_recent_changes(
+        service_name="order-service",
+        lookback_hours=6,
+    )
+
+    deployment = next(
+        item for item in observations if item.attributes["change_type"] == "deployment"
+    )
+    assert deployment.attributes["runtime_identity_source"] == ("deployment-controller-ed25519")
+    assert deployment.attributes["runtime_proof_status"] == "verified"
+    assert deployment.attributes["runtime_proof_id"] == ("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    assert deployment.attributes["runtime_proof_key_id"] == "controller-2026-09"
+    assert deployment.attributes["runtime_proof_algorithm"] == "Ed25519"
+    assert "已通过 controller-2026-09 的 Ed25519 签名验证" in deployment.summary
 
 
 def test_only_latest_deployment_is_compared_with_current_runtime() -> None:

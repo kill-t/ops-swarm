@@ -219,6 +219,7 @@ describe("部署代码来源", () => {
         runtime_rollout_phase: "progressing",
         runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
         runtime_identity_source: "deployment-environment",
+        runtime_proof_status: "unsigned",
         runtime_previous_image_repository: IMAGE_REPOSITORY,
         runtime_previous_image_digest: PREVIOUS_IMAGE_DIGEST,
         runtime_rollout_id: ROLLOUT_ID,
@@ -239,6 +240,8 @@ describe("部署代码来源", () => {
     expect(wrapper.text()).toContain("上一版本实例1");
     expect(wrapper.text()).toContain("非预期实例0");
     expect(wrapper.text()).toContain("滚动发布中");
+    expect(wrapper.text()).toContain("未签名环境声明");
+    expect(wrapper.text()).toContain("订单服务启动环境");
     expect(wrapper.text()).toContain(SECOND_RUNTIME_INSTANCE_ID);
     expect(wrapper.findAll(".runtime-instance-list li")).toHaveLength(2);
 
@@ -294,6 +297,55 @@ describe("部署代码来源", () => {
     );
   });
 
+  it("展示并复核服务端验签后的运行清单证明", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: IMAGE_REPOSITORY,
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "matched",
+        runtime_instance_count: 1,
+        runtime_matching_instance_count: 1,
+        runtime_previous_instance_count: 0,
+        runtime_unexpected_instance_count: 0,
+        runtime_instances: [
+          {
+            instance_id: RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: IMAGE_DIGEST,
+            started_at: "2026-08-31T07:59:00Z",
+            classification: "target",
+          },
+        ],
+        runtime_rollout_phase: "stable",
+        runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
+        runtime_identity_source: "deployment-controller-ed25519",
+        runtime_proof_status: "verified",
+        runtime_proof_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        runtime_proof_key_id: "controller-2026-09",
+        runtime_proof_algorithm: "Ed25519",
+        runtime_proof_issued_at: "2026-08-31T07:59:30Z",
+        runtime_proof_expires_at: "2026-08-31T08:02:00Z",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("Ed25519 已验签");
+    expect(wrapper.text()).toContain("独立部署控制器");
+    expect(wrapper.text()).toContain("controller-2026-09");
+
+    deployment.attributes.runtime_proof_expires_at = "2026-08-31T08:10:00Z";
+    const invalidProof = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+    expect(invalidProof.text()).toContain("运行核对数据异常");
+    expect(invalidProof.text()).toContain("签名证明异常");
+  });
+
   it("多实例计数或分类与原始字段矛盾时拒绝展示可信结论", () => {
     const deployment = evidenceItem({
       attributes: {
@@ -327,6 +379,42 @@ describe("部署代码来源", () => {
 
     expect(wrapper.text()).toContain("运行核对数据异常");
     expect(wrapper.find(".runtime-instance-list").exists()).toBe(false);
+  });
+
+  it("未签名证明状态字段类型错误时失败关闭", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: IMAGE_REPOSITORY,
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "matched",
+        runtime_instance_count: 1,
+        runtime_matching_instance_count: 1,
+        runtime_previous_instance_count: 0,
+        runtime_unexpected_instance_count: 0,
+        runtime_instances: [
+          {
+            instance_id: RUNTIME_INSTANCE_ID,
+            image_repository: IMAGE_REPOSITORY,
+            image_digest: IMAGE_DIGEST,
+            started_at: "2026-08-31T07:59:00Z",
+            classification: "target",
+          },
+        ],
+        runtime_rollout_phase: "stable",
+        runtime_inventory_reported_at: "2026-08-31T08:00:00Z",
+        runtime_identity_source: "deployment-environment",
+        runtime_proof_status: true,
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("运行核对数据异常");
+    expect(wrapper.text()).toContain("签名证明异常");
   });
 
   it("后端匹配结论与字段矛盾时拒绝显示一致", () => {

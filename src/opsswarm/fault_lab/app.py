@@ -40,11 +40,18 @@ from opsswarm.fault_lab.redis_dependency import (
 )
 from opsswarm.fault_lab.runtime_metadata import (
     RuntimeArtifactInstance,
+    RuntimeInventoryProofUnavailableResponse,
     RuntimeInventoryResponse,
     RuntimeInventoryUnavailableResponse,
     RuntimeMetadataResponse,
     RuntimeMetadataSettings,
     RuntimeMetadataUnavailableResponse,
+)
+from opsswarm.fault_lab.runtime_proof import (
+    RuntimeInventoryProofVerificationError,
+    bind_proof_to_runtime_identity,
+    parse_runtime_inventory_proof,
+    verify_runtime_inventory_proof,
 )
 from opsswarm.fault_lab.structured_logging import FaultKind, FaultLabEventLogger
 
@@ -106,18 +113,44 @@ def create_app(
         else RuntimeMetadataSettings()
     )
     runtime_identity = runtime_settings.identity()
-    runtime_declaration = runtime_settings.declaration()
     runtime_started_at = runtime_clock()
     runtime_instances: tuple[RuntimeArtifactInstance, ...] = ()
+    runtime_declaration = runtime_settings.declaration()
+    runtime_proof_material = None
+    runtime_proof_summary = None
     if runtime_identity is not None:
-        primary_instance = RuntimeArtifactInstance(
-            **runtime_identity.model_dump(),
-            started_at=runtime_started_at,
-        )
-        runtime_instances = (primary_instance, *runtime_declaration.additional_instances)
+        if runtime_settings.proof_enabled:
+            proof_envelope, proof_public_keys = parse_runtime_inventory_proof(
+                runtime_settings.inventory_proof,
+                runtime_settings.proof_public_keys,
+            )
+            verified_proof = verify_runtime_inventory_proof(
+                proof_envelope,
+                proof_public_keys,
+                current_time=runtime_started_at,
+            )
+            bind_proof_to_runtime_identity(verified_proof, runtime_identity)
+            runtime_proof_material = (proof_envelope, proof_public_keys)
+            runtime_proof_summary = verified_proof.summary
+            runtime_instances = verified_proof.instances
+            runtime_declaration = runtime_declaration.model_copy(
+                update={"rollout": verified_proof.rollout}
+            )
+        else:
+            primary_instance = RuntimeArtifactInstance(
+                **runtime_identity.model_dump(),
+                started_at=runtime_started_at,
+            )
+            runtime_instances = (primary_instance, *runtime_declaration.additional_instances)
         RuntimeInventoryResponse(
+            identity_source=(
+                "deployment-controller-ed25519"
+                if runtime_proof_summary is not None
+                else "deployment-environment"
+            ),
             instances=runtime_instances,
             rollout=runtime_declaration.rollout,
+            proof=runtime_proof_summary,
             reported_at=runtime_started_at,
         )
     dependency_backend = redis_backend
@@ -178,8 +211,10 @@ def create_app(
         response_model=RuntimeInventoryResponse,
         responses={
             503: {
-                "model": RuntimeInventoryUnavailableResponse,
-                "description": "部署平台没有为当前服务注入运行实例清单",
+                "model": (
+                    RuntimeInventoryUnavailableResponse | RuntimeInventoryProofUnavailableResponse
+                ),
+                "description": "运行清单未启用，或签名证明在当前时刻不可用",
             }
         },
         tags=["运行元数据"],
@@ -193,11 +228,44 @@ def create_app(
                 status_code=503,
                 content=unavailable.model_dump(mode="json"),
             )
-        return RuntimeInventoryResponse(
+        reported_at = runtime_clock()
+        proof_summary = runtime_proof_summary
+        if runtime_proof_material is not None:
+            proof_envelope, proof_public_keys = runtime_proof_material
+            try:
+                verified_proof = verify_runtime_inventory_proof(
+                    proof_envelope,
+                    proof_public_keys,
+                    current_time=reported_at,
+                )
+                bind_proof_to_runtime_identity(verified_proof, runtime_identity)
+            except RuntimeInventoryProofVerificationError as exc:
+                unavailable_proof = RuntimeInventoryProofUnavailableResponse(
+                    error_code=exc.error_code,
+                    message=exc.message,
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content=unavailable_proof.model_dump(mode="json"),
+                )
+            proof_summary = verified_proof.summary
+        response = RuntimeInventoryResponse(
+            identity_source=(
+                "deployment-controller-ed25519"
+                if proof_summary is not None
+                else "deployment-environment"
+            ),
             instances=runtime_instances,
             rollout=runtime_declaration.rollout,
-            reported_at=runtime_clock(),
+            proof=proof_summary,
+            reported_at=reported_at,
         )
+        if proof_summary is None:
+            return JSONResponse(
+                status_code=200,
+                content=response.model_dump(mode="json", exclude={"proof"}),
+            )
+        return response
 
     @app.get("/metrics", include_in_schema=False)
     async def get_metrics() -> Response:

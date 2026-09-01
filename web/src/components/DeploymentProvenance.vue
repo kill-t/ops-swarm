@@ -20,6 +20,7 @@ type RuntimeArtifactStatus =
   | "not_declared"
   | "invalid";
 type RuntimeInstanceClassification = "target" | "previous" | "unexpected";
+type RuntimeProofStatus = "verified" | "unsigned" | "legacy_unsigned" | "invalid";
 
 interface RuntimeInventoryInstance {
   instanceId: string;
@@ -33,6 +34,16 @@ interface ParsedRuntimeInventory {
   present: boolean;
   valid: boolean;
   instances: RuntimeInventoryInstance[];
+}
+
+interface ParsedRuntimeProof {
+  valid: boolean;
+  status: RuntimeProofStatus;
+  proofId: string | null;
+  keyId: string | null;
+  algorithm: string | null;
+  issuedAt: string | null;
+  expiresAt: string | null;
 }
 
 interface DeploymentProvenanceItem {
@@ -54,6 +65,8 @@ interface DeploymentProvenanceItem {
   runtimePreviousInstanceCount: number | null;
   runtimeUnexpectedInstanceCount: number | null;
   runtimeRolloutPhase: string | null;
+  runtimeIdentitySource: string | null;
+  runtimeProof: ParsedRuntimeProof | null;
   runtimeArtifactStatus: RuntimeArtifactStatus;
   status: ProvenanceStatus;
   githubUrl: string | null;
@@ -72,7 +85,9 @@ const commitShaPattern = /^[0-9a-f]{40,64}$/;
 const imageRepositoryPattern = /^[a-z0-9][a-z0-9._-]*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:\/[a-z0-9][a-z0-9._-]*)+$/;
 const imageDigestPattern = /^sha256:[0-9a-f]{64}$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const proofKeyIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const maxRolloutDurationMilliseconds = 30 * 60 * 1000;
+const maxProofDurationMilliseconds = 5 * 60 * 1000;
 const statusLabels: Record<ProvenanceStatus, string> = {
   matched: "已精确匹配",
   commit_not_observed: "时间窗未观察到",
@@ -201,6 +216,93 @@ function parseRuntimeInventory(item: EvidenceItem): ParsedRuntimeInventory {
   return { present: true, valid: true, instances };
 }
 
+const proofDetailFieldNames = [
+  "runtime_proof_id",
+  "runtime_proof_key_id",
+  "runtime_proof_algorithm",
+  "runtime_proof_issued_at",
+  "runtime_proof_expires_at",
+];
+
+function invalidRuntimeProof(): ParsedRuntimeProof {
+  return {
+    valid: false,
+    status: "invalid",
+    proofId: null,
+    keyId: null,
+    algorithm: null,
+    issuedAt: null,
+    expiresAt: null,
+  };
+}
+
+function parseRuntimeProof(
+  item: EvidenceItem,
+  identitySource: string | null,
+  reportedTimestamp: number,
+): ParsedRuntimeProof {
+  const rawStatus = stringAttribute(item, "runtime_proof_status");
+  const proofId = stringAttribute(item, "runtime_proof_id");
+  const keyId = stringAttribute(item, "runtime_proof_key_id");
+  const algorithm = stringAttribute(item, "runtime_proof_algorithm");
+  const issuedAt = stringAttribute(item, "runtime_proof_issued_at");
+  const expiresAt = stringAttribute(item, "runtime_proof_expires_at");
+  const statusPresent = hasAttribute(item, "runtime_proof_status");
+  const detailsAbsent = proofDetailFieldNames.every((key) => !hasAttribute(item, key));
+  if (identitySource === "deployment-environment") {
+    if (
+      !detailsAbsent ||
+      (statusPresent && rawStatus !== "unsigned") ||
+      (!statusPresent && rawStatus !== null)
+    ) {
+      return invalidRuntimeProof();
+    }
+    return {
+      valid: true,
+      status: rawStatus === "unsigned" ? "unsigned" : "legacy_unsigned",
+      proofId: null,
+      keyId: null,
+      algorithm: null,
+      issuedAt: null,
+      expiresAt: null,
+    };
+  }
+  if (
+    identitySource !== "deployment-controller-ed25519" ||
+    rawStatus !== "verified" ||
+    proofId === null ||
+    !uuidPattern.test(proofId) ||
+    keyId === null ||
+    !proofKeyIdPattern.test(keyId) ||
+    algorithm !== "Ed25519" ||
+    issuedAt === null ||
+    expiresAt === null
+  ) {
+    return invalidRuntimeProof();
+  }
+  const issuedTimestamp = Date.parse(issuedAt);
+  const expiresTimestamp = Date.parse(expiresAt);
+  if (
+    !Number.isFinite(issuedTimestamp) ||
+    !Number.isFinite(expiresTimestamp) ||
+    issuedTimestamp >= expiresTimestamp ||
+    expiresTimestamp - issuedTimestamp > maxProofDurationMilliseconds ||
+    issuedTimestamp > reportedTimestamp ||
+    reportedTimestamp >= expiresTimestamp
+  ) {
+    return invalidRuntimeProof();
+  }
+  return {
+    valid: true,
+    status: "verified",
+    proofId,
+    keyId,
+    algorithm,
+    issuedAt,
+    expiresAt,
+  };
+}
+
 function legacyRuntimeArtifactStatus(
   rawStatus: string,
   declaredRepository: string | null,
@@ -243,6 +345,13 @@ function runtimeArtifactStatus(
 ): RuntimeArtifactStatus {
   const rawStatus = stringAttribute(item, "runtime_artifact_status");
   const runtimeIdentitySource = stringAttribute(item, "runtime_identity_source");
+  const rolloutFieldNames = [
+    "runtime_rollout_id",
+    "runtime_rollout_started_at",
+    "runtime_rollout_deadline_at",
+    "runtime_rollout_target_image_repository",
+    "runtime_rollout_target_image_digest",
+  ];
   const inventoryFieldNames = [
     "runtime_instance_count",
     "runtime_matching_instance_count",
@@ -253,11 +362,9 @@ function runtimeArtifactStatus(
     "runtime_inventory_reported_at",
     "runtime_previous_image_repository",
     "runtime_previous_image_digest",
-    "runtime_rollout_id",
-    "runtime_rollout_started_at",
-    "runtime_rollout_deadline_at",
-    "runtime_rollout_target_image_repository",
-    "runtime_rollout_target_image_digest",
+    ...rolloutFieldNames,
+    "runtime_proof_status",
+    ...proofDetailFieldNames,
   ];
   const inventoryFieldsAbsent = inventoryFieldNames.every((key) => !hasAttribute(item, key));
   const legacyFieldsAbsent =
@@ -294,7 +401,8 @@ function runtimeArtifactStatus(
   if (
     !inventory.valid ||
     !legacyFieldsAbsent ||
-    runtimeIdentitySource !== "deployment-environment" ||
+    (runtimeIdentitySource !== "deployment-environment" &&
+      runtimeIdentitySource !== "deployment-controller-ed25519") ||
     declaredRepository === null ||
     declaredDigest === null
   ) {
@@ -357,10 +465,11 @@ function runtimeArtifactStatus(
   ) {
     return "invalid";
   }
+  const runtimeProof = parseRuntimeProof(item, runtimeIdentitySource, reportedTimestamp);
+  if (!runtimeProof.valid) return "invalid";
   let rolloutActive = false;
   if (rolloutPhase === "stable") {
-    const rolloutKeys = inventoryFieldNames.slice(9);
-    if (rolloutKeys.some((key) => hasAttribute(item, key))) return "invalid";
+    if (rolloutFieldNames.some((key) => hasAttribute(item, key))) return "invalid";
   } else {
     const rolloutId = stringAttribute(item, "runtime_rollout_id");
     const rolloutStartedAt = stringAttribute(item, "runtime_rollout_started_at");
@@ -519,6 +628,7 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
       const runtimeImageDigest = stringAttribute(item, "runtime_image_digest");
       const runtimeInstanceId = stringAttribute(item, "runtime_instance_id");
       const runtimeStartedAt = stringAttribute(item, "runtime_started_at");
+      const runtimeIdentitySource = stringAttribute(item, "runtime_identity_source");
       const runtimeInventory = parseRuntimeInventory(item);
       const validatedRuntimeStatus = runtimeArtifactStatus(
         item,
@@ -535,6 +645,14 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
         runtimeInventory.present &&
         runtimeInventory.valid &&
         validatedRuntimeStatus !== "invalid";
+      const runtimeReportedAt = stringAttribute(item, "runtime_inventory_reported_at");
+      const runtimeProof = runtimeInventory.present
+        ? parseRuntimeProof(
+            item,
+            runtimeIdentitySource,
+            runtimeReportedAt === null ? Number.NaN : Date.parse(runtimeReportedAt),
+          )
+        : null;
       const provenance = provenanceStatus(item, repository, commitSha);
       return {
         evidenceId: item.evidence_id,
@@ -565,6 +683,13 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
         runtimeRolloutPhase: inventoryCanBeDisplayed
           ? stringAttribute(item, "runtime_rollout_phase")
           : null,
+        runtimeIdentitySource,
+        runtimeProof:
+          inventoryCanBeDisplayed && runtimeProof?.valid
+            ? runtimeProof
+            : runtimeInventory.present
+              ? invalidRuntimeProof()
+              : null,
         runtimeArtifactStatus: validatedRuntimeStatus,
         status: provenance.status,
         githubUrl: provenance.githubUrl,
@@ -599,6 +724,19 @@ function instanceClassificationLabel(classification: RuntimeInstanceClassificati
   if (classification === "target") return "目标版本";
   if (classification === "previous") return "上一版本";
   return "非预期版本";
+}
+
+function runtimeProofStatusLabel(status: RuntimeProofStatus): string {
+  if (status === "verified") return "Ed25519 已验签";
+  if (status === "unsigned") return "未签名环境声明";
+  if (status === "legacy_unsigned") return "历史未签名声明";
+  return "签名证明异常";
+}
+
+function runtimeIdentitySourceLabel(source: string | null): string {
+  if (source === "deployment-controller-ed25519") return "独立部署控制器";
+  if (source === "deployment-environment") return "订单服务启动环境";
+  return "—";
 }
 
 function formatTime(value: string): string {
@@ -709,6 +847,26 @@ function formatTime(value: string): string {
               <dt>发布阶段</dt>
               <dd>{{ rolloutPhaseLabel(deployment.runtimeRolloutPhase) }}</dd>
             </div>
+            <div>
+              <dt>运行清单证明</dt>
+              <dd>{{ deployment.runtimeProof ? runtimeProofStatusLabel(deployment.runtimeProof.status) : "—" }}</dd>
+            </div>
+            <div>
+              <dt>清单声明来源</dt>
+              <dd>{{ runtimeIdentitySourceLabel(deployment.runtimeIdentitySource) }}</dd>
+            </div>
+            <div v-if="deployment.runtimeProof?.status === 'verified'">
+              <dt>验签密钥编号</dt>
+              <dd><code>{{ deployment.runtimeProof.keyId }}</code></dd>
+            </div>
+            <div v-if="deployment.runtimeProof?.status === 'verified'">
+              <dt>证明有效期</dt>
+              <dd>
+                {{ deployment.runtimeProof.issuedAt ? formatTime(deployment.runtimeProof.issuedAt) : "—" }}
+                →
+                {{ deployment.runtimeProof.expiresAt ? formatTime(deployment.runtimeProof.expiresAt) : "—" }}
+              </dd>
+            </div>
           </template>
           <template v-else>
             <div>
@@ -726,6 +884,16 @@ function formatTime(value: string): string {
             <div>
               <dt>实例启动时间</dt>
               <dd>{{ deployment.runtimeStartedAt ? formatTime(deployment.runtimeStartedAt) : "—" }}</dd>
+            </div>
+          </template>
+          <template v-if="deployment.runtimeProof?.status === 'invalid'">
+            <div>
+              <dt>运行清单证明</dt>
+              <dd>{{ runtimeProofStatusLabel(deployment.runtimeProof.status) }}</dd>
+            </div>
+            <div>
+              <dt>清单声明来源</dt>
+              <dd>{{ runtimeIdentitySourceLabel(deployment.runtimeIdentitySource) }}</dd>
             </div>
           </template>
         </dl>

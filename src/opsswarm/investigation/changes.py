@@ -513,7 +513,20 @@ class ChangeApiOnlyInvestigationDataSource:
                         runtime_rollout_phase=runtime_inventory.rollout.phase,
                         runtime_inventory_reported_at=runtime_inventory.reported_at.isoformat(),
                         runtime_identity_source=runtime_inventory.identity_source,
+                        runtime_proof_status=(
+                            "verified" if runtime_inventory.proof is not None else "unsigned"
+                        ),
                     )
+                    if runtime_inventory.proof is not None:
+                        attributes.update(
+                            runtime_proof_id=str(runtime_inventory.proof.proof_id),
+                            runtime_proof_key_id=runtime_inventory.proof.key_id,
+                            runtime_proof_algorithm=runtime_inventory.proof.algorithm,
+                            runtime_proof_issued_at=(runtime_inventory.proof.issued_at.isoformat()),
+                            runtime_proof_expires_at=(
+                                runtime_inventory.proof.expires_at.isoformat()
+                            ),
+                        )
                     if previous_artifact is not None:
                         attributes.update(
                             runtime_previous_image_repository=(previous_artifact.image_repository),
@@ -549,6 +562,13 @@ class ChangeApiOnlyInvestigationDataSource:
                         )
                     else:
                         summary += " 所有运行实例均与该部署产物不一致。"
+                    if runtime_inventory.proof is not None:
+                        summary += (
+                            f" 运行清单已通过 {runtime_inventory.proof.key_id} 的 "
+                            "Ed25519 签名验证。"
+                        )
+                    else:
+                        summary += " 运行清单来自未签名的部署环境声明。"
                 else:
                     summary += " 当前运行清单未启用，无法核对实例集合。"
         elif isinstance(change, ConfigurationChange):

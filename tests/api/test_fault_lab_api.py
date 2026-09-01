@@ -1,10 +1,11 @@
 """故障演练服务 API 测试。"""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -15,6 +16,12 @@ from opsswarm.fault_lab.runtime_metadata import (
     RuntimeInventoryDeclaration,
     RuntimeMetadataSettings,
     RuntimeRolloutContext,
+)
+from opsswarm.fault_lab.runtime_proof import (
+    RuntimeInventoryProofPayload,
+    RuntimeProofPublicKeyRing,
+    encode_ed25519_public_key,
+    issue_runtime_inventory_proof,
 )
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
@@ -206,6 +213,119 @@ def test_runtime_inventory_rejects_rollout_window_over_thirty_minutes() -> None:
             deadline_at=datetime(2026, 8, 31, 12, 31, tzinfo=UTC),
             target_image_repository="ghcr.io/kill-t/ops-swarm-order-service",
             target_image_digest=IMAGE_DIGEST,
+        )
+
+
+def test_runtime_inventory_reports_verified_ed25519_proof() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    payload = RuntimeInventoryProofPayload(
+        proof_id=UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+        issued_at=NOW - timedelta(seconds=1),
+        expires_at=NOW + timedelta(minutes=2),
+        instances=(
+            RuntimeArtifactInstance(
+                instance_id=INSTANCE_ID,
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+                started_at=NOW - timedelta(minutes=1),
+            ),
+        ),
+    )
+    envelope = issue_runtime_inventory_proof(
+        payload,
+        key_id="controller-2026-09",
+        private_key=private_key,
+    )
+    key_ring = RuntimeProofPublicKeyRing(
+        keys={"controller-2026-09": encode_ed25519_public_key(private_key)}
+    )
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+        inventory_proof=envelope.model_dump_json(),
+        proof_public_keys=key_ring.model_dump_json(),
+    )
+
+    with TestClient(
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_clock=lambda: NOW,
+        )
+    ) as client:
+        response = client.get("/api/v1/runtime-inventory")
+
+    assert response.status_code == 200
+    assert response.json()["identity_source"] == "deployment-controller-ed25519"
+    assert response.json()["proof"] == {
+        "proof_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "key_id": "controller-2026-09",
+        "algorithm": "Ed25519",
+        "issued_at": "2026-08-31T11:59:59Z",
+        "expires_at": "2026-08-31T12:02:00Z",
+    }
+
+
+def test_expired_runtime_inventory_proof_is_not_served() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    current_time = [NOW]
+    payload = RuntimeInventoryProofPayload(
+        proof_id=UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+        issued_at=NOW - timedelta(seconds=1),
+        expires_at=NOW + timedelta(seconds=1),
+        instances=(
+            RuntimeArtifactInstance(
+                instance_id=INSTANCE_ID,
+                image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+                image_digest=IMAGE_DIGEST,
+                started_at=NOW - timedelta(minutes=1),
+            ),
+        ),
+    )
+    envelope = issue_runtime_inventory_proof(
+        payload,
+        key_id="controller-2026-09",
+        private_key=private_key,
+    )
+    key_ring = RuntimeProofPublicKeyRing(
+        keys={"controller-2026-09": encode_ed25519_public_key(private_key)}
+    )
+    app = create_app(
+        FaultController(),
+        runtime_metadata_settings=RuntimeMetadataSettings(
+            metadata_enabled=True,
+            instance_id=str(INSTANCE_ID),
+            image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            image_digest=IMAGE_DIGEST,
+            inventory_proof=envelope.model_dump_json(),
+            proof_public_keys=key_ring.model_dump_json(),
+        ),
+        runtime_clock=lambda: current_time[0],
+    )
+
+    with TestClient(app) as client:
+        current_time[0] = NOW + timedelta(seconds=1)
+        response = client.get("/api/v1/runtime-inventory")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error_code": "runtime_inventory_proof_expired",
+        "message": "运行证明已经过期",
+    }
+
+
+def test_runtime_proof_and_unsigned_declaration_are_mutually_exclusive() -> None:
+    with pytest.raises(ValidationError):
+        RuntimeMetadataSettings(
+            metadata_enabled=True,
+            instance_id=str(INSTANCE_ID),
+            image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+            image_digest=IMAGE_DIGEST,
+            inventory_declaration="{}",
+            inventory_proof="{}",
+            proof_public_keys="{}",
         )
 
 

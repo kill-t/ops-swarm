@@ -92,3 +92,4 @@
 - [49 - 部署构建产物摘要](49-deployment-artifact-digest.md)
 - [50 - 运行实例构建产物核对](50-runtime-artifact-verification.md)
 - [51 - 多实例运行清单与滚动发布判定](51-runtime-inventory-rollout.md)
+- [52 - Ed25519 签名运行清单证明](52-signed-runtime-inventory-proof.md)
