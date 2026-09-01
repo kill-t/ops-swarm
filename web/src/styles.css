@@ -1074,6 +1074,24 @@ p {
   overflow-wrap: anywhere;
 }
 
+.provenance-facts .runtime-artifact-status {
+  font-weight: 700;
+}
+
+.runtime-artifact-status-matched {
+  color: var(--cyan) !important;
+}
+
+.runtime-artifact-status-mismatched,
+.runtime-artifact-status-invalid {
+  color: var(--danger) !important;
+}
+
+.runtime-artifact-status-unavailable,
+.runtime-artifact-status-historical {
+  color: var(--amber) !important;
+}
+
 .provenance-facts code {
   color: #b9d8e8;
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;

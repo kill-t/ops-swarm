@@ -90,3 +90,4 @@
 - [47 - 作战室展示部署代码来源](47-deployment-provenance-workroom.md)
 - [48 - 受限 CI/CD 部署事件摄取](48-cicd-deployment-event-ingestion.md)
 - [49 - 部署构建产物摘要](49-deployment-artifact-digest.md)
+- [50 - 运行实例构建产物核对](50-runtime-artifact-verification.md)

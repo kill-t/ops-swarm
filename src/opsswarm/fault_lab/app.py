@@ -1,8 +1,9 @@
 """order-service 故障演练 API。"""
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import FastAPI, Path
@@ -37,9 +38,19 @@ from opsswarm.fault_lab.redis_dependency import (
     RedisDependencyBackend,
     RemoteRedisDependencyBackend,
 )
+from opsswarm.fault_lab.runtime_metadata import (
+    RuntimeMetadataResponse,
+    RuntimeMetadataSettings,
+    RuntimeMetadataUnavailableResponse,
+)
 from opsswarm.fault_lab.structured_logging import FaultKind, FaultLabEventLogger
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
 
 OrderId = Annotated[
     str,
@@ -78,12 +89,21 @@ def create_app(
     *,
     redis_backend: RedisDependencyBackend | None = None,
     event_logger: FaultLabEventLogger | None = None,
+    runtime_metadata_settings: RuntimeMetadataSettings | None = None,
+    runtime_clock: Callable[[], datetime] = _utc_now,
 ) -> FastAPI:
     """创建故障演练应用；生产入口默认访问真实 Redis。"""
 
     fault_controller = controller if controller is not None else FaultController()
     fault_metrics = FaultLabMetrics()
     fault_event_logger = event_logger if event_logger is not None else FaultLabEventLogger()
+    runtime_settings = (
+        runtime_metadata_settings
+        if runtime_metadata_settings is not None
+        else RuntimeMetadataSettings()
+    )
+    runtime_identity = runtime_settings.identity()
+    runtime_started_at = runtime_clock()
     dependency_backend = redis_backend
     if dependency_backend is None:
         dependency_backend = (
@@ -110,6 +130,32 @@ def create_app(
     @app.get("/health", response_model=HealthResponse, tags=["系统"])
     def get_health() -> HealthResponse:
         return HealthResponse()
+
+    @app.get(
+        "/api/v1/runtime-metadata",
+        response_model=RuntimeMetadataResponse,
+        responses={
+            503: {
+                "model": RuntimeMetadataUnavailableResponse,
+                "description": "部署平台没有为当前运行进程注入完整镜像身份",
+            }
+        },
+        tags=["运行元数据"],
+    )
+    def get_runtime_metadata() -> RuntimeMetadataResponse | JSONResponse:
+        """只报告启动时注入的身份，不读取 Docker Socket 或主机文件。"""
+
+        if runtime_identity is None:
+            unavailable = RuntimeMetadataUnavailableResponse()
+            return JSONResponse(
+                status_code=503,
+                content=unavailable.model_dump(mode="json"),
+            )
+        return RuntimeMetadataResponse(
+            **runtime_identity.model_dump(),
+            started_at=runtime_started_at,
+            reported_at=runtime_clock(),
+        )
 
     @app.get("/metrics", include_in_schema=False)
     async def get_metrics() -> Response:

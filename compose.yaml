@@ -212,6 +212,10 @@ services:
       OPSSWARM_FAULT_LAB_LOG_PATH: /var/log/opsswarm/order-service.jsonl
       OPSSWARM_FAULT_LAB_REDIS_URL: redis://redis-proxy:6379/0
       OPSSWARM_FAULT_LAB_REDIS_PROXY_ADMIN_URL: http://redis-proxy:8474
+      OPSSWARM_RUNTIME_METADATA_ENABLED: ${OPSSWARM_RUNTIME_METADATA_ENABLED:-false}
+      OPSSWARM_RUNTIME_INSTANCE_ID: ${OPSSWARM_RUNTIME_INSTANCE_ID:-}
+      OPSSWARM_RUNTIME_IMAGE_REPOSITORY: ${OPSSWARM_RUNTIME_IMAGE_REPOSITORY:-}
+      OPSSWARM_RUNTIME_IMAGE_DIGEST: ${OPSSWARM_RUNTIME_IMAGE_DIGEST:-}
     depends_on:
       redis-proxy:
         condition: service_healthy
@@ -344,6 +348,7 @@ services:
       OPSSWARM_INVESTIGATION_PROMETHEUS_BASE_URL: http://prometheus:9090
       OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
       OPSSWARM_INVESTIGATION_CHANGE_BASE_URL: http://change-service:8000
+      OPSSWARM_INVESTIGATION_RUNTIME_BASE_URL: http://order-service:8000
       OPSSWARM_INVESTIGATION_CHANGE_PROVIDER: ${OPSSWARM_INVESTIGATION_CHANGE_PROVIDER:-simulator}
       OPSSWARM_GITHUB_REPOSITORY: ${OPSSWARM_GITHUB_REPOSITORY:-}
       OPSSWARM_GITHUB_TOKEN: ${OPSSWARM_GITHUB_TOKEN:-}
@@ -352,6 +357,8 @@ services:
       control-migrate:
         condition: service_completed_successfully
       change-service:
+        condition: service_healthy
+      order-service:
         condition: service_healthy
       prometheus:
         condition: service_healthy

@@ -67,7 +67,7 @@ git diff --check
 - 没有访问 Registry 验证 digest 是否存在，也没有验证 Cosign/Notary 签名、SBOM 或构建证明。
 - CI/CD 身份声明仍可能出错，HMAC 只证明持有共享密钥的身份发送了字段。
 - 运行时验收使用从当前 Git HEAD 导出的源码快照构建订单服务镜像，证明 v2 事件、幂等冲突和 Evidence 映射可运行；旧运行镜像因本地 tag 重建后已无可查询的镜像对象，因此没有为它伪造 v2 映射。
-- 下一步应由故障演练服务暴露受限只读运行元数据，再以确定性代码比较“部署声明 digest”和“当前运行 digest”；不能把 Docker Socket 暴露给 Agent。
+- 第 50 步已增加受限只读运行身份，并以确定性代码比较最新部署声明与当前进程启动身份；Agent 和业务容器仍没有 Docker Socket。
 
 ## 面试表达
 

@@ -10,6 +10,13 @@ type ProvenanceStatus =
   | "not_declared"
   | "invalid";
 type ArtifactStatus = "declared" | "not_declared" | "invalid";
+type RuntimeArtifactStatus =
+  | "matched"
+  | "mismatched"
+  | "unavailable"
+  | "historical"
+  | "not_declared"
+  | "invalid";
 
 interface DeploymentProvenanceItem {
   evidenceId: string;
@@ -20,6 +27,11 @@ interface DeploymentProvenanceItem {
   imageRepository: string | null;
   imageDigest: string | null;
   artifactStatus: ArtifactStatus;
+  runtimeImageRepository: string | null;
+  runtimeImageDigest: string | null;
+  runtimeInstanceId: string | null;
+  runtimeStartedAt: string | null;
+  runtimeArtifactStatus: RuntimeArtifactStatus;
   status: ProvenanceStatus;
   githubUrl: string | null;
   summary: string;
@@ -36,6 +48,7 @@ const repositoryPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,
 const commitShaPattern = /^[0-9a-f]{40,64}$/;
 const imageRepositoryPattern = /^[a-z0-9][a-z0-9._-]*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:\/[a-z0-9][a-z0-9._-]*)+$/;
 const imageDigestPattern = /^sha256:[0-9a-f]{64}$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const statusLabels: Record<ProvenanceStatus, string> = {
   matched: "已精确匹配",
   commit_not_observed: "时间窗未观察到",
@@ -54,6 +67,14 @@ const artifactStatusLabels: Record<ArtifactStatus, string> = {
   declared: "已声明不可变摘要",
   not_declared: "历史记录未声明",
   invalid: "镜像来源异常",
+};
+const runtimeArtifactStatusLabels: Record<RuntimeArtifactStatus, string> = {
+  matched: "当前运行身份一致",
+  mismatched: "当前运行身份不一致",
+  unavailable: "未取得运行身份",
+  historical: "历史部署不参与当前核对",
+  not_declared: "无构建产物可核对",
+  invalid: "运行核对数据异常",
 };
 
 function stringAttribute(item: EvidenceItem, key: string): string | null {
@@ -90,6 +111,55 @@ function artifactStatus(
     return "declared";
   }
   return "invalid";
+}
+
+function runtimeArtifactStatus(
+  item: EvidenceItem,
+  declaredRepository: string | null,
+  declaredDigest: string | null,
+  artifactReferenceStatus: ArtifactStatus,
+  runtimeRepository: string | null,
+  runtimeDigest: string | null,
+  runtimeInstanceId: string | null,
+  runtimeStartedAt: string | null,
+): RuntimeArtifactStatus {
+  const rawStatus = stringAttribute(item, "runtime_artifact_status");
+  const runtimeIdentitySource = stringAttribute(item, "runtime_identity_source");
+  const runtimeFieldsAbsent =
+    runtimeRepository === null &&
+    runtimeDigest === null &&
+    runtimeInstanceId === null &&
+    runtimeStartedAt === null &&
+    runtimeIdentitySource === null;
+  if (artifactReferenceStatus === "not_declared") {
+    return (rawStatus === null || rawStatus === "not_declared") && runtimeFieldsAbsent
+      ? "not_declared"
+      : "invalid";
+  }
+  if (artifactReferenceStatus !== "declared") return "invalid";
+  if (rawStatus === "historical") {
+    return runtimeFieldsAbsent ? "historical" : "invalid";
+  }
+  if (rawStatus === null || rawStatus === "unavailable") {
+    return runtimeFieldsAbsent ? "unavailable" : "invalid";
+  }
+  if (
+    (rawStatus !== "matched" && rawStatus !== "mismatched") ||
+    runtimeRepository === null ||
+    !imageRepositoryPattern.test(runtimeRepository) ||
+    runtimeDigest === null ||
+    !imageDigestPattern.test(runtimeDigest) ||
+    runtimeInstanceId === null ||
+    !uuidPattern.test(runtimeInstanceId) ||
+    runtimeStartedAt === null ||
+    !Number.isFinite(Date.parse(runtimeStartedAt)) ||
+    runtimeIdentitySource !== "deployment-environment"
+  ) {
+    return "invalid";
+  }
+  const actuallyMatches =
+    declaredRepository === runtimeRepository && declaredDigest === runtimeDigest;
+  return (rawStatus === "matched") === actuallyMatches ? rawStatus : "invalid";
 }
 
 function safeGitHubCommitUrl(
@@ -193,6 +263,11 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
       const commitSha = stringAttribute(item, "commit_sha");
       const imageRepository = stringAttribute(item, "image_repository");
       const imageDigest = stringAttribute(item, "image_digest");
+      const artifactReferenceStatus = artifactStatus(item, imageRepository, imageDigest);
+      const runtimeImageRepository = stringAttribute(item, "runtime_image_repository");
+      const runtimeImageDigest = stringAttribute(item, "runtime_image_digest");
+      const runtimeInstanceId = stringAttribute(item, "runtime_instance_id");
+      const runtimeStartedAt = stringAttribute(item, "runtime_started_at");
       const provenance = provenanceStatus(item, repository, commitSha);
       return {
         evidenceId: item.evidence_id,
@@ -202,7 +277,21 @@ const deployments = computed<DeploymentProvenanceItem[]>(() => {
         commitSha,
         imageRepository,
         imageDigest,
-        artifactStatus: artifactStatus(item, imageRepository, imageDigest),
+        artifactStatus: artifactReferenceStatus,
+        runtimeImageRepository,
+        runtimeImageDigest,
+        runtimeInstanceId,
+        runtimeStartedAt,
+        runtimeArtifactStatus: runtimeArtifactStatus(
+          item,
+          imageRepository,
+          imageDigest,
+          artifactReferenceStatus,
+          runtimeImageRepository,
+          runtimeImageDigest,
+          runtimeInstanceId,
+          runtimeStartedAt,
+        ),
         status: provenance.status,
         githubUrl: provenance.githubUrl,
         summary: item.summary,
@@ -222,6 +311,10 @@ function statusDescription(status: ProvenanceStatus): string {
 
 function artifactStatusLabel(status: ArtifactStatus): string {
   return artifactStatusLabels[status];
+}
+
+function runtimeArtifactStatusLabel(status: RuntimeArtifactStatus): string {
+  return runtimeArtifactStatusLabels[status];
 }
 
 function formatTime(value: string): string {
@@ -301,6 +394,31 @@ function formatTime(value: string): string {
           <div>
             <dt>构建产物状态</dt>
             <dd>{{ artifactStatusLabel(deployment.artifactStatus) }}</dd>
+          </div>
+          <div>
+            <dt>当前运行核对</dt>
+            <dd
+              class="runtime-artifact-status"
+              :class="`runtime-artifact-status-${deployment.runtimeArtifactStatus}`"
+            >
+              {{ runtimeArtifactStatusLabel(deployment.runtimeArtifactStatus) }}
+            </dd>
+          </div>
+          <div>
+            <dt>运行镜像仓库</dt>
+            <dd><code>{{ deployment.runtimeImageRepository ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>运行镜像摘要</dt>
+            <dd><code>{{ deployment.runtimeImageDigest ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>运行实例 ID</dt>
+            <dd><code>{{ deployment.runtimeInstanceId ?? "—" }}</code></dd>
+          </div>
+          <div>
+            <dt>实例启动时间</dt>
+            <dd>{{ deployment.runtimeStartedAt ? formatTime(deployment.runtimeStartedAt) : "—" }}</dd>
           </div>
         </dl>
 

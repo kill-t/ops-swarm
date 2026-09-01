@@ -6,6 +6,7 @@ import type { EvidenceBoardSnapshot, EvidenceItem } from "../types/evidence-boar
 
 const COMMIT_SHA = "a".repeat(40);
 const IMAGE_DIGEST = `sha256:${"c".repeat(64)}`;
+const RUNTIME_INSTANCE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 function evidenceItem(overrides: Partial<EvidenceItem>): EvidenceItem {
   return {
@@ -43,6 +44,12 @@ describe("部署代码来源", () => {
         image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
         image_digest: IMAGE_DIGEST,
         artifact_reference_status: "declared",
+        runtime_artifact_status: "matched",
+        runtime_image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        runtime_image_digest: IMAGE_DIGEST,
+        runtime_instance_id: RUNTIME_INSTANCE_ID,
+        runtime_started_at: "2026-08-31T07:59:00Z",
+        runtime_identity_source: "deployment-environment",
         code_reference_status: "matched",
         github_commit_evidence_id: githubEvidenceId,
       },
@@ -71,6 +78,8 @@ describe("部署代码来源", () => {
     expect(wrapper.text()).toContain("ghcr.io/kill-t/ops-swarm-order-service");
     expect(wrapper.text()).toContain(IMAGE_DIGEST);
     expect(wrapper.text()).toContain("已声明不可变摘要");
+    expect(wrapper.text()).toContain("当前运行身份一致");
+    expect(wrapper.text()).toContain(RUNTIME_INSTANCE_ID);
     const link = wrapper.get(".provenance-link");
     expect(link.attributes("href")).toBe(
       `https://github.com/kill-t/ops-swarm/commit/${COMMIT_SHA}`,
@@ -145,6 +154,77 @@ describe("部署代码来源", () => {
     });
 
     expect(wrapper.text()).toContain("镜像来源异常");
+  });
+
+  it("运行镜像与部署声明不一致时明确告警", () => {
+    const runtimeDigest = `sha256:${"d".repeat(64)}`;
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "mismatched",
+        runtime_image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        runtime_image_digest: runtimeDigest,
+        runtime_instance_id: RUNTIME_INSTANCE_ID,
+        runtime_started_at: "2026-08-31T07:59:00Z",
+        runtime_identity_source: "deployment-environment",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("当前运行身份不一致");
+    expect(wrapper.text()).toContain(runtimeDigest);
+    expect(wrapper.get(".runtime-artifact-status").classes()).toContain(
+      "runtime-artifact-status-mismatched",
+    );
+  });
+
+  it("后端匹配结论与字段矛盾时拒绝显示一致", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "matched",
+        runtime_image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        runtime_image_digest: `sha256:${"e".repeat(64)}`,
+        runtime_instance_id: RUNTIME_INSTANCE_ID,
+        runtime_started_at: "2026-08-31T07:59:00Z",
+        runtime_identity_source: "deployment-environment",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("运行核对数据异常");
+    expect(wrapper.text()).not.toContain("当前运行身份一致");
+  });
+
+  it("历史部署保留摘要但不与当前实例比较", () => {
+    const deployment = evidenceItem({
+      attributes: {
+        change_type: "deployment",
+        image_repository: "ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest: IMAGE_DIGEST,
+        artifact_reference_status: "declared",
+        runtime_artifact_status: "historical",
+      },
+    });
+
+    const wrapper = mount(DeploymentProvenance, {
+      props: { board: board([deployment]), loading: false, error: null },
+    });
+
+    expect(wrapper.text()).toContain("历史部署不参与当前核对");
+    expect(wrapper.text()).toContain(IMAGE_DIGEST);
   });
 
   it("关联引用不一致时拒绝宣称精确匹配", () => {

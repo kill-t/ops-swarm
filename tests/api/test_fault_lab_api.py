@@ -1,12 +1,20 @@
 """故障演练服务 API 测试。"""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from opsswarm.fault_lab.app import create_app
 from opsswarm.fault_lab.controller import FaultController
+from opsswarm.fault_lab.runtime_metadata import RuntimeMetadataSettings
+
+NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
+INSTANCE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+IMAGE_DIGEST = "sha256:" + "b" * 64
 
 
 @pytest.fixture
@@ -20,6 +28,67 @@ def test_health_endpoint(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"service": "order-service", "status": "healthy"}
+
+
+def test_runtime_metadata_is_disabled_by_default(client: TestClient) -> None:
+    response = client.get("/api/v1/runtime-metadata")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error_code": "runtime_metadata_unavailable",
+        "message": "运行元数据未启用",
+    }
+
+
+def test_runtime_metadata_reports_complete_startup_identity() -> None:
+    settings = RuntimeMetadataSettings(
+        metadata_enabled=True,
+        instance_id=str(INSTANCE_ID),
+        image_repository="ghcr.io/kill-t/ops-swarm-order-service",
+        image_digest=IMAGE_DIGEST,
+    )
+    with TestClient(
+        create_app(
+            FaultController(),
+            runtime_metadata_settings=settings,
+            runtime_clock=lambda: NOW,
+        )
+    ) as client:
+        response = client.get("/api/v1/runtime-metadata")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": 1,
+        "service_name": "order-service",
+        "identity_source": "deployment-environment",
+        "instance_id": str(INSTANCE_ID),
+        "image_repository": "ghcr.io/kill-t/ops-swarm-order-service",
+        "image_digest": IMAGE_DIGEST,
+        "started_at": "2026-08-31T12:00:00Z",
+        "reported_at": "2026-08-31T12:00:00Z",
+    }
+
+
+@pytest.mark.parametrize(
+    ("instance_id", "image_repository", "image_digest"),
+    [
+        ("", "ghcr.io/kill-t/ops-swarm-order-service", IMAGE_DIGEST),
+        (str(INSTANCE_ID), "repository:latest", IMAGE_DIGEST),
+        (str(INSTANCE_ID), "ghcr.io/kill-t/ops-swarm-order-service", "sha256:bad"),
+    ],
+)
+def test_enabled_runtime_metadata_rejects_incomplete_or_unsafe_identity(
+    instance_id: str,
+    image_repository: str,
+    image_digest: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        RuntimeMetadataSettings(
+            metadata_enabled=True,
+            instance_id=instance_id,
+            image_repository=image_repository,
+            image_digest=image_digest,
+        )
 
 
 def test_metrics_endpoint_exposes_live_fault_state(client: TestClient) -> None:
