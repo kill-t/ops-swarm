@@ -32,6 +32,7 @@ from opsswarm.control_plane.schemas import (
     EvidenceBoardResponse,
     ExecuteOperationRequest,
     ExecuteOperationResponse,
+    ExecutionCandidatePageResponse,
     HealthResponse,
     IncidentEventPageResponse,
     IncidentEventResponse,
@@ -595,6 +596,19 @@ def create_router(clock: Clock) -> APIRouter:
             store,
             ApprovalDecision.REJECT,
         )
+
+    @router.get(
+        "/api/v1/execution-candidates",
+        response_model=ExecutionCandidatePageResponse,
+        tags=["受控执行"],
+    )
+    async def list_execution_candidates(
+        service: OperationExecutionServiceDependency,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> ExecutionCandidatePageResponse:
+        """只读返回当前已批准计划，不在列表请求中调用执行器。"""
+
+        return ExecutionCandidatePageResponse.from_page(await service.list_candidates(limit=limit))
 
     @router.post(
         "/api/v1/action-steps/{step_id}/executions",

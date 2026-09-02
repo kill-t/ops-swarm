@@ -963,6 +963,19 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["version"] == 4
 
     step_id = plan_body["action_plan"]["steps"][0]["id"]
+    execution_candidates = await control_client.get("/api/v1/execution-candidates?limit=50")
+    assert execution_candidates.status_code == 200
+    candidate_body = execution_candidates.json()
+    assert candidate_body["total"] == 1
+    assert len(candidate_body["items"]) == 1
+    candidate = candidate_body["items"][0]
+    assert candidate["approval_request"] == approved_body["approval_request"]
+    assert candidate["incident"]["id"] == created.json()["incident"]["id"]
+    assert candidate["incident"]["version"] == 4
+    assert candidate["action_plan"]["id"] == plan_id
+    assert candidate["action_plan"]["status"] == "approved"
+    assert candidate["action_plan"]["steps"][0]["id"] == step_id
+    assert candidate["active_executions"] == []
     execution_payload = {
         "idempotency_key": "api-execution-001",
         "expected_incident_version": 4,
@@ -978,6 +991,9 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert execution_body["operation_execution"]["status"] == "succeeded"
     assert execution_body["operation_execution"]["result"]["enabled"] is False
     execution_id = execution_body["operation_execution"]["id"]
+    completed_candidates = await control_client.get("/api/v1/execution-candidates?limit=50")
+    assert completed_candidates.status_code == 200
+    assert completed_candidates.json() == {"items": [], "total": 0}
 
     duplicate_execution = await control_client.post(
         f"/api/v1/action-steps/{step_id}/executions",

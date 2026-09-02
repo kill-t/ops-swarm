@@ -39,7 +39,9 @@ from opsswarm.evaluation.persistence import (
 )
 from opsswarm.execution import ExecutionStatus
 from opsswarm.execution.persistence import (
+    ExecutionCandidatePage,
     OperationExecutionOutcome,
+    StoredExecutionCandidate,
     StoredOperationExecution,
 )
 from opsswarm.incidents import (
@@ -615,6 +617,58 @@ class OperationExecutionResponse(StrictApiModel):
             created_at=stored.created_at,
             updated_at=stored.updated_at,
             completed_at=stored.completed_at,
+        )
+
+
+class ExecutionCandidateIncidentResponse(StrictApiModel):
+    """待执行计划关联的 Incident 当前快照。"""
+
+    id: UUID
+    display_number: int
+    reference: str
+    service_name: str
+    title: str
+    severity: IncidentSeverity
+    status: IncidentStatus
+    version: int
+    updated_at: datetime
+
+
+class ExecutionCandidateResponse(StrictApiModel):
+    """精确批准绑定、完整计划和正在运行的幂等记录。"""
+
+    approval_request: ApprovalRequestResponse
+    incident: ExecutionCandidateIncidentResponse
+    action_plan: ActionPlanResponse
+    active_executions: tuple[OperationExecutionResponse, ...]
+
+    @classmethod
+    def from_stored(cls, stored: StoredExecutionCandidate) -> Self:
+        incident = stored.incident
+        return cls(
+            approval_request=ApprovalRequestResponse.from_stored(stored.approval_request),
+            incident=ExecutionCandidateIncidentResponse(
+                **incident.model_dump(),
+                reference=f"INC-{incident.display_number:06d}",
+            ),
+            action_plan=ActionPlanResponse.from_stored(stored.action_plan),
+            active_executions=tuple(
+                OperationExecutionResponse.from_stored(item) for item in stored.active_executions
+            ),
+        )
+
+
+class ExecutionCandidatePageResponse(StrictApiModel):
+    """有界待执行队列，total 用于提示是否还有未展示计划。"""
+
+    items: tuple[ExecutionCandidateResponse, ...]
+    total: int
+
+    @classmethod
+    def from_page(cls, page: ExecutionCandidatePage) -> Self:
+        return cls(
+            items=tuple(ExecutionCandidateResponse.from_stored(item) for item in page.items),
+            total=page.total,
         )
 
 

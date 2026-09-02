@@ -5,11 +5,14 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.approval import ApprovalRequestStatus
-from opsswarm.approval.persistence import load_approval_request_in_session
+from opsswarm.approval.persistence import (
+    load_approval_request_in_session,
+    stored_approval_request_from_plan,
+)
 from opsswarm.approval.persistence.tables import ApprovalRequestRow
 from opsswarm.execution.errors import (
     ExecutionLeaseLost,
@@ -23,10 +26,19 @@ from opsswarm.execution.errors import (
 from opsswarm.execution.models import ExecutionStatus, OperationFailure, OperationResult
 from opsswarm.execution.persistence.records import (
     ClaimedOperationExecution,
+    ExecutionCandidateIncident,
+    ExecutionCandidatePage,
+    StoredExecutionCandidate,
     StoredOperationExecution,
 )
 from opsswarm.execution.persistence.tables import OperationExecutionRow
-from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
+from opsswarm.incidents import (
+    ActorType,
+    IncidentAction,
+    IncidentActor,
+    IncidentSeverity,
+    IncidentStatus,
+)
 from opsswarm.incidents.errors import IncidentNotFound, IncidentVersionConflict
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -53,6 +65,111 @@ class OperationExecutionStore:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    async def list_candidates(self, *, limit: int = 50) -> ExecutionCandidatePage:
+        """返回最新调查中已批准且仍处于处置阶段的有界计划。"""
+
+        if isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("limit 必须在 1 到 100 之间")
+        latest_run_id = (
+            select(InvestigationRunRow.id)
+            .where(InvestigationRunRow.incident_id == IncidentRow.id)
+            .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
+            .limit(1)
+            .correlate(IncidentRow)
+            .scalar_subquery()
+        )
+        current_plan_id = (
+            select(ActionPlanRow.id)
+            .where(ActionPlanRow.investigation_run_id == InvestigationRunRow.id)
+            .order_by(ActionPlanRow.version.desc(), ActionPlanRow.id.desc())
+            .limit(1)
+            .correlate(InvestigationRunRow)
+            .scalar_subquery()
+        )
+        conditions = (
+            IncidentRow.status == IncidentStatus.MITIGATING.value,
+            ActionPlanRow.status == ActionPlanStatus.APPROVED.value,
+            ApprovalRequestRow.status == ApprovalRequestStatus.APPROVED.value,
+        )
+        joins = (
+            (InvestigationRunRow, InvestigationRunRow.id == latest_run_id),
+            (ActionPlanRow, ActionPlanRow.id == current_plan_id),
+            (ApprovalRequestRow, ApprovalRequestRow.action_plan_id == ActionPlanRow.id),
+        )
+        async with self._session_factory() as session:
+            total_statement = select(func.count(IncidentRow.id)).select_from(IncidentRow)
+            for target, on_clause in joins:
+                total_statement = total_statement.join(target, on_clause)
+            total = int(await session.scalar(total_statement.where(*conditions)) or 0)
+
+            statement = select(
+                ApprovalRequestRow,
+                ActionPlanRow,
+                InvestigationRunRow,
+                IncidentRow,
+            ).select_from(IncidentRow)
+            for target, on_clause in joins:
+                statement = statement.join(target, on_clause)
+            rows = (
+                await session.execute(
+                    statement.where(*conditions)
+                    .order_by(
+                        ApprovalRequestRow.decided_at,
+                        IncidentRow.updated_at,
+                        ActionPlanRow.id,
+                    )
+                    .limit(limit)
+                )
+            ).all()
+            plan_ids = [plan_row.id for _, plan_row, _, _ in rows]
+            active_by_plan: dict[UUID, list[StoredOperationExecution]] = {}
+            if plan_ids:
+                active_rows = (
+                    await session.scalars(
+                        select(OperationExecutionRow)
+                        .where(
+                            OperationExecutionRow.action_plan_id.in_(plan_ids),
+                            OperationExecutionRow.status == ExecutionStatus.RUNNING.value,
+                        )
+                        .order_by(
+                            OperationExecutionRow.action_plan_id,
+                            OperationExecutionRow.created_at,
+                            OperationExecutionRow.id,
+                        )
+                    )
+                ).all()
+                for execution_row in active_rows:
+                    active_by_plan.setdefault(execution_row.action_plan_id, []).append(
+                        _stored_execution(execution_row)
+                    )
+
+            items: list[StoredExecutionCandidate] = []
+            for request_row, plan_row, run_row, incident_row in rows:
+                stored_plan = await load_action_plan_in_session(session, plan_row)
+                stored_request = stored_approval_request_from_plan(
+                    request_row,
+                    stored_plan=stored_plan,
+                    incident_id=run_row.incident_id,
+                )
+                items.append(
+                    StoredExecutionCandidate(
+                        approval_request=stored_request,
+                        incident=ExecutionCandidateIncident(
+                            id=incident_row.id,
+                            display_number=incident_row.display_number,
+                            service_name=incident_row.service_name,
+                            title=incident_row.title,
+                            severity=IncidentSeverity(incident_row.severity),
+                            status=IncidentStatus(incident_row.status),
+                            version=incident_row.version,
+                            updated_at=incident_row.updated_at,
+                        ),
+                        action_plan=stored_plan,
+                        active_executions=tuple(active_by_plan.get(plan_row.id, [])),
+                    )
+                )
+            return ExecutionCandidatePage(items=tuple(items), total=total)
 
     async def claim(
         self,
@@ -299,6 +416,18 @@ async def _validate_authorization(
             step_id,
             reason_code="incident_not_mitigating",
             message="Incident 不在 mitigating，不能执行处置步骤",
+        )
+    latest_run_id = await session.scalar(
+        select(InvestigationRunRow.id)
+        .where(InvestigationRunRow.incident_id == incident_row.id)
+        .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
+        .limit(1)
+    )
+    if latest_run_id != plan_row.investigation_run_id:
+        raise OperationNotAuthorized(
+            step_id,
+            reason_code="plan_not_latest_investigation",
+            message="只有 Incident 最新调查中的计划可以执行",
         )
     current_plan_id = await session.scalar(
         select(ActionPlanRow.id)

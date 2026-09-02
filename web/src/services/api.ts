@@ -6,6 +6,11 @@ import type {
   PendingApprovalPage,
 } from "../types/approvals";
 import type { EvaluationRun, EvaluationRunPage } from "../types/evaluations";
+import type {
+  ExecuteOperationInput,
+  ExecuteOperationResponse,
+  ExecutionCandidatePage,
+} from "../types/executions";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { InvestigationAttemptList } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
@@ -132,6 +137,21 @@ export function decideApprovalRequest(
 ): Promise<ApprovalDecisionResponse> {
   return requestJson<ApprovalDecisionResponse>(
     `/api/v1/approval-requests/${encodeURIComponent(requestId)}/actions/${decision}`,
+    { method: "POST", body: input, signal },
+  );
+}
+
+export function listExecutionCandidates(signal?: AbortSignal): Promise<ExecutionCandidatePage> {
+  return requestJson<ExecutionCandidatePage>("/api/v1/execution-candidates?limit=50", { signal });
+}
+
+export function executeActionStep(
+  stepId: string,
+  input: ExecuteOperationInput,
+  signal?: AbortSignal,
+): Promise<ExecuteOperationResponse> {
+  return requestJson<ExecuteOperationResponse>(
+    `/api/v1/action-steps/${encodeURIComponent(stepId)}/executions`,
     { method: "POST", body: input, signal },
   );
 }

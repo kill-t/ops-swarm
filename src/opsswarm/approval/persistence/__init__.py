@@ -11,6 +11,7 @@ from opsswarm.approval.persistence.records import (
 from opsswarm.approval.persistence.repository import (
     ApprovalRequestStore,
     load_approval_request_in_session,
+    stored_approval_request_from_plan,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "StoredApprovalRequest",
     "StoredPendingApproval",
     "load_approval_request_in_session",
+    "stored_approval_request_from_plan",
 ]

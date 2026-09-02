@@ -8,6 +8,7 @@ from opsswarm.execution.adapter import OperationAdapter
 from opsswarm.execution.errors import OperationAdapterFailure
 from opsswarm.execution.models import EXECUTION_LEASE_DURATION, OperationFailure
 from opsswarm.execution.persistence import (
+    ExecutionCandidatePage,
     OperationExecutionOutcome,
     OperationExecutionStore,
     StoredOperationExecution,
@@ -35,6 +36,11 @@ class OperationExecutionService:
         self._store = store
         self._adapter = adapter
         self._clock = clock
+
+    async def list_candidates(self, *, limit: int = 50) -> ExecutionCandidatePage:
+        """读取可以交由当前确定性执行器处理的计划。"""
+
+        return await self._store.list_candidates(limit=limit)
 
     async def execute_step(
         self,

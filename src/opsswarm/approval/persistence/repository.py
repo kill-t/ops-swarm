@@ -217,7 +217,7 @@ class ApprovalRequestStore:
             items: list[StoredPendingApproval] = []
             for request_row, plan_row, run_row, incident_row in rows:
                 stored_plan = await load_action_plan_in_session(session, plan_row)
-                stored_request = _stored_approval_request(
+                stored_request = stored_approval_request_from_plan(
                     request_row,
                     stored_plan=stored_plan,
                     incident_id=run_row.incident_id,
@@ -360,20 +360,20 @@ async def load_approval_request_in_session(
     if run_row is None:
         raise RuntimeError("审批请求关联的调查运行不存在")
     stored_plan = await load_action_plan_in_session(session, plan_row)
-    return _stored_approval_request(
+    return stored_approval_request_from_plan(
         row,
         stored_plan=stored_plan,
         incident_id=run_row.incident_id,
     )
 
 
-def _stored_approval_request(
+def stored_approval_request_from_plan(
     row: ApprovalRequestRow,
     *,
     stored_plan: StoredActionPlan,
     incident_id: UUID,
 ) -> StoredApprovalRequest:
-    """使用已加载计划构造请求，避免队列投影重复查询计划。"""
+    """使用已加载计划构造请求，并重验审批时冻结的内容摘要。"""
 
     if _content_hash(stored_plan) != row.plan_content_hash:
         raise ApprovalPlanIntegrityViolation(row.id)

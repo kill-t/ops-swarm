@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   decideApprovalRequest,
+  executeActionStep,
   getEvaluationRun,
   getEvidenceBoard,
   getIncidentWorkroom,
   listEvaluationRuns,
+  listExecutionCandidates,
   listIncidents,
   listInvestigationAttempts,
   listPendingApprovals,
@@ -182,6 +184,48 @@ describe("控制面 API 客户端", () => {
     await expect(decideApprovalRequest("approval/001", "approve", input)).resolves.toEqual(body);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/approval-requests/approval%2F001/actions/approve",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  });
+
+  it("读取有界待执行计划队列", async () => {
+    const body = { items: [], total: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listExecutionCandidates()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/execution-candidates?limit=50",
+      expect.objectContaining({ method: "GET", headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("执行时只发送幂等键和 Incident 乐观锁", async () => {
+    const body = { created: true, execution_performed: true, operation_execution: {} };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      idempotency_key: "ui-exec:approval-001:step-001",
+      expected_incident_version: 4,
+    };
+
+    await expect(executeActionStep("step/001", input)).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/action-steps/step%2F001/executions",
       expect.objectContaining({
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },

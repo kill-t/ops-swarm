@@ -27,6 +27,7 @@ def test_openapi_exposes_current_incident_contract() -> None:
         "/api/v1/approval-requests/{request_id}",
         "/api/v1/approval-requests/{request_id}/actions/approve",
         "/api/v1/approval-requests/{request_id}/actions/reject",
+        "/api/v1/execution-candidates",
         "/api/v1/action-steps/{step_id}/executions",
         "/api/v1/operation-executions/{execution_id}",
         "/api/v1/operation-executions/{execution_id}/verification-runs",

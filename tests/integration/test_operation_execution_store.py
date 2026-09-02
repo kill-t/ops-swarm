@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
@@ -21,6 +22,7 @@ from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import StartedInvestigation
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.planning.persistence import StoredActionPlan, StoredActionStep
 from tests.integration.test_approval_request_store import (
     HUMAN_ACTOR,
@@ -85,6 +87,125 @@ async def prepare_approved_step(
         reason="批准本地回滚演练",
     )
     return started, plan, plan.steps[0]
+
+
+async def test_candidate_queue_returns_exact_approved_plan_and_removes_success(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    started, plan, step = await prepare_approved_step(
+        database_session_factory,
+        suffix="execution-candidate",
+    )
+    store = OperationExecutionStore(database_session_factory)
+
+    page = await store.list_candidates(limit=10)
+
+    assert page.total == 1
+    assert len(page.items) == 1
+    candidate = page.items[0]
+    assert candidate.incident.id == started.incident.incident.id
+    assert candidate.incident.status is IncidentStatus.MITIGATING
+    assert candidate.incident.version == 4
+    assert candidate.action_plan.id == plan.id
+    assert candidate.action_plan.status.value == "approved"
+    assert candidate.action_plan.steps == plan.steps
+    assert candidate.approval_request.action_plan_id == plan.id
+    assert candidate.approval_request.decided_by_id == HUMAN_ACTOR.actor_id
+    assert candidate.active_executions == ()
+
+    await OperationExecutionService(
+        store,
+        SuccessfulAdapter(),
+        clock=lambda: BASE_TIME + timedelta(seconds=8),
+    ).execute_step(
+        step.id,
+        idempotency_key="exec-candidate-001",
+        expected_incident_version=4,
+        occurred_at=BASE_TIME + timedelta(seconds=7),
+    )
+
+    completed_page = await store.list_candidates(limit=10)
+    assert completed_page.total == 0
+    assert completed_page.items == ()
+
+
+async def test_candidate_queue_exposes_only_active_execution(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, plan, step = await prepare_approved_step(
+        database_session_factory,
+        suffix="execution-candidate-running",
+    )
+    store = OperationExecutionStore(database_session_factory)
+    claimed = await store.claim(
+        step.id,
+        idempotency_key="exec-candidate-running-001",
+        expected_incident_version=4,
+        occurred_at=BASE_TIME + timedelta(seconds=7),
+        lease_duration=timedelta(seconds=15),
+    )
+
+    page = await store.list_candidates(limit=10)
+
+    assert page.total == 1
+    assert page.items[0].action_plan.id == plan.id
+    assert page.items[0].active_executions == (claimed.execution,)
+
+
+@pytest.mark.parametrize("limit", [0, 101, True])
+async def test_candidate_queue_rejects_unbounded_limit(
+    database_session_factory: async_sessionmaker[AsyncSession],
+    limit: object,
+) -> None:
+    with pytest.raises(ValueError, match="limit 必须在 1 到 100 之间"):
+        await OperationExecutionStore(database_session_factory).list_candidates(  # type: ignore[arg-type]
+            limit=limit
+        )
+
+
+async def test_old_approved_plan_cannot_execute_after_newer_investigation(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    started, _, step = await prepare_approved_step(
+        database_session_factory,
+        suffix="execution-old-investigation",
+    )
+    newer_time = BASE_TIME + timedelta(seconds=7)
+    async with database_session_factory() as session, session.begin():
+        session.add(
+            InvestigationRunRow(
+                id=uuid4(),
+                incident_id=started.run.incident_id,
+                mode="single_agent",
+                data_source_mode="frozen",
+                status="failed",
+                prompt_version="latest-investigation-test-v1",
+                graph_thread_id=None,
+                model_name=None,
+                result=None,
+                metrics=None,
+                last_error={
+                    "error_code": "newer_investigation_failed",
+                    "message": "用于验证旧批准计划不能再次执行",
+                },
+                created_at=newer_time,
+                started_at=newer_time,
+                completed_at=newer_time,
+                updated_at=newer_time,
+            )
+        )
+
+    store = OperationExecutionStore(database_session_factory)
+    assert (await store.list_candidates(limit=10)).total == 0
+    with pytest.raises(OperationNotAuthorized) as captured:
+        await OperationExecutionService(store, SuccessfulAdapter()).execute_step(
+            step.id,
+            idempotency_key="exec-old-investigation-001",
+            expected_incident_version=4,
+            occurred_at=BASE_TIME + timedelta(seconds=8),
+        )
+
+    assert captured.value.reason_code == "plan_not_latest_investigation"
 
 
 async def test_success_is_persisted_and_duplicate_key_does_not_repeat_adapter(

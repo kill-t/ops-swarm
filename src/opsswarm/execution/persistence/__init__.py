@@ -2,14 +2,20 @@
 
 from opsswarm.execution.persistence.records import (
     ClaimedOperationExecution,
+    ExecutionCandidateIncident,
+    ExecutionCandidatePage,
     OperationExecutionOutcome,
+    StoredExecutionCandidate,
     StoredOperationExecution,
 )
 from opsswarm.execution.persistence.repository import OperationExecutionStore
 
 __all__ = [
     "ClaimedOperationExecution",
+    "ExecutionCandidateIncident",
+    "ExecutionCandidatePage",
     "OperationExecutionOutcome",
     "OperationExecutionStore",
+    "StoredExecutionCandidate",
     "StoredOperationExecution",
 ]

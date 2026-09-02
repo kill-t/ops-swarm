@@ -61,8 +61,9 @@ sequenceDiagram
 | --- | --- |
 | `POST /api/v1/action-steps/{step_id}/executions` | 首次成功 `201`；同键已有终态 `200`；同键仍在运行 `202` |
 | `GET /api/v1/operation-executions/{execution_id}` | 返回不含租约令牌的持久执行记录 |
+| `GET /api/v1/execution-candidates` | 只读返回最新调查中的当前批准计划和活动执行记录 |
 
-执行请求只包含 `idempotency_key` 与 `expected_incident_version`。适配器失败会先持久化失败和 Incident 回流，再返回 `502`；未批准、版本冲突、幂等键冲突、步骤已有其他运行或成功执行返回 `409`。路径不存在返回 `404`。
+执行请求只包含 `idempotency_key` 与 `expected_incident_version`。计划还必须属于 Incident 最新一次调查，不能复用旧调查中曾经批准的步骤。适配器失败会先持久化失败和 Incident 回流，再返回 `502`；未批准、版本冲突、幂等键冲突、步骤已有其他运行或成功执行返回 `409`。路径不存在返回 `404`。
 
 ## 6. 当前限制与下一步
 

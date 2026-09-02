@@ -29,6 +29,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `GET /api/v1/approval-requests/{request_id}` | 重验计划内容后返回限时审批请求 | 不存在 `404`；内容漂移 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/approve` | 首次批准 `decision_applied=true`；同向重试为 `false` | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 | 不存在 `404`；过期、相反决定或完整性冲突 `409` |
+| `GET /api/v1/execution-candidates` | 返回最新调查中已批准且仍处于处置阶段的有界完整计划 | 查询参数错误 `422`；计划内容漂移 `409` |
 | `POST /api/v1/action-steps/{step_id}/executions` | 首次执行 `201`；幂等终态 `200`；同键运行中 `202` | 不存在 `404`；授权、版本、幂等或租约冲突 `409`；已审计适配器失败 `502` |
 | `GET /api/v1/operation-executions/{execution_id}` | 返回持久执行状态、有限结果或失败摘要 | 不存在 `404` |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同成功操作幂等读取 `200` | 不存在 `404`；执行、Incident 或规则不满足 `409` |
@@ -74,6 +75,8 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 ### 2.4 受控执行语义
 
 执行 POST 只接受 8～100 字符的 `idempotency_key` 和 `expected_incident_version`。路径中的 `step_id` 决定要执行的数据库步骤；客户端不能提交动作类型、目标、参数、命令或 URL。服务端重新校验当前批准计划与内容哈希后，先创建带 15 秒租约的 `running` 记录，再调用最长 3 秒的固定本地适配器。
+
+执行候选 GET 默认返回 50 条、最多 100 条，只选择 Incident 最新调查中的最高版本批准计划，并携带精确审批、Incident 当前版本、完整步骤和 `running` 记录。它不领取租约或执行动作。执行 POST 还会独立复核计划属于最新调查，避免旧事故周期的已批准步骤被重新利用。页面契约见 [已批准计划的受控执行中心](55-controlled-execution-ui.md)。
 
 首次创建并成功完成返回 `201`、`created=true`、`execution_performed=true`。相同键的终态重试返回 `200` 且不重复调用适配器；有效租约内的并发同键请求返回 `202` 和同一 `running` 记录。进程中断后，相同键只能在租约过期后接管并增加 `attempt_count`。响应不暴露内部 `lease_token`。
 
