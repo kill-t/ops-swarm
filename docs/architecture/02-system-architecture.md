@@ -178,7 +178,7 @@ LangGraph 1.x 用于：
 - `database_pool_size`：固定演练负载需要 10 个连接；容量低于 10 时订单固定返回 `database_pool_timeout`，容量恢复为 50 后饱和度为 `0.2` 且订单恢复。状态接口同时返回饱和度和等待数，为后续只读验证探针提供稳定信号。
 - Redis 网络依赖：`order-service` 经固定 TCP 故障代理对独立 `lab-redis` 执行真实 `PING`；代理断开时订单固定返回 `redis_connection_unavailable`，通过 CAS 恢复连通后不可用比例变为 `0.0` 且订单恢复。
 
-当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。`LiveInvestigationDataSource` 按证据类型委托失败关闭的只读适配器，变更端口默认读取本地模拟器，也可显式补充固定 GitHub 仓库的 Commit 与已合并 Pull Request；部署事实声明的仓库和完整 SHA 只有精确相等时才建立代码来源关系。现场与冻结调查由独立常驻工作池运行。OpenTelemetry 使 API、持久队列、Agent 节点和只读工具请求保持跨进程 trace 关联。
+当前 Compose 还包含独立 Prometheus 3.13 LTS、Loki 3.7、Alloy 1.19 和 `change-service`：Prometheus 每 2 秒抓取订单服务的三个恢复 Gauge 与请求 Counter，验证 Worker 通过固定查询读取；订单服务把三种确定性失败写入项目 JSONL 卷，Alloy 不经 Docker Socket 采集到 Loki；变更服务把三种固定外部变更事实追加到业务 PostgreSQL。`LiveInvestigationDataSource` 按证据类型委托失败关闭的只读适配器，变更端口默认读取本地模拟器，也可显式补充固定 GitHub 仓库的 Commit 与已合并 Pull Request；部署事实声明的仓库和完整 SHA 只有精确相等时才建立代码来源关系。现场与冻结调查由独立常驻工作池运行。OpenTelemetry 使 API、持久队列、Agent 节点和只读工具请求保持跨进程 trace 关联。默认 Compose 还直接运行 `control-api` 与非 root Nginx 前端，浏览器通过同源 `/api` 代理访问控制面，完整拓扑可一条命令启动。
 
 如果多个故障同时存在，固定按版本故障、连接池故障、Redis 故障排序，避免一次请求的错误类型受分支顺序或随机数影响。版本与连接池状态保存在订单服务进程，Redis 断连状态保存在单副本代理进程；服务重启后都回到安全默认值。故障状态不是 Incident、审批或执行审计的业务事实。管理接口只暴露在 Compose 内网或 localhost，不作为生产接口设计；执行器仍不能访问 Docker Socket，Redis 代理后端也不能在运行时改变。
 
@@ -223,6 +223,7 @@ LangGraph 1.x 用于：
 ## 9. 部署与安全边界
 
 - 本地 MVP 单租户、无 JWT，仅绑定 localhost 和 Compose 私有网络，并明确标记不可用于生产。
+- 控制面和 Web 容器使用非 root 用户、只读根文件系统、删除全部 capability 且不挂载 Docker Socket；这些加固不能替代生产认证、TLS 与网络策略。
 - 审批阶段再引入操作员身份和角色；没有可信身份之前不能声称具备生产审批能力。
 - 业务数据库 `opsswarm` 由 Alembic 管理；checkpoint 数据库 `opsswarm_checkpoints` 由 LangGraph 初始化流程管理。两者位于同一个本地 PostgreSQL 容器，但属于不同逻辑数据库。
 - 变更记录服务只有 `control` 网络连接，代码仓储只暴露追加和读取，不连接故障实验室；执行器仍是唯一能受控修改被管环境的组件。当前本地 MVP 的业务进程仍共用一个数据库账号，生产化前必须拆分迁移、API、Worker 与变更服务角色，并用数据库权限落实最小授权。

@@ -204,9 +204,7 @@ def create_app(
         application.state.workroom_store = WorkroomStore(database.session_factory)
         application.state.evaluation_store = EvaluationStore(database.session_factory)
         application.state.incident_report_store = IncidentReportStore(database.session_factory)
-        application.state.report_action_item_store = ReportActionItemStore(
-            database.session_factory
-        )
+        application.state.report_action_item_store = ReportActionItemStore(database.session_factory)
         try:
             yield
         finally:

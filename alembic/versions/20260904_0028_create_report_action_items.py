@@ -106,8 +106,7 @@ def upgrade() -> None:
         sa.Column("item_version", sa.Integer(), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "event_type IN "
-            "('report_action_item.created', 'report_action_item.completed')",
+            "event_type IN ('report_action_item.created', 'report_action_item.completed')",
             name="ck_report_action_item_events_type",
         ),
         sa.CheckConstraint(

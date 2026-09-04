@@ -69,9 +69,7 @@ class ReportActionItemStore:
         )
         async with self._session_factory() as session, session.begin():
             report = await session.scalar(
-                select(IncidentReportRow)
-                .where(IncidentReportRow.id == report_id)
-                .with_for_update()
+                select(IncidentReportRow).where(IncidentReportRow.id == report_id).with_for_update()
             )
             if report is None:
                 raise FollowUpReportNotFound(report_id)

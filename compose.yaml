@@ -96,6 +96,85 @@ services:
     networks:
       - control
 
+  control-api:
+    <<: *opsswarm-runtime
+    init: true
+    command:
+      - uvicorn
+      - opsswarm.control_plane.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "1"
+    environment:
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+      OPSSWARM_EXECUTOR_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_VERIFIER_PROMETHEUS_BASE_URL: http://prometheus:9090
+      OPSSWARM_OTEL_ENABLED: ${OPSSWARM_OTEL_ENABLED:-false}
+      OPSSWARM_OTEL_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      OPSSWARM_OTEL_SAMPLE_RATIO: ${OPSSWARM_OTEL_SAMPLE_RATIO:-1}
+      OPSSWARM_OTEL_EXPORT_TIMEOUT_SECONDS: ${OPSSWARM_OTEL_EXPORT_TIMEOUT_SECONDS:-2}
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+      order-service:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - control
+      - lab
+
+  web:
+    image: ops-swarm-web:local
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    depends_on:
+      control-api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget -q -O - http://127.0.0.1:8080/healthz | grep -q '^ok$'"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - control
+
   change-service:
     <<: *opsswarm-runtime
     init: true

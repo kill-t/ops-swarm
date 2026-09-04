@@ -74,7 +74,7 @@ OpsSwarm 的单 Agent 基线需要模型选择工具、读取工具结果并返�
 
 SQLite 不用于替代 PostgreSQL 集成测试，因为部分唯一索引、JSONB、`TIMESTAMPTZ`、行锁和 `SKIP LOCKED` 都是关键行为。
 
-Psycopg 3 异步模式在 Windows 上不支持默认 Proactor 事件循环。控制面正式入口、Worker、Alembic 和 pytest 在 Windows 明确使用 Selector 事件循环，Linux 部署保持平台默认实现；这属于基础设施兼容策略，不进入领域代码。控制面应通过 `uv run python -m opsswarm.control_plane.main` 启动，避免绕过项目入口直接运行 Uvicorn CLI。
+Psycopg 3 异步模式在 Windows 上不支持默认 Proactor 事件循环。控制面正式入口、Worker、Alembic 和 pytest 在 Windows 明确使用 Selector 事件循环，Linux 部署保持平台默认实现；这属于基础设施兼容策略，不进入领域代码。Windows 宿主调试控制面时应通过 `uv run python -m opsswarm.control_plane.main` 启动；Linux Compose 容器使用平台默认事件循环，可直接由 Uvicorn 启动同一个应用对象。
 
 Starlette 当前仍兼容旧版 HTTPX，但已将其标记为弃用；项目测试使用 HTTPX2，避免在新工程中引入已知迁移债务。
 
@@ -131,7 +131,7 @@ Agent 输出先通过 Pydantic `InvestigationArtifacts` 校验，再由 SQLAlche
 | 前端状态 | Pinia、Vue Router | 与首个 UI 切片一起引入 |
 | 前端测试 | Vitest、Vue Test Utils、jsdom | store、SSE 边界与组件测试 |
 
-首个 UI 切片已经使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4 和 Vue Router 5。开发服务器通过同源 `/api` 代理连接本机控制面，不因此扩大 FastAPI CORS。当前 `vue-tsc` 与 TypeScript 7 的编译器入口不兼容，因此锁定经过类型检查和生产构建验证的 TypeScript 6；升级必须再次通过相同验收。
+首个 UI 切片已经使用 Vue 3.5、TypeScript 6、Vite 8、Pinia 4 和 Vue Router 5。开发服务器通过同源 `/api` 代理连接本机控制面，不因此扩大 FastAPI CORS。Compose 生产镜像固定使用 Node 24.20 构建，并由非 root Nginx 1.29.8 托管静态资源、history fallback 和同源 API/SSE 代理。当前 `vue-tsc` 与 TypeScript 7 的编译器入口不兼容，因此锁定经过类型检查和生产构建验证的 TypeScript 6；升级必须再次通过相同验收。
 
 Incident 作战室把固定六阶段摘要与增长型调查尝试分开读取。Pinia 只用聚合快照中的当前调查 ID 请求尝试历史，并通过 Incident ID、运行 ID 和请求 generation 防止迟到响应串线。费用展示继续遵守后端完整性语义，不把空值格式化为零。
 

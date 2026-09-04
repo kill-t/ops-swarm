@@ -740,9 +740,7 @@ async def test_report_action_item_is_idempotent_versioned_and_audited(
         completion_url,
         json={**completion_body, "completion_note": "试图改写完成说明"},
     )
-    events = await control_client.get(
-        f"/api/v1/report-action-items/{item['id']}/events"
-    )
+    events = await control_client.get(f"/api/v1/report-action-items/{item['id']}/events")
 
     assert completed.status_code == 200
     assert completed.json()["completion_applied"] is True
@@ -795,9 +793,7 @@ async def test_report_action_item_rejects_missing_report_invalid_due_time_and_st
             "actor_id": "engineer-001",
         },
     )
-    action_items_url = (
-        f"/api/v1/incident-reports/{report.json()['report']['id']}/action-items"
-    )
+    action_items_url = f"/api/v1/incident-reports/{report.json()['report']['id']}/action-items"
     invalid_due = await control_client.post(
         action_items_url,
         json={**body, "due_at": "2026-01-01T08:00:00Z"},
@@ -913,8 +909,7 @@ async def test_report_action_item_governance_filters_by_server_time_and_owner(
     ]
     assert [item["overdue"] for item in all_open.json()["items"]] == [True, False]
     assert all(
-        item["incident"]["reference"].startswith("INC-")
-        for item in all_open.json()["items"]
+        item["incident"]["reference"].startswith("INC-") for item in all_open.json()["items"]
     )
     assert overdue.status_code == 200
     assert overdue.json()["total"] == 1

@@ -58,10 +58,7 @@ def complete_report_action_item(
     completed_by_id = completed_by_id.strip()
     completion_note = completion_note.strip()
     if item.status is ReportActionItemStatus.COMPLETED:
-        if (
-            item.completed_by_id == completed_by_id
-            and item.completion_note == completion_note
-        ):
+        if item.completed_by_id == completed_by_id and item.completion_note == completion_note:
             return item, False
         raise ReportActionItemAlreadyCompleted(item.id)
     if item.version != expected_version:

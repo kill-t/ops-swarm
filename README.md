@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付六十二个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
+项目已交付六十三个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心，第 63 步完成控制面与前端的一键 Compose 交付和真实 MVP 发布验收。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 
 ## 为什么做 OpsSwarm
 
@@ -91,6 +91,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [复盘改进行动项与完成审计](docs/architecture/60-report-action-items.md)
 - [复盘改进行动项前端闭环](docs/architecture/61-report-action-items-ui.md)
 - [跨事故改进行动项治理中心](docs/architecture/62-follow-up-governance-center.md)
+- [MVP 一键 Compose 交付与发布验收](docs/architecture/63-mvp-compose-release.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -128,6 +129,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 31. 为冻结报告建立有负责人、截止时间、乐观锁和追加式审计的改进行动项。
 32. 在事故复盘页面读取、创建并完成改进行动项，保留幂等和版本冲突语义。
 33. 增加跨事故 open 待办、服务器逾期判定和负责人筛选的只读治理中心。
+34. 把控制面和前端纳入一键 Compose 交付，并完成跨模块 MVP 发布验收。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -394,7 +396,7 @@ uv run alembic current
 
 ## 运行控制面 API
 
-业务库迁移完成后启动只绑定本机的控制面：
+需要单独调试后端时，可在业务库迁移完成后启动只绑定本机的控制面：
 
 ```powershell
 uv run python -m opsswarm.control_plane.main --host 127.0.0.1 --port 8000
@@ -425,7 +427,7 @@ Invoke-RestMethod `
 
 ## 运行 Incident 作战室
 
-先启动控制面 API，再在另一个 PowerShell 窗口启动前端开发服务：
+前端开发时可先启动控制面 API，再在另一个 PowerShell 窗口启动 Vite：
 
 ```powershell
 cd web
@@ -433,7 +435,7 @@ npm ci
 npm run dev
 ```
 
-访问 `http://127.0.0.1:5173/` 查看 Incident 作战室，访问 `http://127.0.0.1:5173/evaluations` 查看只读评测面板。Vite 将同源 `/api` 请求转发到 `127.0.0.1:8000`，因此本地开发不需要放宽 FastAPI CORS。生产构建使用 `npm run build`；当前尚未制作前端静态资源容器。
+访问 `http://127.0.0.1:5173/` 查看 Incident 作战室，访问 `http://127.0.0.1:5173/evaluations` 查看只读评测面板。Vite 将同源 `/api` 请求转发到 `127.0.0.1:8000`，因此本地开发不需要放宽 FastAPI CORS。默认 Compose 则使用非 root Nginx 托管生产构建，并通过相同的同源 `/api` 路径访问控制面。
 
 ## 可重放事故时间线
 
@@ -561,11 +563,17 @@ Invoke-RestMethod `
 ```powershell
 docker compose up -d --build --wait
 docker compose ps -a
-Invoke-RestMethod http://127.0.0.1:18001/health
+.\scripts\verify-mvp.ps1
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；冻结/现场调查 Worker 和 `verification-worker` 作为常驻容器自动领取对应任务。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。完整页面位于 `http://127.0.0.1:5173`，接口文档位于 `http://127.0.0.1:8000/docs`。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；`control-api`、冻结/现场调查 Worker 和 `verification-worker` 作为独立容器运行。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+
+需要演示完整事故闭环时执行以下命令。它会使用 `.env` 中配置的真实模型并产生小额费用，没有显式开关时脚本会拒绝运行：
+
+```powershell
+.\scripts\demo-mvp-flow.ps1 -AllowModelCall
+```
 
 ## 测试与检查
 

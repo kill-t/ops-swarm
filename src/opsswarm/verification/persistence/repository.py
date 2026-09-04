@@ -173,9 +173,7 @@ class VerificationStore:
                             if run_row is not None
                             else None
                         ),
-                        work_item=(
-                            _stored_work_item(work_row) if work_row is not None else None
-                        ),
+                        work_item=(_stored_work_item(work_row) if work_row is not None else None),
                     )
                 )
             return VerificationCandidatePage(items=tuple(items), total=total)
