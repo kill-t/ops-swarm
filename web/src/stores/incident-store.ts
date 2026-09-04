@@ -2,9 +2,12 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import {
+  ApiRequestError,
   closeIncident,
+  createIncidentReport,
   getEvidenceBoard,
   getIncident,
+  getIncidentReport,
   getIncidentWorkroom,
   listIncidents,
   listInvestigationAttempts,
@@ -22,6 +25,7 @@ import type {
   StreamStatus,
 } from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
+import type { IncidentReport } from "../types/reports";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 function errorMessage(error: unknown): string {
@@ -83,9 +87,14 @@ export const useIncidentStore = defineStore("incidents", () => {
   const closeLoading = ref(false);
   const closeError = ref<string | null>(null);
   const closeMessage = ref<string | null>(null);
+  const incidentReport = ref<IncidentReport | null>(null);
+  const reportLoading = ref(false);
+  const reportError = ref<string | null>(null);
+  const reportMessage = ref<string | null>(null);
   let streamConnection: IncidentStreamConnection | null = null;
   let selectionGeneration = 0;
   let workroomRequestGeneration = 0;
+  let reportRequestGeneration = 0;
 
   const selectedIncidentId = computed(() => selectedIncident.value?.id ?? null);
 
@@ -242,6 +251,53 @@ export const useIncidentStore = defineStore("incidents", () => {
     }
   }
 
+  async function refreshReport(incidentId: string, selection: number): Promise<void> {
+    const requestGeneration = ++reportRequestGeneration;
+    reportLoading.value = true;
+    reportError.value = null;
+    try {
+      const report = await getIncidentReport(incidentId);
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== reportRequestGeneration ||
+        selectedIncident.value?.id !== incidentId
+      ) {
+        return;
+      }
+      if (report.incident_id !== incidentId) {
+        throw new Error("复盘报告响应与当前 Incident 不一致");
+      }
+      incidentReport.value = report;
+    } catch (error) {
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== reportRequestGeneration ||
+        selectedIncident.value?.id !== incidentId
+      ) {
+        return;
+      }
+      if (error instanceof ApiRequestError && error.errorCode === "incident_report_not_found") {
+        incidentReport.value = null;
+        reportError.value = null;
+      } else {
+        incidentReport.value = null;
+        reportError.value = errorMessage(error);
+      }
+    } finally {
+      if (selection === selectionGeneration && requestGeneration === reportRequestGeneration) {
+        reportLoading.value = false;
+      }
+    }
+  }
+
+  async function refreshSelectedReport(): Promise<void> {
+    const incident = selectedIncident.value;
+    if (incident?.status === "closed") {
+      reportMessage.value = null;
+      await refreshReport(incident.id, selectionGeneration);
+    }
+  }
+
   function receiveEvent(event: IncidentEvent): void {
     if (event.incident_id !== selectedIncident.value?.id) {
       return;
@@ -261,6 +317,9 @@ export const useIncidentStore = defineStore("incidents", () => {
       event.incident_version >= previousVersion
     ) {
       void refreshWorkroom(event.incident_id, selectionGeneration);
+      if (event.to_status === "closed") {
+        void refreshReport(event.incident_id, selectionGeneration);
+      }
     }
   }
 
@@ -282,7 +341,12 @@ export const useIncidentStore = defineStore("incidents", () => {
     closeLoading.value = false;
     closeError.value = null;
     closeMessage.value = null;
+    incidentReport.value = null;
+    reportLoading.value = false;
+    reportError.value = null;
+    reportMessage.value = null;
     workroomRequestGeneration += 1;
+    reportRequestGeneration += 1;
     streamStatus.value = "connecting";
     detailLoading.value = true;
     try {
@@ -304,7 +368,10 @@ export const useIncidentStore = defineStore("incidents", () => {
           }
         },
       });
-      await refreshWorkroom(incidentId, generation);
+      await Promise.all([
+        refreshWorkroom(incidentId, generation),
+        incident.status === "closed" ? refreshReport(incidentId, generation) : Promise.resolve(),
+      ]);
     } catch (error) {
       if (generation === selectionGeneration) {
         selectedIncident.value = null;
@@ -343,6 +410,9 @@ export const useIncidentStore = defineStore("incidents", () => {
         item.id === closed.id ? preferNewerSnapshot(item, closed) : item,
       );
       closeMessage.value = "Incident 已正式关闭，历史审计记录保持只读。";
+      incidentReport.value = null;
+      reportError.value = null;
+      reportMessage.value = null;
       await refreshWorkroom(incident.id, selection);
       return true;
     } catch (error) {
@@ -367,6 +437,60 @@ export const useIncidentStore = defineStore("incidents", () => {
     }
   }
 
+  async function generateSelectedReport(actorId: string): Promise<boolean> {
+    const incident = selectedIncident.value;
+    if (incident === null || reportLoading.value) return false;
+    if (incident.status !== "closed") {
+      reportError.value = "只有已经关闭的 Incident 可以生成最终复盘报告。";
+      return false;
+    }
+    const normalizedActorId = actorId.trim();
+    if (normalizedActorId.length === 0) {
+      reportError.value = "请填写报告生成操作者。";
+      return false;
+    }
+
+    const selection = selectionGeneration;
+    const requestGeneration = ++reportRequestGeneration;
+    reportLoading.value = true;
+    reportError.value = null;
+    reportMessage.value = null;
+    try {
+      const result = await createIncidentReport(incident.id, {
+        expected_incident_version: incident.version,
+        actor_id: normalizedActorId,
+      });
+      if (result.report.incident_id !== incident.id) {
+        throw new Error("复盘报告响应与当前 Incident 不一致");
+      }
+      if (
+        selection !== selectionGeneration ||
+        requestGeneration !== reportRequestGeneration ||
+        selectedIncident.value?.id !== incident.id
+      ) {
+        return false;
+      }
+      incidentReport.value = result.report;
+      reportMessage.value = result.created
+        ? "事故复盘报告已冻结，后续读取将返回同一份审计快照。"
+        : "已读取此前冻结的事故复盘报告。";
+      return true;
+    } catch (error) {
+      if (
+        selection === selectionGeneration &&
+        requestGeneration === reportRequestGeneration &&
+        selectedIncident.value?.id === incident.id
+      ) {
+        reportError.value = errorMessage(error);
+      }
+      return false;
+    } finally {
+      if (selection === selectionGeneration && requestGeneration === reportRequestGeneration) {
+        reportLoading.value = false;
+      }
+    }
+  }
+
   function clearSelection(): void {
     selectionGeneration += 1;
     streamConnection?.close();
@@ -388,6 +512,11 @@ export const useIncidentStore = defineStore("incidents", () => {
     closeLoading.value = false;
     closeError.value = null;
     closeMessage.value = null;
+    reportRequestGeneration += 1;
+    incidentReport.value = null;
+    reportLoading.value = false;
+    reportError.value = null;
+    reportMessage.value = null;
     streamStatus.value = "idle";
   }
 
@@ -414,10 +543,16 @@ export const useIncidentStore = defineStore("incidents", () => {
     closeLoading,
     closeError,
     closeMessage,
+    incidentReport,
+    reportLoading,
+    reportError,
+    reportMessage,
     loadIncidents,
     selectIncident,
     refreshSelectedWorkroom,
+    refreshSelectedReport,
     closeSelected,
+    generateSelectedReport,
     clearSelection,
   };
 });

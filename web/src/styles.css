@@ -2375,3 +2375,372 @@ p {
     grid-template-columns: 1fr;
   }
 }
+
+.incident-report-panel {
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid #465364;
+  border-radius: 12px;
+  background: #111b25;
+}
+
+.incident-report-panel h3 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.report-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.decision-button.print-report,
+.decision-button.generate-report {
+  border-color: #536b81;
+  color: #d6e8f7;
+  background: #23394b;
+}
+
+.report-success {
+  margin: 16px 0;
+  padding: 11px 13px;
+  border: 1px dashed #326a5f;
+  border-radius: 8px;
+  color: #b9f0df;
+  background: #142f2a;
+  font-size: 12px;
+}
+
+.report-load-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 13px 15px;
+  border: 1px solid #70414b;
+  border-radius: 9px;
+  color: #f3bdc6;
+  background: #301c22;
+  font-size: 12px;
+}
+
+.report-load-error p {
+  margin: 0;
+}
+
+.report-generation-panel {
+  display: grid;
+  gap: 15px;
+  margin-top: 16px;
+}
+
+.report-boundary {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 16px;
+  padding: 13px 15px;
+  border: 1px solid #3c596d;
+  border-radius: 9px;
+  color: #b3ccdf;
+  background: #152532;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.report-generation-panel label {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  color: #acbdcc;
+  font-size: 11px;
+}
+
+.report-generation-panel input {
+  padding: 10px 11px;
+  border: 1px solid #3a4e60;
+  border-radius: 8px;
+  color: var(--text);
+  background: #0d1721;
+  font: inherit;
+}
+
+.report-generation-panel small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.decision-button.generate-report {
+  justify-self: start;
+}
+
+.incident-report-document {
+  margin-top: 18px;
+  padding: clamp(20px, 4vw, 42px);
+  border: 1px solid #334658;
+  border-radius: 12px;
+  color: #1d3345;
+  background: #f7f9fb;
+  color-scheme: light;
+}
+
+.report-document-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 3px solid #172b3c;
+  color: #172b3c;
+}
+
+.report-document-header p {
+  margin: 0 0 10px;
+  color: #567087;
+  font: 700 10px/1.4 var(--mono);
+  letter-spacing: 0.12em;
+}
+
+.report-document-header h2 {
+  margin: 0 0 8px;
+  font-size: clamp(20px, 3vw, 30px);
+  line-height: 1.25;
+}
+
+.report-document-header span {
+  color: #607487;
+  font: 12px var(--mono);
+}
+
+.report-document-status {
+  display: grid;
+  align-content: start;
+  justify-items: end;
+  gap: 8px;
+  flex: none;
+}
+
+.report-document-status strong {
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: white;
+  background: #8f2938;
+  font: 800 12px var(--mono);
+}
+
+.report-facts,
+.report-inline-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.report-facts {
+  border-bottom: 1px solid #cdd7df;
+}
+
+.report-facts > div {
+  padding: 18px 12px 18px 0;
+}
+
+.report-facts dt,
+.report-inline-facts dt {
+  color: #728596;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.report-facts dd,
+.report-inline-facts dd {
+  margin: 6px 0 0;
+  color: #1d3345;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.report-section {
+  padding: 24px 0;
+  border-bottom: 1px solid #d7dfe5;
+}
+
+.report-section-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.report-section-heading span {
+  color: #678095;
+  font: 800 10px var(--mono);
+}
+
+.report-section-heading h3 {
+  margin: 0;
+  color: #1b3041;
+  font-size: 16px;
+}
+
+.report-primary-statement {
+  margin: 0 0 16px;
+  color: #1b3041;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.report-inline-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-inline-facts > div {
+  padding: 11px 12px;
+  border: 1px solid #d7dfe5;
+  border-radius: 7px;
+  background: white;
+}
+
+.report-supporting-text,
+.report-empty-fact {
+  margin: 14px 0 0;
+  color: #546a7d;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.report-empty-fact {
+  padding: 12px;
+  border: 1px dashed #bdc8d1;
+  border-radius: 7px;
+}
+
+.report-timeline {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-timeline li {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid #e2e7eb;
+}
+
+.report-timeline li:last-child {
+  border-bottom: 0;
+}
+
+.report-timeline time {
+  color: #718494;
+  font: 10px var(--mono);
+}
+
+.report-timeline div {
+  display: grid;
+  gap: 5px;
+}
+
+.report-timeline strong {
+  color: #24394a;
+  font-size: 11px;
+}
+
+.report-timeline span {
+  color: #718494;
+  font: 9px var(--mono);
+}
+
+.report-document-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 14px;
+  padding-top: 20px;
+}
+
+.report-document-footer div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.report-document-footer span {
+  color: #7c8d9b;
+  font-size: 9px;
+}
+
+.report-document-footer strong,
+.report-document-footer code {
+  color: #30485b;
+  font: 9px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .report-screen-heading,
+  .report-document-header,
+  .report-load-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .report-boundary,
+  .report-facts,
+  .report-inline-facts,
+  .report-timeline li,
+  .report-document-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .report-document-status {
+    justify-items: start;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .incident-report-panel,
+  .incident-report-panel * {
+    visibility: visible;
+  }
+
+  .incident-report-panel {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: white;
+  }
+
+  .report-screen-heading,
+  .report-success {
+    display: none;
+  }
+
+  .incident-report-document {
+    margin: 0;
+    padding: 16mm;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .report-section,
+  .report-timeline li {
+    break-inside: avoid;
+  }
+}

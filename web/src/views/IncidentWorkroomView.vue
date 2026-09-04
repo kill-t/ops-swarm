@@ -74,8 +74,14 @@ onUnmounted(() => store.clearSelection());
       :close-loading="store.closeLoading"
       :close-error="store.closeError"
       :close-message="store.closeMessage"
+      :incident-report="store.incidentReport"
+      :report-loading="store.reportLoading"
+      :report-error="store.reportError"
+      :report-message="store.reportMessage"
       @refresh-workroom="store.refreshSelectedWorkroom"
       @close-incident="store.closeSelected"
+      @generate-report="store.generateSelectedReport"
+      @refresh-report="store.refreshSelectedReport"
     />
   </div>
 </template>

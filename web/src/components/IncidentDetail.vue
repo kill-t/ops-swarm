@@ -2,6 +2,7 @@
 import IncidentTimeline from "./IncidentTimeline.vue";
 import IncidentClosurePanel from "./IncidentClosurePanel.vue";
 import IncidentLifecycle from "./IncidentLifecycle.vue";
+import IncidentReportPanel from "./IncidentReportPanel.vue";
 import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
 import DeploymentProvenance from "./DeploymentProvenance.vue";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
@@ -12,6 +13,7 @@ import type {
   StreamStatus,
 } from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
+import type { IncidentReport } from "../types/reports";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 defineProps<{
@@ -33,11 +35,17 @@ defineProps<{
   closeLoading: boolean;
   closeError: string | null;
   closeMessage: string | null;
+  incidentReport: IncidentReport | null;
+  reportLoading: boolean;
+  reportError: string | null;
+  reportMessage: string | null;
 }>();
 
 const emit = defineEmits<{
   refreshWorkroom: [];
   closeIncident: [input: CloseIncidentAuditInput];
+  generateReport: [actorId: string];
+  refreshReport: [];
 }>();
 
 function formatDateTime(value: string | null): string {
@@ -126,6 +134,16 @@ function formatDateTime(value: string | null): string {
         :error="closeError"
         :message="closeMessage"
         @close="emit('closeIncident', $event)"
+      />
+
+      <IncidentReportPanel
+        :incident="incident"
+        :report="incidentReport"
+        :loading="reportLoading"
+        :error="reportError"
+        :message="reportMessage"
+        @generate="emit('generateReport', $event)"
+        @refresh="emit('refreshReport')"
       />
 
       <IncidentTimeline

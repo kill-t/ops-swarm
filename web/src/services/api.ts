@@ -13,6 +13,11 @@ import type {
 } from "../types/executions";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { InvestigationAttemptList } from "../types/investigation-attempts";
+import type {
+  CreateIncidentReportInput,
+  CreateIncidentReportResponse,
+  IncidentReport,
+} from "../types/reports";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 import type {
   CreateVerificationRunInput,
@@ -105,6 +110,27 @@ export function getIncidentWorkroom(
   return requestJson<IncidentWorkroomSnapshot>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/workroom`,
     { signal },
+  );
+}
+
+export function getIncidentReport(
+  incidentId: string,
+  signal?: AbortSignal,
+): Promise<IncidentReport> {
+  return requestJson<IncidentReport>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/reports/current`,
+    { signal },
+  );
+}
+
+export function createIncidentReport(
+  incidentId: string,
+  input: CreateIncidentReportInput,
+  signal?: AbortSignal,
+): Promise<CreateIncidentReportResponse> {
+  return requestJson<CreateIncidentReportResponse>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/reports`,
+    { method: "POST", body: input, signal },
   );
 }
 

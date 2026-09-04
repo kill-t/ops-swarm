@@ -1,7 +1,9 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiRequestError } from "../services/api";
 import type { IncidentStreamHandlers } from "../services/incident-stream";
+import { INCIDENT_REPORT } from "../test-support/report-fixtures";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { Incident, IncidentEvent } from "../types/incidents";
 import type {
@@ -13,19 +15,33 @@ import { useIncidentStore } from "./incident-store";
 
 const mocks = vi.hoisted(() => ({
   closeIncident: vi.fn(),
+  createIncidentReport: vi.fn(),
   listIncidents: vi.fn(),
   getIncident: vi.fn(),
   getIncidentWorkroom: vi.fn(),
+  getIncidentReport: vi.fn(),
   getEvidenceBoard: vi.fn(),
   listInvestigationAttempts: vi.fn(),
   connectIncidentEvents: vi.fn(),
 }));
 
 vi.mock("../services/api", () => ({
+  ApiRequestError: class extends Error {
+    readonly status: number;
+    readonly errorCode: string | null;
+
+    constructor(message: string, status: number, errorCode: string | null) {
+      super(message);
+      this.status = status;
+      this.errorCode = errorCode;
+    }
+  },
   closeIncident: mocks.closeIncident,
+  createIncidentReport: mocks.createIncidentReport,
   listIncidents: mocks.listIncidents,
   getIncident: mocks.getIncident,
   getIncidentWorkroom: mocks.getIncidentWorkroom,
+  getIncidentReport: mocks.getIncidentReport,
   getEvidenceBoard: mocks.getEvidenceBoard,
   listInvestigationAttempts: mocks.listInvestigationAttempts,
 }));
@@ -150,6 +166,8 @@ describe("Incident 状态仓库", () => {
     mocks.listInvestigationAttempts.mockReset();
     mocks.connectIncidentEvents.mockReset();
     mocks.closeIncident.mockReset();
+    mocks.createIncidentReport.mockReset();
+    mocks.getIncidentReport.mockReset();
     mocks.getIncidentWorkroom.mockResolvedValue(WORKROOM);
     mocks.listInvestigationAttempts.mockResolvedValue({
       investigation_run_id: "run-001",
@@ -157,6 +175,9 @@ describe("Incident 状态仓库", () => {
     });
     mocks.getEvidenceBoard.mockImplementation((runId: string) =>
       Promise.resolve(evidenceBoard(runId)),
+    );
+    mocks.getIncidentReport.mockRejectedValue(
+      new ApiRequestError("Incident 尚无复盘报告", 404, "incident_report_not_found"),
     );
   });
 
@@ -355,5 +376,53 @@ describe("Incident 状态仓库", () => {
     expect(store.closeError).toBe("Incident 版本已经变化");
     expect(store.selectedIncident).toEqual(reopened);
     expect(store.closeLoading).toBe(false);
+  });
+
+  it("选择 closed Incident 时自动读取已有报告", async () => {
+    const closed: Incident = {
+      ...INCIDENT,
+      status: "closed",
+      version: 7,
+      resolved_at: "2026-01-01T08:03:00Z",
+      closed_at: "2026-01-01T08:04:00Z",
+      updated_at: "2026-01-01T08:04:00Z",
+    };
+    mocks.getIncident.mockResolvedValue(closed);
+    mocks.getIncidentWorkroom.mockResolvedValue({ ...WORKROOM, incident_version: 7 });
+    mocks.getIncidentReport.mockResolvedValue(INCIDENT_REPORT);
+    mocks.connectIncidentEvents.mockReturnValue({ close: vi.fn() });
+    const store = useIncidentStore();
+
+    await store.selectIncident(closed.id);
+
+    expect(mocks.getIncidentReport).toHaveBeenCalledWith(closed.id);
+    expect(store.incidentReport).toEqual(INCIDENT_REPORT);
+    expect(store.reportError).toBeNull();
+  });
+
+  it("生成报告时只提交当前版本和审计操作者", async () => {
+    const closed: Incident = {
+      ...INCIDENT,
+      status: "closed",
+      version: 7,
+      resolved_at: "2026-01-01T08:03:00Z",
+      closed_at: "2026-01-01T08:04:00Z",
+      updated_at: "2026-01-01T08:04:00Z",
+    };
+    mocks.getIncident.mockResolvedValue(closed);
+    mocks.getIncidentWorkroom.mockResolvedValue({ ...WORKROOM, incident_version: 7 });
+    mocks.createIncidentReport.mockResolvedValue({ created: true, report: INCIDENT_REPORT });
+    mocks.connectIncidentEvents.mockReturnValue({ close: vi.fn() });
+    const store = useIncidentStore();
+    await store.selectIncident(closed.id);
+
+    await expect(store.generateSelectedReport(" report-owner ")).resolves.toBe(true);
+
+    expect(mocks.createIncidentReport).toHaveBeenCalledWith(closed.id, {
+      expected_incident_version: 7,
+      actor_id: "report-owner",
+    });
+    expect(store.incidentReport).toEqual(INCIDENT_REPORT);
+    expect(store.reportMessage).toContain("已冻结");
   });
 });

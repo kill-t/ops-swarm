@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   closeIncident,
+  createIncidentReport,
   decideApprovalRequest,
   createVerificationRun,
   executeActionStep,
   getEvaluationRun,
   getEvidenceBoard,
   getIncidentWorkroom,
+  getIncidentReport,
   getVerificationRun,
   getVerificationWorkItem,
   listEvaluationRuns,
@@ -106,6 +108,42 @@ describe("控制面 API 客户端", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/incidents/incident%2F001/workroom",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("使用编码后的 Incident ID 生成并读取确定性复盘报告", async () => {
+    const report = { id: "report-001", incident_id: "incident/001" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ created: true, report }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(report), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { expected_incident_version: 7, actor_id: "engineer-001" };
+
+    await expect(createIncidentReport("incident/001", input)).resolves.toEqual({
+      created: true,
+      report,
+    });
+    await expect(getIncidentReport("incident/001")).resolves.toEqual(report);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/incidents/incident%2F001/reports",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/incidents/incident%2F001/reports/current",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 
