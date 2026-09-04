@@ -99,6 +99,7 @@ from opsswarm.planning.persistence import (
     StoredActionPlan,
     StoredActionStep,
 )
+from opsswarm.reports import IncidentReportContent, IncidentReportCreation, StoredIncidentReport
 from opsswarm.verification import (
     VerificationSampleStatus,
     VerificationStatus,
@@ -871,9 +872,7 @@ class VerificationCandidateResponse(StrictApiModel):
                 **incident.model_dump(),
                 reference=f"INC-{incident.display_number:06d}",
             ),
-            operation_execution=OperationExecutionResponse.from_stored(
-                stored.operation_execution
-            ),
+            operation_execution=OperationExecutionResponse.from_stored(stored.operation_execution),
             action_step=ActionStepResponse.from_stored(stored.action_step),
             verification_run=(
                 VerificationRunResponse.from_stored(stored.verification_run)
@@ -974,6 +973,43 @@ class IncidentWorkroomResponse(StrictApiModel):
     @classmethod
     def from_snapshot(cls, snapshot: WorkroomSnapshot) -> Self:
         return cls.model_validate(snapshot.model_dump())
+
+
+class CreateIncidentReportRequest(StrictApiModel):
+    """生成复盘快照时使用的乐观锁版本和人工身份。"""
+
+    expected_incident_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=100)
+
+
+class IncidentReportResponse(StrictApiModel):
+    """不可变事故复盘快照及其内容摘要。"""
+
+    id: UUID
+    incident_id: UUID
+    incident_version: int
+    schema_version: str
+    content_hash: str
+    content: IncidentReportContent
+    created_at: datetime
+
+    @classmethod
+    def from_stored(cls, stored: StoredIncidentReport) -> Self:
+        return cls.model_validate(stored.model_dump())
+
+
+class CreateIncidentReportResponse(StrictApiModel):
+    """区分首次冻结和幂等读取的报告响应。"""
+
+    created: bool
+    report: IncidentReportResponse
+
+    @classmethod
+    def from_creation(cls, creation: IncidentReportCreation) -> Self:
+        return cls(
+            created=creation.created,
+            report=IncidentReportResponse.from_stored(creation.report),
+        )
 
 
 class StartInvestigationResponse(StrictApiModel):

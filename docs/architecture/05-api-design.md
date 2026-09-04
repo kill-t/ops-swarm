@@ -17,6 +17,8 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `GET /api/v1/incidents` | 状态筛选和倒序游标分页 | 查询参数错误 `422` |
 | `GET /api/v1/incidents/{id}` | 返回当前 Incident 快照 | 不存在 `404` |
 | `GET /api/v1/incidents/{id}/workroom` | 返回最近调查到恢复验证的同语句只读摘要 | 不存在 `404` |
+| `POST /api/v1/incidents/{id}/reports` | 首次冻结关闭事故报告 `201`；已有报告幂等读取 `200` | 不存在 `404`；版本、状态或规模冲突 `409` |
+| `GET /api/v1/incidents/{id}/reports/current` | 重验结构与 SHA-256 后返回不可变报告 | Incident 或报告不存在 `404`；完整性失败 `500` |
 | `POST /api/v1/incidents/{id}/actions/close` | 使用当前版本关闭 `resolved` 事故 | 不存在 `404`；版本或状态冲突 `409` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
@@ -94,6 +96,12 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 常驻验证 Worker 默认通过 PostgreSQL 租约自动触发样本；手动样本 POST 仍保留给本地诊断和幂等验证。一个 5xx 数值样本或探针错误会形成 `failed` 运行并把 Incident 返回 `investigating`，这属于成功持久化的业务判定，因此样本接口仍返回 `201`，不会伪装成传输层失败。健康样本只有在数量和 60 秒窗口都满足时才使运行 `passed`、Incident `resolved`。GET 返回全部样本，当前计划最多要求 100 个成功样本；后续高流量场景再增加分页。
 
 `GET /api/v1/verification-runs/{run_id}/work-item` 返回调度状态、下次样本序号、到期时间、Worker 标识、租约到期时间、尝试次数和有限错误。响应永不包含 `lease_token`；该接口只读，客户端不能提前调度、延长租约或改写失败。
+
+### 2.6 事故复盘报告语义
+
+报告生成 POST 只接受 `expected_incident_version` 和本地审计 `actor_id`。首次生成要求 Incident 为 `closed` 且版本匹配；服务端在同一事务中冻结 Incident、作战室摘要和最多 500 条完整时间线，保存 `incident-report.v1` JSONB 与规范内容的 SHA-256。调用方不能提交结论、根因、时间线、动作结果或模型文本。
+
+一个 Incident 最多一份报告。已经存在时返回 `200`、`created=false` 和原报告，即使幂等重试仍携带生成前的旧版本，也不会重写内容或操作者。GET 每次重新执行 Pydantic 结构校验与哈希校验。完整性异常返回 `500`，避免把数据库漂移误报为正常业务冲突。详见[确定性事故复盘报告快照](58-persistent-incident-report.md)。
 
 ## 3. 告警幂等 HTTP 语义
 
@@ -187,6 +195,10 @@ Incident 列表按 `display_number DESC` 排序。响应中的 `next_before_disp
 | `operation_execution_not_verifiable` | `409` | 操作未成功、Incident 不在验证状态或目标不受支持 |
 | `verification_run_completed` | `409` | 已结束运行不能使用新的幂等键追加样本 |
 | `unsupported_verification_rule` | `409` | 当前验证器不支持步骤冻结的信号或比较符 |
+| `incident_report_not_found` | `404` | Incident 存在但尚未生成复盘报告 |
+| `incident_report_not_ready` | `409` | Incident 尚未关闭，不能冻结最终报告 |
+| `incident_report_too_large` | `409` | 时间线超过 v1 可完整保存的 500 条上限 |
+| `incident_report_integrity_violation` | `500` | 已保存报告结构、版本或内容摘要不一致 |
 
 数据库连接失败和未处理错误不转换为伪造的业务成功响应，也不向客户端暴露 SQL、连接字符串或堆栈。追踪仅记录稳定异常类型，不记录可能包含供应商响应、密钥或模型内容的异常消息；结构化业务日志仍沿用独立的有限字段策略。
 

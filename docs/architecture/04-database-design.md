@@ -28,6 +28,7 @@ erDiagram
     SERVICES ||--o{ INCIDENTS : affects
     INCIDENTS ||--o{ ALERTS : groups
     INCIDENTS ||--o{ INCIDENT_EVENTS : records
+    INCIDENTS ||--o| INCIDENT_REPORTS : freezes
     SERVICES ||--o{ CHANGE_RECORDS : records
     INCIDENTS ||--o{ INVESTIGATION_RUNS : investigates
     INVESTIGATION_RUNS ||--o{ INVESTIGATION_TASKS : contains
@@ -88,6 +89,7 @@ erDiagram
 | `verification_runs` | 冻结恢复判据、汇总采样进度和结论 |
 | `verification_samples` | 服务端探针取得的不可变数值或错误样本 |
 | `verification_work_items` | 自动采样的到期时间、租约、重试和当前调度序号 |
+| `incident_reports` | 已关闭事故唯一、不可变且带内容摘要的复盘快照 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
 | `investigation_attempts` | 每次租约领取的耗时、结果、错误、Token 与估算费用 |
 | `evaluation_cases` | 故障真值和期望行为 |
@@ -98,7 +100,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、追加式变更记录表、调查运行、任务与逐次尝试表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、不可变复盘报告表、追加式变更记录表、调查运行、任务与逐次尝试表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -361,6 +363,20 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 状态为 `running`、`succeeded`、`failed` 或 `lease_expired`。成功、失败与当前任务结算在同一事务完成；过期尝试在新 Worker 接管前先收敛。终态只能从 `running` 结算一次，旧租约不能覆盖新尝试。
 
 `usage_complete=false` 表示供应商未返回全部 usage：已观察 Token 仍保留，但 `estimated_cost_usd` 必须为空。仅当 usage 完整且输入/输出单价快照同时存在时记录费用；仓储用 Token 与单价重算到 6 位小数，拒绝伪造值。
+
+### 4.25 incident_reports
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `UUID` | 主键，由应用生成 UUID4 |
+| `incident_id` | `UUID` | 唯一，外键到 `incidents.id`，禁止级联删除 |
+| `incident_version` | `INTEGER` | 非空正整数，绑定生成时的关闭版本 |
+| `schema_version` | `VARCHAR(50)` | 检查约束固定为 `incident-report.v1` |
+| `content_hash` | `VARCHAR(64)` | 规范 JSON 的小写 SHA-256，数据库检查格式 |
+| `content` | `JSONB` | 非空对象，保存严格校验的 Incident、作战室与时间线快照 |
+| `created_at` | `TIMESTAMPTZ` | 服务器生成的冻结时间 |
+
+应用只暴露首次插入与带哈希复验的读取，不提供更新或删除方法。生成事务锁定 `closed` Incident，并在锁后复查唯一报告，防止并发请求生成两份快照；时间线超过 500 条时拒绝静默截断。完整设计见[确定性事故复盘报告快照](58-persistent-incident-report.md)。
 
 ## 5. Incident 状态机
 

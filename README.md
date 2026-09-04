@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目已交付五十七个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，显式创建验证并只读观察 Worker 样本，最后关闭已确认恢复的 Incident；浏览器不能提交动作参数、命令、验证阈值、观测值或目标状态。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
+项目已交付五十八个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58 步把已关闭事故的业务事实冻结为带 SHA-256 的持久复盘快照。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident 并生成可复现报告；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 
 ## 为什么做 OpsSwarm
 
@@ -86,6 +86,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [已批准计划的受控执行中心](docs/architecture/55-controlled-execution-ui.md)
 - [恢复验证中心与采样进度展示](docs/architecture/56-recovery-verification-center.md)
 - [已恢复 Incident 的人工关闭入口](docs/architecture/57-incident-closure-ui.md)
+- [确定性事故复盘报告快照](docs/architecture/58-persistent-incident-report.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
@@ -118,6 +119,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 26. 增加最新调查限定的受控执行中心和稳定浏览器幂等键。
 27. 增加恢复验证中心，只读展示持久 Worker 的采样进度和最终恢复判定。
 28. 在作战室增加带乐观锁和复发保护的人工关闭入口。
+29. 为已关闭 Incident 生成带结构版本和内容摘要的确定性复盘快照。
 
 阶段 1 的版本回归、数据库连接池配置错误和 Redis 不可用三个场景都已具备本地确定性故障、计划、审批、白名单执行和恢复验证链路。Redis 场景通过固定 TCP 故障代理访问独立真实 Redis 容器；三种恢复信号由项目内 Prometheus 真实抓取，验证 Worker 只执行固定查询。调查 Worker 已能显式选择冻结评测数据或完整现场数据，选择随运行持久化且不会自动回退混用。API 产生的 W3C Trace Context 随 `work_items` 持久化，Worker 重试仍接回同一 trace；Jaeger 只保存本地诊断数据，不替代任何业务审计。评测集快照、运行、逐场景结果和聚合指标已经持久化到 PostgreSQL，并通过只读接口提供给评测面板。所有环境读写仍只允许本地故障演练环境。
 
@@ -461,6 +463,28 @@ Invoke-RestMethod `
 ```
 
 正式关闭前收到同一指纹的新告警时，系统保存告警后自动把 `resolved` 事故迁回 `investigating`；多个并发告警最多产生一次状态迁移。正式关闭后，`closed` 历史事故保持终态，同一指纹的新外部事件创建新的 Incident。完全相同的来源事件号仍返回原接收结果，不受事故是否关闭影响。
+
+## 确定性事故复盘报告
+
+关闭后使用最终 Incident 版本冻结一次报告；请求体不能提交或改写报告内容：
+
+```powershell
+$reportBody = @{
+  expected_incident_version = 13
+  actor_id = "engineer-001"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/incidents/{incident_id}/reports `
+  -ContentType "application/json" `
+  -Body $reportBody
+
+Invoke-RestMethod `
+  http://127.0.0.1:8000/api/v1/incidents/{incident_id}/reports/current
+```
+
+首次生成返回 `201`，重复请求返回 `200` 和同一快照。报告只包含 PostgreSQL 已持久化事实，保存 `incident-report.v1` 结构版本与 SHA-256；读取时会重新校验内容完整性。
 
 ## 运行故障模拟切片
 

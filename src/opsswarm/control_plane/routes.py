@@ -21,6 +21,8 @@ from opsswarm.control_plane.schemas import (
     CreateActionPlanResponse,
     CreateApprovalRequest,
     CreateApprovalRequestResponse,
+    CreateIncidentReportRequest,
+    CreateIncidentReportResponse,
     CreateVerificationRunRequest,
     CreateVerificationRunResponse,
     DecideApprovalRequest,
@@ -37,6 +39,7 @@ from opsswarm.control_plane.schemas import (
     IncidentEventPageResponse,
     IncidentEventResponse,
     IncidentPageResponse,
+    IncidentReportResponse,
     IncidentResponse,
     IncidentWorkroomResponse,
     InvestigationAttemptListResponse,
@@ -60,6 +63,7 @@ from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.observability import capture_current_trace_context
 from opsswarm.planning.persistence import ActionPlanStore
+from opsswarm.reports.persistence import IncidentReportStore
 from opsswarm.verification.service import VerificationService
 from opsswarm.workroom import WorkroomStore
 
@@ -169,6 +173,21 @@ def get_evaluation_store(request: Request) -> EvaluationStore:
 
 
 EvaluationStoreDependency = Annotated[EvaluationStore, Depends(get_evaluation_store)]
+
+
+def get_incident_report_store(request: Request) -> IncidentReportStore:
+    """从应用生命周期状态获取复盘报告仓储。"""
+
+    store = getattr(request.app.state, "incident_report_store", None)
+    if not isinstance(store, IncidentReportStore):
+        raise RuntimeError("IncidentReportStore 尚未初始化")
+    return store
+
+
+IncidentReportStoreDependency = Annotated[
+    IncidentReportStore,
+    Depends(get_incident_report_store),
+]
 
 
 def create_router(clock: Clock) -> APIRouter:
@@ -318,6 +337,52 @@ def create_router(clock: Clock) -> APIRouter:
         """一次读取最近调查及其后续处置链路，不触发任何状态变化。"""
 
         return IncidentWorkroomResponse.from_snapshot(await store.get_snapshot(incident_id))
+
+    @router.post(
+        "/api/v1/incidents/{incident_id}/reports",
+        response_model=CreateIncidentReportResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": CreateIncidentReportResponse,
+                "description": "该 Incident 已有报告，幂等返回原快照",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["事故复盘"],
+    )
+    async def create_incident_report(
+        incident_id: UUID,
+        request: CreateIncidentReportRequest,
+        response: Response,
+        store: IncidentReportStoreDependency,
+    ) -> CreateIncidentReportResponse:
+        """只对已关闭事故冻结一次确定性报告，重复调用不重新生成。"""
+
+        creation = await store.create(
+            incident_id,
+            expected_incident_version=request.expected_incident_version,
+            generated_by_id=request.actor_id,
+            occurred_at=clock(),
+        )
+        if not creation.created:
+            response.status_code = status.HTTP_200_OK
+        return CreateIncidentReportResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/incidents/{incident_id}/reports/current",
+        response_model=IncidentReportResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["事故复盘"],
+    )
+    async def get_incident_report(
+        incident_id: UUID,
+        store: IncidentReportStoreDependency,
+    ) -> IncidentReportResponse:
+        """返回已经冻结并通过内容摘要校验的复盘报告。"""
+
+        return IncidentReportResponse.from_stored(await store.get(incident_id))
 
     @router.post(
         "/api/v1/incidents/{incident_id}/actions/close",

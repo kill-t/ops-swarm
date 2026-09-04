@@ -75,6 +75,14 @@ from opsswarm.planning import (
     UnsupportedPlanningRootCause,
 )
 from opsswarm.planning.persistence import ActionPlanStore
+from opsswarm.reports import (
+    IncidentReportError,
+    IncidentReportIntegrityViolation,
+    IncidentReportNotFound,
+    IncidentReportNotReady,
+    IncidentReportTooLarge,
+)
+from opsswarm.reports.persistence import IncidentReportStore
 from opsswarm.verification import (
     OperationExecutionNotVerifiable,
     PrometheusVerificationAdapter,
@@ -108,6 +116,7 @@ def create_app(
     verification_adapter: VerificationAdapter | None = None,
     workroom_store: WorkroomStore | None = None,
     evaluation_store: EvaluationStore | None = None,
+    incident_report_store: IncidentReportStore | None = None,
     database_settings: DatabaseSettings | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
@@ -151,6 +160,7 @@ def create_app(
             )
             application.state.workroom_store = workroom_store
             application.state.evaluation_store = evaluation_store
+            application.state.incident_report_store = incident_report_store
             try:
                 yield
             finally:
@@ -181,6 +191,7 @@ def create_app(
         )
         application.state.workroom_store = WorkroomStore(database.session_factory)
         application.state.evaluation_store = EvaluationStore(database.session_factory)
+        application.state.incident_report_store = IncidentReportStore(database.session_factory)
         try:
             yield
         finally:
@@ -201,6 +212,7 @@ def create_app(
     app.state.verification_service = None
     app.state.workroom_store = workroom_store
     app.state.evaluation_store = evaluation_store
+    app.state.incident_report_store = incident_report_store
     app.include_router(create_router(clock))
 
     @app.middleware("http")
@@ -632,6 +644,51 @@ def create_app(
             )
         else:
             response = ApiErrorResponse(error_code="verification_error", message=str(error))
+        return JSONResponse(
+            status_code=http_status,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(IncidentReportError)
+    async def handle_incident_report_error(
+        _: Request,
+        error: IncidentReportError,
+    ) -> JSONResponse:
+        http_status = status.HTTP_409_CONFLICT
+        if isinstance(error, IncidentReportNotFound):
+            response = ApiErrorResponse(
+                error_code="incident_report_not_found",
+                message=str(error),
+                details={"incident_id": str(error.incident_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, IncidentReportNotReady):
+            response = ApiErrorResponse(
+                error_code="incident_report_not_ready",
+                message=str(error),
+                details={
+                    "incident_id": str(error.incident_id),
+                    "status": error.status,
+                },
+            )
+        elif isinstance(error, IncidentReportTooLarge):
+            response = ApiErrorResponse(
+                error_code="incident_report_too_large",
+                message=str(error),
+                details={
+                    "incident_id": str(error.incident_id),
+                    "maximum": error.maximum,
+                },
+            )
+        elif isinstance(error, IncidentReportIntegrityViolation):
+            response = ApiErrorResponse(
+                error_code="incident_report_integrity_violation",
+                message=str(error),
+                details={"report_id": str(error.report_id)},
+            )
+            http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+        else:
+            response = ApiErrorResponse(error_code="incident_report_error", message=str(error))
         return JSONResponse(
             status_code=http_status,
             content=response.model_dump(mode="json"),

@@ -1,5 +1,6 @@
 """控制面 API 与真实 PostgreSQL 的集成测试。"""
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -129,6 +130,26 @@ async def resolve_incident(
         )
         version = stored.incident.version
     return stored
+
+
+async def close_incident_for_report(
+    control_client: httpx2.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    incident_id: str,
+) -> dict[str, object]:
+    """把测试事故推进并通过公开接口关闭，返回最终快照。"""
+
+    resolved = await resolve_incident(session_factory, incident_id)
+    response = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/close",
+        json={
+            "expected_version": resolved.incident.version,
+            "actor_id": "engineer-001",
+            "reason": "恢复结果已经人工复核",
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
 
 
 def alert_payload(
@@ -551,6 +572,106 @@ async def test_close_rejects_unresolved_incident_and_stale_version(
         "expected_version": 1,
         "actual_version": resolved.incident.version,
     }
+
+
+async def test_closed_incident_report_is_persistent_and_idempotent(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created_incident = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("report-alert-001"),
+    )
+    incident_id = created_incident.json()["incident"]["id"]
+    closed = await close_incident_for_report(
+        control_client,
+        database_session_factory,
+        incident_id,
+    )
+    report_url = f"/api/v1/incidents/{incident_id}/reports"
+    body = {
+        "expected_incident_version": closed["version"],
+        "actor_id": "engineer-001",
+    }
+
+    first = await control_client.post(report_url, json=body)
+    duplicate = await control_client.post(
+        report_url,
+        json={"expected_incident_version": 1, "actor_id": "another-engineer"},
+    )
+    fetched = await control_client.get(f"{report_url}/current")
+
+    assert first.status_code == 201
+    assert first.json()["created"] is True
+    report = first.json()["report"]
+    assert report["schema_version"] == "incident-report.v1"
+    assert len(report["content_hash"]) == 64
+    assert report["content"]["generated_by_id"] == "engineer-001"
+    assert report["content"]["incident"]["reference"] == "INC-000001"
+    assert report["content"]["incident"]["status"] == "closed"
+    assert report["content"]["incident"]["duration_seconds"] == 1
+    assert report["content"]["workroom"]["incident_version"] == closed["version"]
+    assert report["content"]["timeline"][-1]["to_status"] == "closed"
+    assert report["content"]["timeline"][-1]["incident_version"] == closed["version"]
+
+    assert duplicate.status_code == 200
+    assert duplicate.json()["created"] is False
+    assert duplicate.json()["report"] == report
+    assert fetched.status_code == 200
+    assert fetched.json() == report
+
+
+async def test_incident_report_requires_closed_incident_and_existing_snapshot(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("report-alert-not-ready"),
+    )
+    incident_id = created.json()["incident"]["id"]
+    report_url = f"/api/v1/incidents/{incident_id}/reports"
+
+    missing = await control_client.get(f"{report_url}/current")
+    not_ready = await control_client.post(
+        report_url,
+        json={"expected_incident_version": 1, "actor_id": "engineer-001"},
+    )
+
+    assert missing.status_code == 404
+    assert missing.json()["error_code"] == "incident_report_not_found"
+    assert not_ready.status_code == 409
+    assert not_ready.json()["error_code"] == "incident_report_not_ready"
+    assert not_ready.json()["details"]["status"] == "open"
+
+
+async def test_concurrent_incident_report_requests_share_one_snapshot(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("report-alert-concurrent"),
+    )
+    incident_id = created.json()["incident"]["id"]
+    closed = await close_incident_for_report(
+        control_client,
+        database_session_factory,
+        incident_id,
+    )
+    report_url = f"/api/v1/incidents/{incident_id}/reports"
+    body = {
+        "expected_incident_version": closed["version"],
+        "actor_id": "engineer-001",
+    }
+
+    first, second = await asyncio.gather(
+        control_client.post(report_url, json=body),
+        control_client.post(report_url, json=body),
+    )
+
+    assert sorted((first.status_code, second.status_code)) == [200, 201]
+    assert first.json()["report"]["id"] == second.json()["report"]["id"]
+    assert {first.json()["created"], second.json()["created"]} == {False, True}
 
 
 async def test_incident_list_uses_stable_descending_cursor(
@@ -1019,9 +1140,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["status"] == "verifying"
     assert incident.json()["version"] == 5
 
-    verification_candidates = await control_client.get(
-        "/api/v1/verification-candidates?limit=50"
-    )
+    verification_candidates = await control_client.get("/api/v1/verification-candidates?limit=50")
     assert verification_candidates.status_code == 200
     candidate_page = verification_candidates.json()
     assert candidate_page["total"] == 1
@@ -1029,9 +1148,7 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert verification_candidate["incident"]["id"] == created.json()["incident"]["id"]
     assert verification_candidate["incident"]["status"] == "verifying"
     assert verification_candidate["incident"]["version"] == 5
-    assert verification_candidate["operation_execution"] == execution_body[
-        "operation_execution"
-    ]
+    assert verification_candidate["operation_execution"] == execution_body["operation_execution"]
     assert verification_candidate["action_step"]["id"] == step_id
     assert verification_candidate["verification_run"] is None
     assert verification_candidate["work_item"] is None

@@ -50,119 +50,128 @@ class WorkroomStore:
     async def get_snapshot(self, incident_id: UUID) -> WorkroomSnapshot:
         """用单条语句读取同一 PostgreSQL 快照中的全部阶段。"""
 
-        latest_run_id = (
-            select(InvestigationRunRow.id)
-            .where(InvestigationRunRow.incident_id == IncidentRow.id)
-            .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
-            .limit(1)
-            .correlate(IncidentRow)
-            .scalar_subquery()
-        )
-        current_plan_id = (
-            select(ActionPlanRow.id)
-            .where(ActionPlanRow.investigation_run_id == InvestigationRunRow.id)
-            .order_by(ActionPlanRow.version.desc(), ActionPlanRow.id.desc())
-            .limit(1)
-            .correlate(InvestigationRunRow)
-            .scalar_subquery()
-        )
-        latest_execution_id = (
-            select(OperationExecutionRow.id)
-            .where(OperationExecutionRow.action_plan_id == ActionPlanRow.id)
-            .order_by(
-                OperationExecutionRow.created_at.desc(),
-                OperationExecutionRow.id.desc(),
-            )
-            .limit(1)
-            .correlate(ActionPlanRow)
-            .scalar_subquery()
-        )
-        evidence_count = (
-            select(func.count(EvidenceItemRow.id))
-            .where(EvidenceItemRow.investigation_run_id == InvestigationRunRow.id)
-            .correlate(InvestigationRunRow)
-            .scalar_subquery()
-        )
-        report_count = (
-            select(func.count(SpecialistReportRow.id))
-            .where(SpecialistReportRow.investigation_run_id == InvestigationRunRow.id)
-            .correlate(InvestigationRunRow)
-            .scalar_subquery()
-        )
-        step_count = (
-            select(func.count(ActionStepRow.id))
-            .where(ActionStepRow.action_plan_id == ActionPlanRow.id)
-            .correlate(ActionPlanRow)
-            .scalar_subquery()
-        )
-        sample_count = (
-            select(func.count(VerificationSampleRow.id))
-            .where(VerificationSampleRow.verification_run_id == VerificationRunRow.id)
-            .correlate(VerificationRunRow)
-            .scalar_subquery()
-        )
-        statement = (
-            select(
-                IncidentRow,
-                InvestigationRunRow,
-                HypothesisRow,
-                ActionPlanRow,
-                ApprovalRequestRow,
-                OperationExecutionRow,
-                VerificationRunRow,
-                evidence_count.label("evidence_count"),
-                report_count.label("report_count"),
-                step_count.label("step_count"),
-                sample_count.label("sample_count"),
-            )
-            .select_from(IncidentRow)
-            .outerjoin(InvestigationRunRow, InvestigationRunRow.id == latest_run_id)
-            .outerjoin(
-                HypothesisRow,
-                HypothesisRow.investigation_run_id == InvestigationRunRow.id,
-            )
-            .outerjoin(ActionPlanRow, ActionPlanRow.id == current_plan_id)
-            .outerjoin(
-                ApprovalRequestRow,
-                ApprovalRequestRow.action_plan_id == ActionPlanRow.id,
-            )
-            .outerjoin(OperationExecutionRow, OperationExecutionRow.id == latest_execution_id)
-            .outerjoin(
-                VerificationRunRow,
-                VerificationRunRow.operation_execution_id == OperationExecutionRow.id,
-            )
-            .where(IncidentRow.id == incident_id)
-        )
         async with self._session_factory() as session:
-            row = (await session.execute(statement)).one_or_none()
-        if row is None:
-            raise IncidentNotFound(str(incident_id))
+            return await load_workroom_snapshot_in_session(session, incident_id)
 
-        incident = cast(IncidentRow, row[0])
-        run = cast(InvestigationRunRow | None, row[1])
-        hypothesis = cast(HypothesisRow | None, row[2])
-        plan = cast(ActionPlanRow | None, row[3])
-        approval = cast(ApprovalRequestRow | None, row[4])
-        execution = cast(OperationExecutionRow | None, row[5])
-        verification = cast(VerificationRunRow | None, row[6])
-        return WorkroomSnapshot(
-            incident_id=incident.id,
-            incident_version=incident.version,
-            investigation=_investigation_summary(run),
-            evidence_board=_evidence_board_summary(
-                run,
-                hypothesis,
-                evidence_count=cast(int, row[7]),
-                report_count=cast(int, row[8]),
-            ),
-            action_plan=_action_plan_summary(plan, step_count=cast(int, row[9])),
-            approval_request=_approval_summary(approval),
-            operation_execution=_execution_summary(execution),
-            verification_run=_verification_summary(
-                verification,
-                sample_count=cast(int, row[10]),
-            ),
+
+async def load_workroom_snapshot_in_session(
+    session: AsyncSession,
+    incident_id: UUID,
+) -> WorkroomSnapshot:
+    """在调用方事务中读取作战室快照，供不可变报告原子复用。"""
+
+    latest_run_id = (
+        select(InvestigationRunRow.id)
+        .where(InvestigationRunRow.incident_id == IncidentRow.id)
+        .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
+        .limit(1)
+        .correlate(IncidentRow)
+        .scalar_subquery()
+    )
+    current_plan_id = (
+        select(ActionPlanRow.id)
+        .where(ActionPlanRow.investigation_run_id == InvestigationRunRow.id)
+        .order_by(ActionPlanRow.version.desc(), ActionPlanRow.id.desc())
+        .limit(1)
+        .correlate(InvestigationRunRow)
+        .scalar_subquery()
+    )
+    latest_execution_id = (
+        select(OperationExecutionRow.id)
+        .where(OperationExecutionRow.action_plan_id == ActionPlanRow.id)
+        .order_by(
+            OperationExecutionRow.created_at.desc(),
+            OperationExecutionRow.id.desc(),
         )
+        .limit(1)
+        .correlate(ActionPlanRow)
+        .scalar_subquery()
+    )
+    evidence_count = (
+        select(func.count(EvidenceItemRow.id))
+        .where(EvidenceItemRow.investigation_run_id == InvestigationRunRow.id)
+        .correlate(InvestigationRunRow)
+        .scalar_subquery()
+    )
+    report_count = (
+        select(func.count(SpecialistReportRow.id))
+        .where(SpecialistReportRow.investigation_run_id == InvestigationRunRow.id)
+        .correlate(InvestigationRunRow)
+        .scalar_subquery()
+    )
+    step_count = (
+        select(func.count(ActionStepRow.id))
+        .where(ActionStepRow.action_plan_id == ActionPlanRow.id)
+        .correlate(ActionPlanRow)
+        .scalar_subquery()
+    )
+    sample_count = (
+        select(func.count(VerificationSampleRow.id))
+        .where(VerificationSampleRow.verification_run_id == VerificationRunRow.id)
+        .correlate(VerificationRunRow)
+        .scalar_subquery()
+    )
+    statement = (
+        select(
+            IncidentRow,
+            InvestigationRunRow,
+            HypothesisRow,
+            ActionPlanRow,
+            ApprovalRequestRow,
+            OperationExecutionRow,
+            VerificationRunRow,
+            evidence_count.label("evidence_count"),
+            report_count.label("report_count"),
+            step_count.label("step_count"),
+            sample_count.label("sample_count"),
+        )
+        .select_from(IncidentRow)
+        .outerjoin(InvestigationRunRow, InvestigationRunRow.id == latest_run_id)
+        .outerjoin(
+            HypothesisRow,
+            HypothesisRow.investigation_run_id == InvestigationRunRow.id,
+        )
+        .outerjoin(ActionPlanRow, ActionPlanRow.id == current_plan_id)
+        .outerjoin(
+            ApprovalRequestRow,
+            ApprovalRequestRow.action_plan_id == ActionPlanRow.id,
+        )
+        .outerjoin(OperationExecutionRow, OperationExecutionRow.id == latest_execution_id)
+        .outerjoin(
+            VerificationRunRow,
+            VerificationRunRow.operation_execution_id == OperationExecutionRow.id,
+        )
+        .where(IncidentRow.id == incident_id)
+    )
+    row = (await session.execute(statement)).one_or_none()
+    if row is None:
+        raise IncidentNotFound(str(incident_id))
+
+    incident = cast(IncidentRow, row[0])
+    run = cast(InvestigationRunRow | None, row[1])
+    hypothesis = cast(HypothesisRow | None, row[2])
+    plan = cast(ActionPlanRow | None, row[3])
+    approval = cast(ApprovalRequestRow | None, row[4])
+    execution = cast(OperationExecutionRow | None, row[5])
+    verification = cast(VerificationRunRow | None, row[6])
+    return WorkroomSnapshot(
+        incident_id=incident.id,
+        incident_version=incident.version,
+        investigation=_investigation_summary(run),
+        evidence_board=_evidence_board_summary(
+            run,
+            hypothesis,
+            evidence_count=cast(int, row[7]),
+            report_count=cast(int, row[8]),
+        ),
+        action_plan=_action_plan_summary(plan, step_count=cast(int, row[9])),
+        approval_request=_approval_summary(approval),
+        operation_execution=_execution_summary(execution),
+        verification_run=_verification_summary(
+            verification,
+            sample_count=cast(int, row[10]),
+        ),
+    )
 
 
 def _investigation_summary(
