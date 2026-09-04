@@ -4,6 +4,7 @@ import IncidentWorkroomView from "./views/IncidentWorkroomView.vue";
 import EvaluationDashboardView from "./views/EvaluationDashboardView.vue";
 import ApprovalCenterView from "./views/ApprovalCenterView.vue";
 import ExecutionCenterView from "./views/ExecutionCenterView.vue";
+import VerificationCenterView from "./views/VerificationCenterView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -23,6 +24,11 @@ export const router = createRouter({
       path: "/executions/:planId?",
       name: "executions",
       component: ExecutionCenterView,
+    },
+    {
+      path: "/verifications/:executionId?",
+      name: "verifications",
+      component: VerificationCenterView,
     },
     {
       path: "/evaluations/:runId?",

@@ -14,6 +14,13 @@ import type {
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type { InvestigationAttemptList } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
+import type {
+  CreateVerificationRunInput,
+  CreateVerificationRunResponse,
+  VerificationCandidatePage,
+  VerificationRun,
+  VerificationWorkItem,
+} from "../types/verifications";
 
 interface ApiErrorBody {
   error_code?: string;
@@ -153,5 +160,44 @@ export function executeActionStep(
   return requestJson<ExecuteOperationResponse>(
     `/api/v1/action-steps/${encodeURIComponent(stepId)}/executions`,
     { method: "POST", body: input, signal },
+  );
+}
+
+export function listVerificationCandidates(
+  signal?: AbortSignal,
+): Promise<VerificationCandidatePage> {
+  return requestJson<VerificationCandidatePage>("/api/v1/verification-candidates?limit=50", {
+    signal,
+  });
+}
+
+export function createVerificationRun(
+  executionId: string,
+  input: CreateVerificationRunInput,
+  signal?: AbortSignal,
+): Promise<CreateVerificationRunResponse> {
+  return requestJson<CreateVerificationRunResponse>(
+    `/api/v1/operation-executions/${encodeURIComponent(executionId)}/verification-runs`,
+    { method: "POST", body: input, signal },
+  );
+}
+
+export function getVerificationRun(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<VerificationRun> {
+  return requestJson<VerificationRun>(
+    `/api/v1/verification-runs/${encodeURIComponent(runId)}`,
+    { signal },
+  );
+}
+
+export function getVerificationWorkItem(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<VerificationWorkItem> {
+  return requestJson<VerificationWorkItem>(
+    `/api/v1/verification-runs/${encodeURIComponent(runId)}/work-item`,
+    { signal },
   );
 }

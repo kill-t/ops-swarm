@@ -105,9 +105,11 @@ from opsswarm.verification import (
     VerificationWorkItemStatus,
 )
 from opsswarm.verification.persistence import (
+    StoredVerificationCandidate,
     StoredVerificationRun,
     StoredVerificationSample,
     StoredVerificationWorkItem,
+    VerificationCandidatePage,
     VerificationRunCreation,
     VerificationSampleOutcome,
 )
@@ -835,6 +837,68 @@ class VerificationWorkItemResponse(StrictApiModel):
             created_at=stored.created_at,
             updated_at=stored.updated_at,
             completed_at=stored.completed_at,
+        )
+
+
+class VerificationCandidateIncidentResponse(StrictApiModel):
+    """待验证操作关联的 Incident 当前快照。"""
+
+    id: UUID
+    display_number: int
+    reference: str
+    service_name: str
+    title: str
+    severity: IncidentSeverity
+    status: IncidentStatus
+    version: int
+    updated_at: datetime
+
+
+class VerificationCandidateResponse(StrictApiModel):
+    """当前计划成功操作及其可能已经开始的验证运行。"""
+
+    incident: VerificationCandidateIncidentResponse
+    operation_execution: OperationExecutionResponse
+    action_step: ActionStepResponse
+    verification_run: VerificationRunResponse | None
+    work_item: VerificationWorkItemResponse | None
+
+    @classmethod
+    def from_stored(cls, stored: StoredVerificationCandidate) -> Self:
+        incident = stored.incident
+        return cls(
+            incident=VerificationCandidateIncidentResponse(
+                **incident.model_dump(),
+                reference=f"INC-{incident.display_number:06d}",
+            ),
+            operation_execution=OperationExecutionResponse.from_stored(
+                stored.operation_execution
+            ),
+            action_step=ActionStepResponse.from_stored(stored.action_step),
+            verification_run=(
+                VerificationRunResponse.from_stored(stored.verification_run)
+                if stored.verification_run is not None
+                else None
+            ),
+            work_item=(
+                VerificationWorkItemResponse.from_stored(stored.work_item)
+                if stored.work_item is not None
+                else None
+            ),
+        )
+
+
+class VerificationCandidatePageResponse(StrictApiModel):
+    """有界待验证队列，total 用于提示是否还有未展示操作。"""
+
+    items: tuple[VerificationCandidateResponse, ...]
+    total: int
+
+    @classmethod
+    def from_page(cls, page: VerificationCandidatePage) -> Self:
+        return cls(
+            items=tuple(VerificationCandidateResponse.from_stored(item) for item in page.items),
+            total=page.total,
         )
 
 

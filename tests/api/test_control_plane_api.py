@@ -1019,6 +1019,23 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert incident.json()["status"] == "verifying"
     assert incident.json()["version"] == 5
 
+    verification_candidates = await control_client.get(
+        "/api/v1/verification-candidates?limit=50"
+    )
+    assert verification_candidates.status_code == 200
+    candidate_page = verification_candidates.json()
+    assert candidate_page["total"] == 1
+    verification_candidate = candidate_page["items"][0]
+    assert verification_candidate["incident"]["id"] == created.json()["incident"]["id"]
+    assert verification_candidate["incident"]["status"] == "verifying"
+    assert verification_candidate["incident"]["version"] == 5
+    assert verification_candidate["operation_execution"] == execution_body[
+        "operation_execution"
+    ]
+    assert verification_candidate["action_step"]["id"] == step_id
+    assert verification_candidate["verification_run"] is None
+    assert verification_candidate["work_item"] is None
+
     verification = await control_client.post(
         f"/api/v1/operation-executions/{execution_id}/verification-runs",
         json={"expected_incident_version": 5},
@@ -1045,6 +1062,12 @@ async def test_completed_investigation_exposes_normalized_evidence_board(
     assert verification_work_body["next_sample_sequence"] == 1
     assert verification_work_body["attempt_count"] == 0
     assert "lease_token" not in verification_work_body
+
+    running_candidates = await control_client.get("/api/v1/verification-candidates?limit=50")
+    assert running_candidates.status_code == 200
+    running_candidate = running_candidates.json()["items"][0]
+    assert running_candidate["verification_run"] == verification_body["verification_run"]
+    assert running_candidate["work_item"] == verification_work_body
 
     duplicate_verification = await control_client.post(
         f"/api/v1/operation-executions/{execution_id}/verification-runs",

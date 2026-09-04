@@ -46,6 +46,7 @@ from opsswarm.control_plane.schemas import (
     RecordVerificationSampleResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
+    VerificationCandidatePageResponse,
     VerificationRunResponse,
     VerificationSampleRequest,
     VerificationWorkItemResponse,
@@ -668,6 +669,21 @@ def create_router(clock: Clock) -> APIRouter:
         service: OperationExecutionServiceDependency,
     ) -> OperationExecutionResponse:
         return OperationExecutionResponse.from_stored(await service.get(execution_id))
+
+    @router.get(
+        "/api/v1/verification-candidates",
+        response_model=VerificationCandidatePageResponse,
+        tags=["恢复验证"],
+    )
+    async def list_verification_candidates(
+        service: VerificationServiceDependency,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> VerificationCandidatePageResponse:
+        """列出最新调查当前计划中成功且尚未完成验证的操作。"""
+
+        return VerificationCandidatePageResponse.from_page(
+            await service.list_candidates(limit=limit)
+        )
 
     @router.post(
         "/api/v1/operation-executions/{execution_id}/verification-runs",

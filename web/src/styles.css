@@ -2088,3 +2088,223 @@ p {
     min-height: calc(100vh - 124px);
   }
 }
+
+.verification-card .approval-card-meta {
+  align-items: center;
+}
+
+.verification-state {
+  display: inline-flex;
+  padding: 3px 7px;
+  border: 1px solid #496072;
+  border-radius: 999px;
+  color: #b9cad8;
+  background: #1b2834;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.verification-state.running {
+  border-color: #446d86;
+  color: #bde3f8;
+  background: #152c3a;
+}
+
+.verification-state.passed {
+  border-color: #326a5f;
+  color: #b9f0df;
+  background: #142f2a;
+}
+
+.verification-state.failed {
+  border-color: #75414d;
+  color: #f4bac5;
+  background: #321b22;
+}
+
+.verification-boundary {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 18px;
+  margin: 20px 0;
+  padding: 14px 16px;
+  border: 1px solid #315d69;
+  border-radius: 10px;
+  color: #a8ced7;
+  background: #122831;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.verification-boundary strong {
+  color: #c4e8ef;
+  font-family: var(--mono);
+}
+
+.verification-rule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #304b5f;
+  border-radius: 9px;
+  color: #9eb7c9;
+  background: #111f2a;
+  font-size: 11px;
+}
+
+.verification-rule code {
+  color: #bde3f8;
+}
+
+.decision-button.verify {
+  margin-top: 14px;
+  border-color: #356778;
+  color: #d1eef4;
+  background: #174052;
+}
+
+.verification-confirmation {
+  border-color: #315d69;
+  background: #142831;
+}
+
+.verification-progress-panel,
+.verification-sample-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-raised);
+}
+
+.verification-progress-panel > p {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.verification-progress-track {
+  height: 8px;
+  margin: 14px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #192735;
+}
+
+.verification-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3184a0, #5bc5ac);
+  transition: width 180ms ease;
+}
+
+.verification-worker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 14px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.verification-worker-grid div {
+  min-width: 0;
+  padding: 10px;
+  border-right: 1px solid var(--line);
+}
+
+.verification-worker-grid div:last-child {
+  border-right: 0;
+}
+
+.verification-worker-grid dt {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.verification-worker-grid dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.verification-sample-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verification-sample-list li {
+  display: grid;
+  grid-template-columns: 44px 74px minmax(150px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.verification-sample-list strong.passed {
+  color: #72d9bd;
+}
+
+.verification-sample-list strong.failed,
+.verification-sample-list strong.error {
+  color: #ee8da0;
+}
+
+.verification-sample-list small {
+  grid-column: 2 / -1;
+  color: #eea4b3;
+}
+
+.verification-terminal {
+  display: flex;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.verification-terminal.passed {
+  border-color: #326a5f;
+  color: #b9f0df;
+  background: #142f2a;
+}
+
+.verification-terminal.failed {
+  border-color: #75414d;
+  color: #f4bac5;
+  background: #321b22;
+}
+
+@media (max-width: 700px) {
+  .verification-boundary,
+  .verification-worker-grid,
+  .verification-sample-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .verification-worker-grid div {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .verification-worker-grid div:last-child {
+    border-bottom: 0;
+  }
+
+  .verification-sample-list small {
+    grid-column: auto;
+  }
+}

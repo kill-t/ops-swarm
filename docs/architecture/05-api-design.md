@@ -32,6 +32,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `GET /api/v1/execution-candidates` | 返回最新调查中已批准且仍处于处置阶段的有界完整计划 | 查询参数错误 `422`；计划内容漂移 `409` |
 | `POST /api/v1/action-steps/{step_id}/executions` | 首次执行 `201`；幂等终态 `200`；同键运行中 `202` | 不存在 `404`；授权、版本、幂等或租约冲突 `409`；已审计适配器失败 `502` |
 | `GET /api/v1/operation-executions/{execution_id}` | 返回持久执行状态、有限结果或失败摘要 | 不存在 `404` |
+| `GET /api/v1/verification-candidates` | 返回最新调查当前计划中成功且尚未完成验证的有界操作 | 查询参数错误 `422`；持久状态不一致时失败关闭 |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同成功操作幂等读取 `200` | 不存在 `404`；执行、Incident 或规则不满足 `409` |
 | `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 | 不存在 `404` |
 | `POST /api/v1/verification-runs/{run_id}/samples` | 首次样本 `201`；同键样本 `200` | 不存在 `404`；运行已结束或 Incident 冲突 `409` |
@@ -84,7 +85,9 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 ### 2.5 逐次恢复验证语义
 
-验证运行 POST 只接受 `expected_incident_version`。目标操作必须为 `succeeded`，Incident 必须处于 `verifying`；服务端从操作关联步骤读取并冻结验证规则，并在同一事务创建唯一 `verification_work_item`。同操作重复请求返回原运行，即使调用方仍携带旧版本，也不会创建第二个验证或调度任务。
+验证候选 GET 默认返回 50 条、最多 100 条，只选择 Incident 最新调查中最高版本批准计划的成功操作，并携带 Incident 当前版本、有限执行结果、精确步骤、可选运行和调度任务。验证通过或失败后 Incident 离开 `verifying`，候选自然消失。接口保持只读，不创建验证、不领取任务、不触发探针。页面契约见 [恢复验证中心与采样进度展示](56-recovery-verification-center.md)。
+
+验证运行 POST 只接受 `expected_incident_version`。目标操作必须为 `succeeded`，Incident 必须处于 `verifying`，且操作必须属于 Incident 最新调查的当前批准计划；服务端从操作关联步骤读取并冻结验证规则，并在同一事务创建唯一 `verification_work_item`。同操作重复请求返回原运行，即使调用方仍携带旧版本，也不会创建第二个验证或调度任务。
 
 样本 POST 只接受 8～100 字符的 `idempotency_key`，不接受观测值、状态码、URL 或时间。服务端固定探针完成只读请求后，以服务器 UTC 时间追加样本。同键已存在时返回 `200`、`created=false`、`probe_performed=false`；并发竞争可能已经执行只读探针，但数据库仍只保存一个同键样本，响应通过 `probe_performed` 如实表达本次是否发起了探测。
 

@@ -2,15 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   decideApprovalRequest,
+  createVerificationRun,
   executeActionStep,
   getEvaluationRun,
   getEvidenceBoard,
   getIncidentWorkroom,
+  getVerificationRun,
+  getVerificationWorkItem,
   listEvaluationRuns,
   listExecutionCandidates,
   listIncidents,
   listInvestigationAttempts,
   listPendingApprovals,
+  listVerificationCandidates,
 } from "./api";
 
 describe("控制面 API 客户端", () => {
@@ -231,6 +235,77 @@ describe("控制面 API 客户端", () => {
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify(input),
       }),
+    );
+  });
+
+  it("读取有界待验证操作队列", async () => {
+    const body = { items: [], total: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listVerificationCandidates()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/verification-candidates?limit=50",
+      expect.objectContaining({ method: "GET", headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("创建验证时只发送 Incident 乐观锁并编码执行 ID", async () => {
+    const body = { created: true, verification_run: { id: "verification-001" } };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { expected_incident_version: 5 };
+
+    await expect(createVerificationRun("execution/001", input)).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/operation-executions/execution%2F001/verification-runs",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  });
+
+  it("只读查询验证运行和 Worker 调度状态", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "run/001" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ verification_run_id: "run/001" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getVerificationRun("run/001");
+    await getVerificationWorkItem("run/001");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/verification-runs/run%2F001",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/verification-runs/run%2F001/work-item",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 });

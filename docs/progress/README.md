@@ -96,3 +96,4 @@
 - [53 - 独立部署控制器与动态证明刷新](53-deployment-controller-runtime-proof-refresh.md)
 - [54 - 本地审批中心与待办队列](54-approval-center-ui.md)
 - [55 - 已批准计划的受控执行中心](55-controlled-execution-ui.md)
+- [56 - 恢复验证中心与采样进度展示](56-recovery-verification-center.md)

@@ -8,7 +8,10 @@ from opsswarm.execution.persistence.records import (
     StoredExecutionCandidate,
     StoredOperationExecution,
 )
-from opsswarm.execution.persistence.repository import OperationExecutionStore
+from opsswarm.execution.persistence.repository import (
+    OperationExecutionStore,
+    stored_operation_execution_from_row,
+)
 
 __all__ = [
     "ClaimedOperationExecution",
@@ -18,4 +21,5 @@ __all__ = [
     "OperationExecutionStore",
     "StoredExecutionCandidate",
     "StoredOperationExecution",
+    "stored_operation_execution_from_row",
 ]

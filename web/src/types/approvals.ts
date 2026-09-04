@@ -38,7 +38,7 @@ export interface PendingApprovalIncident {
   updated_at: string;
 }
 
-interface VerificationRule {
+export interface VerificationRule {
   signal: string;
   operator: "less_than";
   threshold: number;

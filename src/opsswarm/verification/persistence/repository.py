@@ -9,12 +9,26 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.execution import ExecutionStatus, OperationExecutionNotFound
+from opsswarm.execution.persistence import stored_operation_execution_from_row
 from opsswarm.execution.persistence.tables import OperationExecutionRow
-from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
+from opsswarm.incidents import (
+    ActorType,
+    IncidentAction,
+    IncidentActor,
+    IncidentSeverity,
+    IncidentStatus,
+)
 from opsswarm.incidents.errors import IncidentNotFound, IncidentVersionConflict
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
-from opsswarm.planning import ActionType, TargetType, VerificationOperator, VerificationRule
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
+from opsswarm.planning import (
+    ActionPlanStatus,
+    ActionType,
+    TargetType,
+    VerificationOperator,
+    VerificationRule,
+)
 from opsswarm.planning.persistence import StoredActionStep, load_action_plan_in_session
 from opsswarm.planning.persistence.tables import ActionPlanRow, ActionStepRow
 from opsswarm.verification.errors import (
@@ -36,9 +50,12 @@ from opsswarm.verification.models import (
 )
 from opsswarm.verification.persistence.records import (
     PreparedVerificationSample,
+    StoredVerificationCandidate,
     StoredVerificationRun,
     StoredVerificationSample,
     StoredVerificationWorkItem,
+    VerificationCandidateIncident,
+    VerificationCandidatePage,
     VerificationRunCreation,
     scheduled_sample_idempotency_key,
 )
@@ -60,6 +77,108 @@ class VerificationStore:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    async def list_candidates(self, *, limit: int = 50) -> VerificationCandidatePage:
+        """只投影最新调查当前计划中已经成功的待验证操作。"""
+
+        if isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("limit 必须在 1 到 100 之间")
+        latest_run_id = (
+            select(InvestigationRunRow.id)
+            .where(InvestigationRunRow.incident_id == IncidentRow.id)
+            .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
+            .limit(1)
+            .correlate(IncidentRow)
+            .scalar_subquery()
+        )
+        current_plan_id = (
+            select(ActionPlanRow.id)
+            .where(ActionPlanRow.investigation_run_id == InvestigationRunRow.id)
+            .order_by(ActionPlanRow.version.desc(), ActionPlanRow.id.desc())
+            .limit(1)
+            .correlate(InvestigationRunRow)
+            .scalar_subquery()
+        )
+        conditions = (
+            IncidentRow.status == IncidentStatus.VERIFYING.value,
+            ActionPlanRow.status == ActionPlanStatus.APPROVED.value,
+            OperationExecutionRow.status == ExecutionStatus.SUCCEEDED.value,
+        )
+        joins = (
+            (InvestigationRunRow, InvestigationRunRow.id == latest_run_id),
+            (ActionPlanRow, ActionPlanRow.id == current_plan_id),
+            (
+                OperationExecutionRow,
+                OperationExecutionRow.action_plan_id == ActionPlanRow.id,
+            ),
+            (ActionStepRow, ActionStepRow.id == OperationExecutionRow.action_step_id),
+        )
+        async with self._session_factory() as session:
+            total_statement = select(func.count(OperationExecutionRow.id)).select_from(IncidentRow)
+            for target, on_clause in joins:
+                total_statement = total_statement.join(target, on_clause)
+            total = int(await session.scalar(total_statement.where(*conditions)) or 0)
+
+            statement = select(
+                IncidentRow,
+                OperationExecutionRow,
+                ActionStepRow,
+                VerificationRunRow,
+                VerificationWorkItemRow,
+            ).select_from(IncidentRow)
+            for target, on_clause in joins:
+                statement = statement.join(target, on_clause)
+            statement = statement.outerjoin(
+                VerificationRunRow,
+                VerificationRunRow.operation_execution_id == OperationExecutionRow.id,
+            ).outerjoin(
+                VerificationWorkItemRow,
+                VerificationWorkItemRow.verification_run_id == VerificationRunRow.id,
+            )
+            rows = (
+                await session.execute(
+                    statement.where(*conditions)
+                    .order_by(
+                        OperationExecutionRow.completed_at,
+                        OperationExecutionRow.created_at,
+                        OperationExecutionRow.id,
+                    )
+                    .limit(limit)
+                )
+            ).all()
+
+            items: list[StoredVerificationCandidate] = []
+            for incident_row, execution_row, step_row, run_row, work_row in rows:
+                step = await _load_verified_step(
+                    session,
+                    step_row.id,
+                    expected_plan_id=execution_row.action_plan_id,
+                )
+                items.append(
+                    StoredVerificationCandidate(
+                        incident=VerificationCandidateIncident(
+                            id=incident_row.id,
+                            display_number=incident_row.display_number,
+                            service_name=incident_row.service_name,
+                            title=incident_row.title,
+                            severity=IncidentSeverity(incident_row.severity),
+                            status=IncidentStatus(incident_row.status),
+                            version=incident_row.version,
+                            updated_at=incident_row.updated_at,
+                        ),
+                        operation_execution=stored_operation_execution_from_row(execution_row),
+                        action_step=step,
+                        verification_run=(
+                            await _load_stored_run(session, run_row)
+                            if run_row is not None
+                            else None
+                        ),
+                        work_item=(
+                            _stored_work_item(work_row) if work_row is not None else None
+                        ),
+                    )
+                )
+            return VerificationCandidatePage(items=tuple(items), total=total)
 
     async def create_for_execution(
         self,
@@ -119,6 +238,12 @@ class VerificationStore:
                     reason_code="incident_not_verifying",
                     message="Incident 不在 verifying，不能开始恢复验证",
                 )
+            await _validate_execution_is_current(
+                session,
+                execution_id=execution_id,
+                execution_row=execution_row,
+                incident_row=incident_row,
+            )
             step = await _load_verified_step(
                 session,
                 execution_row.action_step_id,
@@ -551,6 +676,44 @@ async def _complete_run(
     run_row.failure_code = failure.error_code if failure is not None else None
     run_row.failure_message = failure.message if failure is not None else None
     run_row.completed_at = observed_at
+
+
+async def _validate_execution_is_current(
+    session: AsyncSession,
+    *,
+    execution_id: UUID,
+    execution_row: OperationExecutionRow,
+    incident_row: IncidentRow,
+) -> None:
+    """阻止旧调查周期的成功操作验证当前事故状态。"""
+
+    plan_row = await session.get(ActionPlanRow, execution_row.action_plan_id)
+    if plan_row is None:
+        raise RuntimeError("成功操作关联的处置计划不存在")
+    latest_run_id = await session.scalar(
+        select(InvestigationRunRow.id)
+        .where(InvestigationRunRow.incident_id == incident_row.id)
+        .order_by(InvestigationRunRow.created_at.desc(), InvestigationRunRow.id.desc())
+        .limit(1)
+    )
+    if latest_run_id != plan_row.investigation_run_id:
+        raise OperationExecutionNotVerifiable(
+            execution_id,
+            reason_code="execution_not_latest_investigation",
+            message="只有 Incident 最新调查中的成功操作可以验证",
+        )
+    current_plan_id = await session.scalar(
+        select(ActionPlanRow.id)
+        .where(ActionPlanRow.investigation_run_id == plan_row.investigation_run_id)
+        .order_by(ActionPlanRow.version.desc(), ActionPlanRow.id.desc())
+        .limit(1)
+    )
+    if current_plan_id != plan_row.id or plan_row.status != ActionPlanStatus.APPROVED.value:
+        raise OperationExecutionNotVerifiable(
+            execution_id,
+            reason_code="execution_not_current_approved_plan",
+            message="只有当前已批准计划中的成功操作可以验证",
+        )
 
 
 def _window_is_satisfied(row: VerificationRunRow) -> bool:

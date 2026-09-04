@@ -10,6 +10,7 @@ from opsswarm.verification.models import VerificationFailure
 from opsswarm.verification.persistence import (
     StoredVerificationRun,
     StoredVerificationWorkItem,
+    VerificationCandidatePage,
     VerificationRunCreation,
     VerificationSampleOutcome,
     VerificationStore,
@@ -49,6 +50,11 @@ class VerificationService:
             expected_incident_version=expected_incident_version,
             occurred_at=self._clock(),
         )
+
+    async def list_candidates(self, *, limit: int = 50) -> VerificationCandidatePage:
+        """返回当前事故周期内成功但尚未完成验证的操作。"""
+
+        return await self._store.list_candidates(limit=limit)
 
     async def sample(
         self,

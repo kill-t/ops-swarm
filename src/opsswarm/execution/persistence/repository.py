@@ -141,7 +141,7 @@ class OperationExecutionStore:
                 ).all()
                 for execution_row in active_rows:
                     active_by_plan.setdefault(execution_row.action_plan_id, []).append(
-                        _stored_execution(execution_row)
+                        stored_operation_execution_from_row(execution_row)
                     )
 
             items: list[StoredExecutionCandidate] = []
@@ -228,7 +228,7 @@ class OperationExecutionStore:
             if existing is not None:
                 if existing.action_step_id != step_id:
                     raise OperationIdempotencyConflict(idempotency_key)
-                stored_existing = _stored_execution(existing)
+                stored_existing = stored_operation_execution_from_row(existing)
                 if stored_existing.status is not ExecutionStatus.RUNNING:
                     return ClaimedOperationExecution(
                         execution=stored_existing,
@@ -282,7 +282,7 @@ class OperationExecutionStore:
                 existing.updated_at = occurred_at
                 await session.flush()
                 return ClaimedOperationExecution(
-                    execution=_stored_execution(existing),
+                    execution=stored_operation_execution_from_row(existing),
                     step=stored_step,
                     claimed=True,
                     created=False,
@@ -312,7 +312,7 @@ class OperationExecutionStore:
             session.add(execution_row)
             await session.flush()
             return ClaimedOperationExecution(
-                execution=_stored_execution(execution_row),
+                execution=stored_operation_execution_from_row(execution_row),
                 step=stored_step,
                 claimed=True,
                 created=True,
@@ -344,7 +344,7 @@ class OperationExecutionStore:
             if row is None:
                 raise OperationExecutionNotFound(execution_id)
             if row.status != ExecutionStatus.RUNNING.value:
-                return _stored_execution(row)
+                return stored_operation_execution_from_row(row)
             if (
                 row.lease_token != lease_token
                 or row.locked_until is None
@@ -388,14 +388,14 @@ class OperationExecutionStore:
             row.updated_at = occurred_at
             row.completed_at = occurred_at
             await session.flush()
-            return _stored_execution(row)
+            return stored_operation_execution_from_row(row)
 
     async def get(self, execution_id: UUID) -> StoredOperationExecution:
         async with self._session_factory() as session:
             row = await session.get(OperationExecutionRow, execution_id)
             if row is None:
                 raise OperationExecutionNotFound(execution_id)
-            return _stored_execution(row)
+            return stored_operation_execution_from_row(row)
 
 
 async def _validate_authorization(
@@ -463,7 +463,11 @@ async def _validate_authorization(
     return approval_row
 
 
-def _stored_execution(row: OperationExecutionRow) -> StoredOperationExecution:
+def stored_operation_execution_from_row(
+    row: OperationExecutionRow,
+) -> StoredOperationExecution:
+    """把数据库执行行转换为不暴露 ORM 状态的稳定读取模型。"""
+
     return StoredOperationExecution(
         id=row.id,
         idempotency_key=row.idempotency_key,

@@ -7,6 +7,9 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
+from opsswarm.execution import ExecutionStatus
+from opsswarm.execution.persistence import StoredOperationExecution
+from opsswarm.incidents import IncidentSeverity, IncidentStatus
 from opsswarm.planning import VerificationRule
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification.models import (
@@ -192,6 +195,78 @@ class StoredVerificationWorkItem(StrictVerificationModel):
         elif self.completed_at is not None:
             raise ValueError("pending 调度任务不能提前完成")
         return self
+
+
+class VerificationCandidateIncident(StrictVerificationModel):
+    """验证中心识别事故和提交乐观锁所需的最小快照。"""
+
+    id: UUID
+    display_number: int = Field(ge=1)
+    service_name: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=200)
+    severity: IncidentSeverity
+    status: IncidentStatus
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+    @field_validator("updated_at")
+    @classmethod
+    def normalize_updated_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Incident 更新时间必须包含时区")
+        return value.astimezone(UTC)
+
+
+class StoredVerificationCandidate(StrictVerificationModel):
+    """当前计划的成功操作及其唯一恢复验证状态。"""
+
+    incident: VerificationCandidateIncident
+    operation_execution: StoredOperationExecution
+    action_step: StoredActionStep
+    verification_run: StoredVerificationRun | None = None
+    work_item: StoredVerificationWorkItem | None = None
+
+    @model_validator(mode="after")
+    def validate_current_execution(self) -> Self:
+        execution = self.operation_execution
+        if self.incident.status is not IncidentStatus.VERIFYING:
+            raise ValueError("待验证项必须关联 verifying Incident")
+        if execution.status is not ExecutionStatus.SUCCEEDED:
+            raise ValueError("待验证项必须关联 succeeded 操作")
+        if (
+            execution.incident_id != self.incident.id
+            or execution.action_step_id != self.action_step.id
+        ):
+            raise ValueError("待验证项没有绑定同一事故和步骤")
+        if self.verification_run is None:
+            if self.work_item is not None:
+                raise ValueError("没有验证运行时不能出现调度任务")
+            return self
+        run = self.verification_run
+        if (
+            run.status is not VerificationStatus.RUNNING
+            or run.operation_execution_id != execution.id
+            or run.incident_id != self.incident.id
+            or run.action_step_id != self.action_step.id
+        ):
+            raise ValueError("验证运行没有精确绑定当前成功操作")
+        if self.work_item is None or self.work_item.verification_run_id != run.id:
+            raise ValueError("运行中的恢复验证必须包含唯一调度任务")
+        if self.work_item.status is VerificationWorkItemStatus.COMPLETED:
+            raise ValueError("运行中的恢复验证不能关联 completed 调度任务")
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class VerificationCandidatePage:
+    """有界待验证队列及数据库中的总待办数。"""
+
+    items: tuple[StoredVerificationCandidate, ...]
+    total: int
+
+    def __post_init__(self) -> None:
+        if self.total < len(self.items):
+            raise ValueError("待验证总数不能小于当前页数量")
 
 
 @dataclass(frozen=True, slots=True)

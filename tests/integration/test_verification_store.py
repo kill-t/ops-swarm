@@ -3,6 +3,7 @@
 from collections import deque
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +14,7 @@ from opsswarm.execution.service import OperationExecutionService
 from opsswarm.incidents import IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import StartedInvestigation
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import (
     OperationExecutionNotVerifiable,
@@ -110,8 +112,15 @@ async def test_three_successes_spanning_window_resolve_incident_and_retry_is_ide
         suffix="passed",
     )
     probe = HealthyProbe()
+    store = VerificationStore(database_session_factory)
+    initial_page = await store.list_candidates(limit=10)
+    assert initial_page.total == 1
+    assert initial_page.items[0].operation_execution == execution
+    assert initial_page.items[0].verification_run is None
+    assert initial_page.items[0].work_item is None
+
     service = VerificationService(
-        VerificationStore(database_session_factory),
+        store,
         probe,
         clock=SequenceClock(
             [
@@ -127,6 +136,11 @@ async def test_three_successes_spanning_window_resolve_incident_and_retry_is_ide
         execution.id,
         expected_incident_version=5,
     )
+    running_page = await service.list_candidates(limit=10)
+    assert running_page.total == 1
+    assert running_page.items[0].verification_run == creation.run
+    assert running_page.items[0].work_item is not None
+    assert running_page.items[0].work_item.next_sample_sequence == 1
     first = await service.sample(creation.run.id, idempotency_key="verify-sample-001")
     second = await service.sample(creation.run.id, idempotency_key="verify-sample-002")
     third = await service.sample(creation.run.id, idempotency_key="verify-sample-003")
@@ -141,6 +155,9 @@ async def test_three_successes_spanning_window_resolve_incident_and_retry_is_ide
     assert duplicate.created is False
     assert duplicate.probe_performed is False
     assert probe.call_count == 3
+    completed_page = await store.list_candidates(limit=10)
+    assert completed_page.total == 0
+    assert completed_page.items == ()
     incident = await IncidentStore(database_session_factory).get_incident(
         started.incident.incident.id
     )
@@ -279,6 +296,61 @@ async def test_run_creation_is_idempotent_and_rejects_failed_execution(
         )
 
     assert captured.value.reason_code == "execution_not_succeeded"
+
+
+@pytest.mark.parametrize("limit", [0, 101, True])
+async def test_candidate_queue_rejects_unbounded_limit(
+    database_session_factory: async_sessionmaker[AsyncSession],
+    limit: object,
+) -> None:
+    with pytest.raises(ValueError, match="limit 必须在 1 到 100 之间"):
+        await VerificationStore(database_session_factory).list_candidates(  # type: ignore[arg-type]
+            limit=limit
+        )
+
+
+async def test_old_successful_execution_cannot_verify_newer_investigation(
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    execution, started = await prepare_successful_execution(
+        database_session_factory,
+        suffix="verification-old-investigation",
+    )
+    newer_time = BASE_TIME + timedelta(seconds=8)
+    async with database_session_factory() as session, session.begin():
+        session.add(
+            InvestigationRunRow(
+                id=uuid4(),
+                incident_id=started.run.incident_id,
+                mode="single_agent",
+                data_source_mode="frozen",
+                status="failed",
+                prompt_version="latest-verification-test-v1",
+                graph_thread_id=None,
+                model_name=None,
+                result=None,
+                metrics=None,
+                last_error={
+                    "error_code": "newer_investigation_failed",
+                    "message": "用于验证旧成功操作不能关闭新调查周期",
+                },
+                created_at=newer_time,
+                started_at=newer_time,
+                completed_at=newer_time,
+                updated_at=newer_time,
+            )
+        )
+
+    store = VerificationStore(database_session_factory)
+    assert (await store.list_candidates(limit=10)).total == 0
+    with pytest.raises(OperationExecutionNotVerifiable) as captured:
+        await store.create_for_execution(
+            execution.id,
+            expected_incident_version=5,
+            occurred_at=BASE_TIME + timedelta(seconds=9),
+        )
+
+    assert captured.value.reason_code == "execution_not_latest_investigation"
 
 
 async def test_new_sample_after_terminal_run_is_rejected(

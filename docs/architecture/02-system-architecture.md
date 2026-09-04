@@ -202,6 +202,7 @@ LangGraph 1.x 用于：
 | `POST /api/v1/approval-requests/{request_id}/actions/reject` | 拒绝计划并把 Incident 返回调查 |
 | `POST /api/v1/action-steps/{step_id}/executions` | 使用幂等键执行已批准的固定本地白名单步骤 |
 | `GET /api/v1/operation-executions/{execution_id}` | 查询持久执行状态、有限结果或失败摘要 |
+| `GET /api/v1/verification-candidates` | 查询最新调查当前计划中成功且尚未完成验证的操作 |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 为成功操作创建唯一的持久恢复验证 |
 | `GET /api/v1/verification-runs/{run_id}` | 查询冻结规则、验证进度、终态和样本 |
 | `POST /api/v1/verification-runs/{run_id}/samples` | 使用幂等键触发一次与动作绑定的固定只读探针 |

@@ -2,9 +2,12 @@
 
 from opsswarm.verification.persistence.records import (
     PreparedVerificationSample,
+    StoredVerificationCandidate,
     StoredVerificationRun,
     StoredVerificationSample,
     StoredVerificationWorkItem,
+    VerificationCandidateIncident,
+    VerificationCandidatePage,
     VerificationRunCreation,
     VerificationSampleOutcome,
     scheduled_sample_idempotency_key,
@@ -13,9 +16,12 @@ from opsswarm.verification.persistence.repository import VerificationStore
 
 __all__ = [
     "PreparedVerificationSample",
+    "StoredVerificationCandidate",
     "StoredVerificationRun",
     "StoredVerificationSample",
     "StoredVerificationWorkItem",
+    "VerificationCandidateIncident",
+    "VerificationCandidatePage",
     "VerificationRunCreation",
     "VerificationSampleOutcome",
     "VerificationStore",

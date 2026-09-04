@@ -57,6 +57,7 @@ sequenceDiagram
 
 | 方法与路径 | 成功语义 |
 | --- | --- |
+| `GET /api/v1/verification-candidates` | 返回最新调查当前计划中成功且尚未完成验证的操作 |
 | `POST /api/v1/operation-executions/{execution_id}/verification-runs` | 首次创建 `201`；同操作幂等读取 `200` |
 | `GET /api/v1/verification-runs/{run_id}` | 返回冻结规则、进度、终态和全部样本 |
 | `GET /api/v1/verification-runs/{run_id}/work-item` | 返回不含租约令牌的自动采样状态 |
@@ -65,6 +66,7 @@ sequenceDiagram
 ## 6. 当前限制与下一步
 
 - 自动采样由 Compose 中的常驻 Worker 触发；手动样本接口仍用于本地诊断。
+- 第 56 步已经增加恢复验证中心；浏览器只能创建运行并只读观察 Worker，不能提交样本内容。
 - 当前已支持 Prometheus 固定即时查询，但尚未支持生产流量区间聚合或多信号组合。
 - 单个请求代表一个 0 或 1 的 5xx 样本，不是生产流量的统计分位。
 - 验证失败后的自动重新调查、生成新计划和再次审批尚未闭环。

@@ -57,7 +57,7 @@ export const PENDING_APPROVAL: PendingApproval = {
         verification: {
           signal: "http_5xx_ratio",
           operator: "less_than",
-          threshold: 0.05,
+          threshold: 0.01,
           observation_window_seconds: 60,
           required_successful_samples: 3,
         },
