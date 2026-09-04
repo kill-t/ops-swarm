@@ -674,6 +674,154 @@ async def test_concurrent_incident_report_requests_share_one_snapshot(
     assert {first.json()["created"], second.json()["created"]} == {False, True}
 
 
+async def test_report_action_item_is_idempotent_versioned_and_audited(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    incident = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("follow-up-alert-001"),
+    )
+    incident_id = incident.json()["incident"]["id"]
+    closed = await close_incident_for_report(
+        control_client,
+        database_session_factory,
+        incident_id,
+    )
+    report_response = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/reports",
+        json={
+            "expected_incident_version": closed["version"],
+            "actor_id": "engineer-001",
+        },
+    )
+    report_id = report_response.json()["report"]["id"]
+    action_items_url = f"/api/v1/incident-reports/{report_id}/action-items"
+    body = {
+        "idempotency_key": "follow-up-001",
+        "title": "补充 Redis 故障演练",
+        "description": "把依赖恢复和验证步骤加入每月演练",
+        "owner_id": "sre-001",
+        "due_at": "2026-01-08T08:00:00Z",
+        "actor_id": "engineer-001",
+    }
+
+    first = await control_client.post(action_items_url, json=body)
+    duplicate = await control_client.post(action_items_url, json=body)
+    conflict = await control_client.post(
+        action_items_url,
+        json={**body, "title": "复用幂等键改写标题"},
+    )
+    listed = await control_client.get(action_items_url)
+
+    assert first.status_code == 201
+    assert first.json()["created"] is True
+    item = first.json()["action_item"]
+    assert item["status"] == "open"
+    assert item["version"] == 1
+    assert duplicate.status_code == 200
+    assert duplicate.json()["created"] is False
+    assert duplicate.json()["action_item"] == item
+    assert conflict.status_code == 409
+    assert conflict.json()["error_code"] == "report_action_item_idempotency_conflict"
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"] == [item]
+
+    completion_url = f"/api/v1/report-action-items/{item['id']}/actions/complete"
+    completion_body = {
+        "expected_version": 1,
+        "actor_id": "engineer-002",
+        "completion_note": "演练和告警验证均已通过",
+    }
+    completed = await control_client.post(completion_url, json=completion_body)
+    completion_retry = await control_client.post(completion_url, json=completion_body)
+    completion_conflict = await control_client.post(
+        completion_url,
+        json={**completion_body, "completion_note": "试图改写完成说明"},
+    )
+    events = await control_client.get(
+        f"/api/v1/report-action-items/{item['id']}/events"
+    )
+
+    assert completed.status_code == 200
+    assert completed.json()["completion_applied"] is True
+    assert completed.json()["action_item"]["status"] == "completed"
+    assert completed.json()["action_item"]["version"] == 2
+    assert completion_retry.status_code == 200
+    assert completion_retry.json()["completion_applied"] is False
+    assert completion_retry.json()["action_item"] == completed.json()["action_item"]
+    assert completion_conflict.status_code == 409
+    assert completion_conflict.json()["error_code"] == "report_action_item_already_completed"
+    assert events.status_code == 200
+    assert [event["event_type"] for event in events.json()["items"]] == [
+        "report_action_item.created",
+        "report_action_item.completed",
+    ]
+    assert [event["item_version"] for event in events.json()["items"]] == [1, 2]
+
+
+async def test_report_action_item_rejects_missing_report_invalid_due_time_and_stale_version(
+    control_client: httpx2.AsyncClient,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    body = {
+        "idempotency_key": "follow-up-002",
+        "title": "补充事故复盘检查项",
+        "description": "验证失败路径不会落入数据库",
+        "owner_id": "sre-001",
+        "due_at": "2026-01-08T08:00:00Z",
+        "actor_id": "engineer-001",
+    }
+    missing = await control_client.post(
+        f"/api/v1/incident-reports/{uuid4()}/action-items",
+        json=body,
+    )
+
+    incident = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("follow-up-alert-002"),
+    )
+    incident_id = incident.json()["incident"]["id"]
+    closed = await close_incident_for_report(
+        control_client,
+        database_session_factory,
+        incident_id,
+    )
+    report = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/reports",
+        json={
+            "expected_incident_version": closed["version"],
+            "actor_id": "engineer-001",
+        },
+    )
+    action_items_url = (
+        f"/api/v1/incident-reports/{report.json()['report']['id']}/action-items"
+    )
+    invalid_due = await control_client.post(
+        action_items_url,
+        json={**body, "due_at": "2026-01-01T08:00:00Z"},
+    )
+    created = await control_client.post(action_items_url, json=body)
+    item_id = created.json()["action_item"]["id"]
+    stale = await control_client.post(
+        f"/api/v1/report-action-items/{item_id}/actions/complete",
+        json={
+            "expected_version": 2,
+            "actor_id": "engineer-002",
+            "completion_note": "错误版本不应成功",
+        },
+    )
+
+    assert missing.status_code == 404
+    assert missing.json()["error_code"] == "follow_up_report_not_found"
+    assert invalid_due.status_code == 422
+    assert invalid_due.json()["error_code"] == "report_action_item_validation_error"
+    assert stale.status_code == 409
+    assert stale.json()["error_code"] == "report_action_item_version_conflict"
+    assert stale.json()["details"] == {"expected_version": 2, "actual_version": 1}
+
+
 async def test_incident_list_uses_stable_descending_cursor(
     control_client: httpx2.AsyncClient,
 ) -> None:

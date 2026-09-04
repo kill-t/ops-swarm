@@ -18,11 +18,15 @@ from opsswarm.control_plane.schemas import (
     ApiErrorResponse,
     ApprovalRequestResponse,
     CloseIncidentRequest,
+    CompleteReportActionItemRequest,
+    CompleteReportActionItemResponse,
     CreateActionPlanResponse,
     CreateApprovalRequest,
     CreateApprovalRequestResponse,
     CreateIncidentReportRequest,
     CreateIncidentReportResponse,
+    CreateReportActionItemRequest,
+    CreateReportActionItemResponse,
     CreateVerificationRunRequest,
     CreateVerificationRunResponse,
     DecideApprovalRequest,
@@ -47,6 +51,9 @@ from opsswarm.control_plane.schemas import (
     OperationExecutionResponse,
     PendingApprovalPageResponse,
     RecordVerificationSampleResponse,
+    ReportActionItemEventListResponse,
+    ReportActionItemEventResponse,
+    ReportActionItemPageResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
     VerificationCandidatePageResponse,
@@ -58,6 +65,7 @@ from opsswarm.control_plane.sse import IncidentEventStream
 from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
+from opsswarm.follow_up.persistence import ReportActionItemStore
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
@@ -187,6 +195,21 @@ def get_incident_report_store(request: Request) -> IncidentReportStore:
 IncidentReportStoreDependency = Annotated[
     IncidentReportStore,
     Depends(get_incident_report_store),
+]
+
+
+def get_report_action_item_store(request: Request) -> ReportActionItemStore:
+    """从应用生命周期状态获取复盘改进行动项仓储。"""
+
+    store = getattr(request.app.state, "report_action_item_store", None)
+    if not isinstance(store, ReportActionItemStore):
+        raise RuntimeError("ReportActionItemStore 尚未初始化")
+    return store
+
+
+ReportActionItemStoreDependency = Annotated[
+    ReportActionItemStore,
+    Depends(get_report_action_item_store),
 ]
 
 
@@ -383,6 +406,103 @@ def create_router(clock: Clock) -> APIRouter:
         """返回已经冻结并通过内容摘要校验的复盘报告。"""
 
         return IncidentReportResponse.from_stored(await store.get(incident_id))
+
+    @router.post(
+        "/api/v1/incident-reports/{report_id}/action-items",
+        response_model=CreateReportActionItemResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            status.HTTP_200_OK: {
+                "model": CreateReportActionItemResponse,
+                "description": "相同幂等键和内容，返回原行动项",
+            },
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["事故复盘"],
+    )
+    async def create_report_action_item(
+        report_id: UUID,
+        request: CreateReportActionItemRequest,
+        response: Response,
+        store: ReportActionItemStoreDependency,
+    ) -> CreateReportActionItemResponse:
+        """为已冻结报告幂等创建人工负责的结构化行动项。"""
+
+        creation = await store.create(
+            report_id,
+            idempotency_key=request.idempotency_key,
+            title=request.title,
+            description=request.description,
+            owner_id=request.owner_id,
+            due_at=request.due_at,
+            created_by_id=request.actor_id,
+            occurred_at=clock(),
+        )
+        if not creation.created:
+            response.status_code = status.HTTP_200_OK
+        return CreateReportActionItemResponse.from_creation(creation)
+
+    @router.get(
+        "/api/v1/incident-reports/{report_id}/action-items",
+        response_model=ReportActionItemPageResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["事故复盘"],
+    )
+    async def list_report_action_items(
+        report_id: UUID,
+        store: ReportActionItemStoreDependency,
+        limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ) -> ReportActionItemPageResponse:
+        """待完成优先读取报告的结构化改进行动项。"""
+
+        return ReportActionItemPageResponse.from_page(
+            await store.list_for_report(report_id, limit=limit)
+        )
+
+    @router.post(
+        "/api/v1/report-action-items/{item_id}/actions/complete",
+        response_model=CompleteReportActionItemResponse,
+        responses={
+            status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
+            status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
+        },
+        tags=["事故复盘"],
+    )
+    async def complete_report_action_item(
+        item_id: UUID,
+        request: CompleteReportActionItemRequest,
+        store: ReportActionItemStoreDependency,
+    ) -> CompleteReportActionItemResponse:
+        """由人工完成行动项，并原子追加不可变审计事件。"""
+
+        return CompleteReportActionItemResponse.from_completion(
+            await store.complete(
+                item_id,
+                expected_version=request.expected_version,
+                completed_by_id=request.actor_id,
+                completion_note=request.completion_note,
+                occurred_at=clock(),
+            )
+        )
+
+    @router.get(
+        "/api/v1/report-action-items/{item_id}/events",
+        response_model=ReportActionItemEventListResponse,
+        responses={status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse}},
+        tags=["事故复盘"],
+    )
+    async def list_report_action_item_events(
+        item_id: UUID,
+        store: ReportActionItemStoreDependency,
+    ) -> ReportActionItemEventListResponse:
+        """读取行动项从创建到完成的不可变审计时间线。"""
+
+        events = await store.list_events(item_id)
+        return ReportActionItemEventListResponse(
+            item_id=item_id,
+            items=tuple(ReportActionItemEventResponse.from_event(event) for event in events),
+        )
 
     @router.post(
         "/api/v1/incidents/{incident_id}/actions/close",

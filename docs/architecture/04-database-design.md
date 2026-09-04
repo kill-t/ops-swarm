@@ -29,6 +29,8 @@ erDiagram
     INCIDENTS ||--o{ ALERTS : groups
     INCIDENTS ||--o{ INCIDENT_EVENTS : records
     INCIDENTS ||--o| INCIDENT_REPORTS : freezes
+    INCIDENT_REPORTS ||--o{ REPORT_ACTION_ITEMS : tracks
+    REPORT_ACTION_ITEMS ||--o{ REPORT_ACTION_ITEM_EVENTS : records
     SERVICES ||--o{ CHANGE_RECORDS : records
     INCIDENTS ||--o{ INVESTIGATION_RUNS : investigates
     INVESTIGATION_RUNS ||--o{ INVESTIGATION_TASKS : contains
@@ -90,6 +92,8 @@ erDiagram
 | `verification_samples` | 服务端探针取得的不可变数值或错误样本 |
 | `verification_work_items` | 自动采样的到期时间、租约、重试和当前调度序号 |
 | `incident_reports` | 已关闭事故唯一、不可变且带内容摘要的复盘快照 |
+| `report_action_items` | 复盘后由人工负责、带截止时间和版本的改进行动项 |
+| `report_action_item_events` | 行动项创建与完成的不可覆盖审计事实 |
 | `work_items` | Worker 租约、重试和至少一次处理 |
 | `investigation_attempts` | 每次租约领取的耗时、结果、错误、Token 与估算费用 |
 | `evaluation_cases` | 故障真值和期望行为 |
@@ -100,7 +104,7 @@ erDiagram
 
 ## 4. 已实现的物理模型
 
-当前已经创建 Incident 三表、不可变复盘报告表、追加式变更记录表、调查运行、任务与逐次尝试表、Evidence Board 三表、根因假设与证据关系两表、处置计划与步骤两表、审批请求表、操作执行表、恢复验证运行、样本与调度任务表，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
+当前已经创建 Incident 三表、不可变复盘报告、复盘改进行动项与审计事件、追加式变更记录、调查运行、任务与逐次尝试、Evidence Board 三表、根因假设与证据关系、处置计划与步骤、审批请求、操作执行、恢复验证运行、样本与调度任务，以及评测集、实验、尝试、运行和结果五表。`service_name` 暂时作为受校验字符串保存；服务目录在接入多服务时再迁移，避免为了一个演练服务提前引入管理功能。
 
 ### 4.1 incidents
 
@@ -377,6 +381,37 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 | `created_at` | `TIMESTAMPTZ` | 服务器生成的冻结时间 |
 
 应用只暴露首次插入与带哈希复验的读取，不提供更新或删除方法。生成事务锁定 `closed` Incident，并在锁后复查唯一报告，防止并发请求生成两份快照；时间线超过 500 条时拒绝静默截断。完整设计见[确定性事故复盘报告快照](58-persistent-incident-report.md)。
+
+### 4.26 report_action_items
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `UUID` | 主键，由应用生成 UUID4 |
+| `report_id` | `UUID` | 外键到 `incident_reports.id`，禁止级联删除 |
+| `idempotency_key` | `VARCHAR(100)` | 与报告组成唯一键，用于创建命令重试 |
+| `title` / `description` | `VARCHAR(200)` / `VARCHAR(1000)` | 非空且去除首尾空白后仍有内容 |
+| `owner_id` | `VARCHAR(100)` | 负责人的本地审计标识 |
+| `status` | `VARCHAR(32)` | `open` 或 `completed` |
+| `version` | `INTEGER` | `open` 固定为 1，完成后为 2 |
+| `due_at` | `TIMESTAMPTZ` | 必须晚于创建时间 |
+| `created_by_id` / `created_at` | `VARCHAR(100)` / `TIMESTAMPTZ` | 创建审计 |
+| `completed_by_id` / `completion_note` / `completed_at` | 可空文本与 `TIMESTAMPTZ` | open 时全部为空，completed 时全部非空 |
+
+`(report_id, idempotency_key)` 唯一；`(report_id, status, due_at)` 索引支持待完成优先读取。报告外键和应用层都不提供级联删除。
+
+### 4.27 report_action_item_events
+
+| 字段 | PostgreSQL 类型 | 约束与说明 |
+| --- | --- | --- |
+| `id` | `BIGINT GENERATED ALWAYS AS IDENTITY` | 全局递增审计游标 |
+| `action_item_id` | `UUID` | 外键到行动项，禁止级联删除 |
+| `event_type` | `VARCHAR(100)` | 仅允许 `report_action_item.created` / `completed` |
+| `actor_id` / `reason` | `VARCHAR(100)` / `VARCHAR(500)` | 人工操作者与创建或完成说明 |
+| `from_status` / `to_status` | `VARCHAR(32)` | 数据库按事件类型检查合法形状 |
+| `item_version` | `INTEGER` | 与行动项组成唯一键，防止重复状态事件 |
+| `occurred_at` | `TIMESTAMPTZ` | 服务器 UTC 事件时间 |
+
+完成事务同时更新当前投影并追加事件；相同完成命令重试只返回当前记录，不写第二条事件。完整边界见[复盘改进行动项与完成审计](60-report-action-items.md)。
 
 ## 5. Incident 状态机
 

@@ -44,6 +44,15 @@ from opsswarm.execution.persistence import (
     StoredExecutionCandidate,
     StoredOperationExecution,
 )
+from opsswarm.follow_up import (
+    ReportActionItem,
+    ReportActionItemCompletion,
+    ReportActionItemCreation,
+    ReportActionItemEvent,
+    ReportActionItemEventType,
+    ReportActionItemPage,
+    ReportActionItemStatus,
+)
 from opsswarm.incidents import (
     ActorType,
     AlertIngestionResult,
@@ -1010,6 +1019,119 @@ class CreateIncidentReportResponse(StrictApiModel):
             created=creation.created,
             report=IncidentReportResponse.from_stored(creation.report),
         )
+
+
+class CreateReportActionItemRequest(StrictApiModel):
+    """由工程师为冻结报告登记一项可追踪的改进工作。"""
+
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=100,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]+$",
+    )
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=1000)
+    owner_id: str = Field(min_length=1, max_length=100)
+    due_at: datetime
+    actor_id: str = Field(min_length=1, max_length=100)
+
+
+class CompleteReportActionItemRequest(StrictApiModel):
+    """完成行动项时提交乐观锁版本和不可变审计说明。"""
+
+    expected_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=100)
+    completion_note: str = Field(min_length=1, max_length=500)
+
+
+class ReportActionItemResponse(StrictApiModel):
+    """报告改进行动项的当前状态。"""
+
+    id: UUID
+    report_id: UUID
+    idempotency_key: str
+    title: str
+    description: str
+    owner_id: str
+    status: ReportActionItemStatus
+    version: int
+    due_at: datetime
+    created_by_id: str
+    created_at: datetime
+    completed_by_id: str | None
+    completion_note: str | None
+    completed_at: datetime | None
+
+    @classmethod
+    def from_item(cls, item: ReportActionItem) -> Self:
+        return cls.model_validate(item.model_dump())
+
+
+class CreateReportActionItemResponse(StrictApiModel):
+    """区分首次创建和相同命令幂等重放。"""
+
+    created: bool
+    action_item: ReportActionItemResponse
+
+    @classmethod
+    def from_creation(cls, creation: ReportActionItemCreation) -> Self:
+        return cls(
+            created=creation.created,
+            action_item=ReportActionItemResponse.from_item(creation.item),
+        )
+
+
+class CompleteReportActionItemResponse(StrictApiModel):
+    """区分首次完成和相同完成命令重试。"""
+
+    completion_applied: bool
+    action_item: ReportActionItemResponse
+
+    @classmethod
+    def from_completion(cls, completion: ReportActionItemCompletion) -> Self:
+        return cls(
+            completion_applied=completion.completion_applied,
+            action_item=ReportActionItemResponse.from_item(completion.item),
+        )
+
+
+class ReportActionItemPageResponse(StrictApiModel):
+    """一个报告下待完成优先的有界行动项列表。"""
+
+    items: tuple[ReportActionItemResponse, ...]
+    total: int
+
+    @classmethod
+    def from_page(cls, page: ReportActionItemPage) -> Self:
+        return cls(
+            items=tuple(ReportActionItemResponse.from_item(item) for item in page.items),
+            total=page.total,
+        )
+
+
+class ReportActionItemEventResponse(StrictApiModel):
+    """一次不可覆盖的行动项状态事件。"""
+
+    cursor: int
+    item_id: UUID
+    event_type: ReportActionItemEventType
+    actor_id: str
+    from_status: ReportActionItemStatus | None
+    to_status: ReportActionItemStatus
+    reason: str
+    item_version: int
+    occurred_at: datetime
+
+    @classmethod
+    def from_event(cls, event: ReportActionItemEvent) -> Self:
+        return cls.model_validate(event.model_dump())
+
+
+class ReportActionItemEventListResponse(StrictApiModel):
+    """一个行动项的完整追加式审计时间线。"""
+
+    item_id: UUID
+    items: tuple[ReportActionItemEventResponse, ...]
 
 
 class StartInvestigationResponse(StrictApiModel):

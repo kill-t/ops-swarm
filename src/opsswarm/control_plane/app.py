@@ -48,6 +48,16 @@ from opsswarm.execution import (
 )
 from opsswarm.execution.persistence import OperationExecutionStore
 from opsswarm.execution.service import OperationExecutionService
+from opsswarm.follow_up import (
+    FollowUpReportNotFound,
+    ReportActionItemAlreadyCompleted,
+    ReportActionItemError,
+    ReportActionItemIdempotencyConflict,
+    ReportActionItemNotFound,
+    ReportActionItemValidationError,
+    ReportActionItemVersionConflict,
+)
+from opsswarm.follow_up.persistence import ReportActionItemStore
 from opsswarm.incidents import (
     IncidentDomainError,
     IncidentNotFound,
@@ -117,6 +127,7 @@ def create_app(
     workroom_store: WorkroomStore | None = None,
     evaluation_store: EvaluationStore | None = None,
     incident_report_store: IncidentReportStore | None = None,
+    report_action_item_store: ReportActionItemStore | None = None,
     database_settings: DatabaseSettings | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
@@ -161,6 +172,7 @@ def create_app(
             application.state.workroom_store = workroom_store
             application.state.evaluation_store = evaluation_store
             application.state.incident_report_store = incident_report_store
+            application.state.report_action_item_store = report_action_item_store
             try:
                 yield
             finally:
@@ -192,6 +204,9 @@ def create_app(
         application.state.workroom_store = WorkroomStore(database.session_factory)
         application.state.evaluation_store = EvaluationStore(database.session_factory)
         application.state.incident_report_store = IncidentReportStore(database.session_factory)
+        application.state.report_action_item_store = ReportActionItemStore(
+            database.session_factory
+        )
         try:
             yield
         finally:
@@ -213,6 +228,7 @@ def create_app(
     app.state.workroom_store = workroom_store
     app.state.evaluation_store = evaluation_store
     app.state.incident_report_store = incident_report_store
+    app.state.report_action_item_store = report_action_item_store
     app.include_router(create_router(clock))
 
     @app.middleware("http")
@@ -689,6 +705,68 @@ def create_app(
             http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
         else:
             response = ApiErrorResponse(error_code="incident_report_error", message=str(error))
+        return JSONResponse(
+            status_code=http_status,
+            content=response.model_dump(mode="json"),
+        )
+
+    @app.exception_handler(ReportActionItemError)
+    async def handle_report_action_item_error(
+        _: Request,
+        error: ReportActionItemError,
+    ) -> JSONResponse:
+        """把改进行动项领域错误映射为稳定 HTTP 契约。"""
+
+        http_status = status.HTTP_409_CONFLICT
+        if isinstance(error, FollowUpReportNotFound):
+            response = ApiErrorResponse(
+                error_code="follow_up_report_not_found",
+                message=str(error),
+                details={"report_id": str(error.report_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, ReportActionItemNotFound):
+            response = ApiErrorResponse(
+                error_code="report_action_item_not_found",
+                message=str(error),
+                details={"item_id": str(error.item_id)},
+            )
+            http_status = status.HTTP_404_NOT_FOUND
+        elif isinstance(error, ReportActionItemValidationError):
+            response = ApiErrorResponse(
+                error_code="report_action_item_validation_error",
+                message=str(error),
+            )
+            http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
+        elif isinstance(error, ReportActionItemVersionConflict):
+            response = ApiErrorResponse(
+                error_code="report_action_item_version_conflict",
+                message=str(error),
+                details={
+                    "expected_version": error.expected_version,
+                    "actual_version": error.actual_version,
+                },
+            )
+        elif isinstance(error, ReportActionItemIdempotencyConflict):
+            response = ApiErrorResponse(
+                error_code="report_action_item_idempotency_conflict",
+                message=str(error),
+                details={
+                    "report_id": str(error.report_id),
+                    "idempotency_key": error.idempotency_key,
+                },
+            )
+        elif isinstance(error, ReportActionItemAlreadyCompleted):
+            response = ApiErrorResponse(
+                error_code="report_action_item_already_completed",
+                message=str(error),
+                details={"item_id": str(error.item_id)},
+            )
+        else:
+            response = ApiErrorResponse(
+                error_code="report_action_item_error",
+                message=str(error),
+            )
         return JSONResponse(
             status_code=http_status,
             content=response.model_dump(mode="json"),
