@@ -18,6 +18,13 @@ import type {
   CreateIncidentReportResponse,
   IncidentReport,
 } from "../types/reports";
+import type {
+  CompleteReportActionItemInput,
+  CompleteReportActionItemResponse,
+  CreateReportActionItemInput,
+  CreateReportActionItemResponse,
+  ReportActionItemPage,
+} from "../types/report-action-items";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 import type {
   CreateVerificationRunInput,
@@ -130,6 +137,38 @@ export function createIncidentReport(
 ): Promise<CreateIncidentReportResponse> {
   return requestJson<CreateIncidentReportResponse>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/reports`,
+    { method: "POST", body: input, signal },
+  );
+}
+
+export function listReportActionItems(
+  reportId: string,
+  signal?: AbortSignal,
+): Promise<ReportActionItemPage> {
+  return requestJson<ReportActionItemPage>(
+    `/api/v1/incident-reports/${encodeURIComponent(reportId)}/action-items?limit=200`,
+    { signal },
+  );
+}
+
+export function createReportActionItem(
+  reportId: string,
+  input: CreateReportActionItemInput,
+  signal?: AbortSignal,
+): Promise<CreateReportActionItemResponse> {
+  return requestJson<CreateReportActionItemResponse>(
+    `/api/v1/incident-reports/${encodeURIComponent(reportId)}/action-items`,
+    { method: "POST", body: input, signal },
+  );
+}
+
+export function completeReportActionItem(
+  itemId: string,
+  input: CompleteReportActionItemInput,
+  signal?: AbortSignal,
+): Promise<CompleteReportActionItemResponse> {
+  return requestJson<CompleteReportActionItemResponse>(
+    `/api/v1/report-action-items/${encodeURIComponent(itemId)}/actions/complete`,
     { method: "POST", body: input, signal },
   );
 }

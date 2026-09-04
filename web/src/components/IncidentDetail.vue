@@ -5,6 +5,7 @@ import IncidentLifecycle from "./IncidentLifecycle.vue";
 import IncidentReportPanel from "./IncidentReportPanel.vue";
 import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
 import DeploymentProvenance from "./DeploymentProvenance.vue";
+import ReportActionItemsPanel from "./ReportActionItemsPanel.vue";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type {
   CloseIncidentAuditInput,
@@ -14,6 +15,10 @@ import type {
 } from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentReport } from "../types/reports";
+import type {
+  CreateReportActionItemInput,
+  ReportActionItem,
+} from "../types/report-action-items";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
 defineProps<{
@@ -39,6 +44,12 @@ defineProps<{
   reportLoading: boolean;
   reportError: string | null;
   reportMessage: string | null;
+  reportActionItems: ReportActionItem[];
+  reportActionItemTotal: number;
+  reportActionItemsLoading: boolean;
+  reportActionItemMutationLoading: boolean;
+  reportActionItemsError: string | null;
+  reportActionItemsMessage: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -46,7 +57,18 @@ const emit = defineEmits<{
   closeIncident: [input: CloseIncidentAuditInput];
   generateReport: [actorId: string];
   refreshReport: [];
+  refreshReportActionItems: [];
+  createReportActionItem: [input: CreateReportActionItemInput];
+  completeReportActionItem: [itemId: string, actorId: string, completionNote: string];
 }>();
+
+function forwardReportActionItemCompletion(
+  itemId: string,
+  actorId: string,
+  completionNote: string,
+): void {
+  emit("completeReportActionItem", itemId, actorId, completionNote);
+}
 
 function formatDateTime(value: string | null): string {
   if (value === null) return "—";
@@ -144,6 +166,20 @@ function formatDateTime(value: string | null): string {
         :message="reportMessage"
         @generate="emit('generateReport', $event)"
         @refresh="emit('refreshReport')"
+      />
+
+      <ReportActionItemsPanel
+        v-if="incidentReport"
+        :report-id="incidentReport.id"
+        :items="reportActionItems"
+        :total="reportActionItemTotal"
+        :loading="reportActionItemsLoading"
+        :mutation-loading="reportActionItemMutationLoading"
+        :error="reportActionItemsError"
+        :message="reportActionItemsMessage"
+        @refresh="emit('refreshReportActionItems')"
+        @create="emit('createReportActionItem', $event)"
+        @complete="forwardReportActionItemCompletion"
       />
 
       <IncidentTimeline

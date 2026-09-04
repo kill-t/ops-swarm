@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   closeIncident,
+  completeReportActionItem,
   createIncidentReport,
+  createReportActionItem,
   decideApprovalRequest,
   createVerificationRun,
   executeActionStep,
@@ -17,6 +19,7 @@ import {
   listIncidents,
   listInvestigationAttempts,
   listPendingApprovals,
+  listReportActionItems,
   listVerificationCandidates,
 } from "./api";
 
@@ -144,6 +147,73 @@ describe("控制面 API 客户端", () => {
       2,
       "/api/v1/incidents/incident%2F001/reports/current",
       expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("使用编码后的报告和行动项 ID 调用复盘改进接口", async () => {
+    const item = { id: "item/001", report_id: "report/001", status: "open", version: 1 };
+    const completed = { ...item, status: "completed", version: 2 };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [item], total: 1 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ created: true, action_item: item }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ completion_applied: true, action_item: completed }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const creation = {
+      idempotency_key: "follow-up-001",
+      title: "补充演练",
+      description: "固化恢复验证",
+      owner_id: "sre-001",
+      due_at: "2026-10-01T08:00:00Z",
+      actor_id: "engineer-001",
+    };
+    const completion = {
+      expected_version: 1,
+      actor_id: "engineer-002",
+      completion_note: "已完成",
+    };
+
+    await expect(listReportActionItems("report/001")).resolves.toEqual({
+      items: [item],
+      total: 1,
+    });
+    await expect(createReportActionItem("report/001", creation)).resolves.toEqual({
+      created: true,
+      action_item: item,
+    });
+    await expect(completeReportActionItem("item/001", completion)).resolves.toEqual({
+      completion_applied: true,
+      action_item: completed,
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/incident-reports/report%2F001/action-items?limit=200",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/incident-reports/report%2F001/action-items",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(creation) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/report-action-items/item%2F001/actions/complete",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(completion) }),
     );
   });
 
