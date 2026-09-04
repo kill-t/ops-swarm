@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from opsswarm.incidents import IncidentSeverity
+
 
 class ReportActionItemStatus(StrEnum):
     """改进行动项从待完成到审计终态的生命周期。"""
@@ -125,3 +127,52 @@ class ReportActionItemPage(StrictFollowUpModel):
 
     items: tuple[ReportActionItem, ...]
     total: int = Field(ge=0)
+
+
+class ReportActionItemGovernanceEntry(StrictFollowUpModel):
+    """跨事故治理列表中的行动项及其事故上下文。"""
+
+    action_item: ReportActionItem
+    incident_id: UUID
+    incident_display_number: int = Field(ge=1)
+    incident_service_name: str = Field(min_length=1, max_length=100)
+    incident_title: str = Field(min_length=1, max_length=200)
+    incident_severity: IncidentSeverity
+    overdue: bool
+
+    @model_validator(mode="after")
+    def require_open_item(self) -> Self:
+        if self.action_item.status is not ReportActionItemStatus.OPEN:
+            raise ValueError("治理待办只能包含 open 行动项")
+        return self
+
+
+class ReportActionItemGovernancePage(StrictFollowUpModel):
+    """带服务器观察时间和筛选回显的跨事故待办页。"""
+
+    items: tuple[ReportActionItemGovernanceEntry, ...]
+    total: int = Field(ge=0)
+    as_of: datetime
+    owner_id: str | None = Field(default=None, min_length=1, max_length=100)
+    overdue_only: bool
+
+    @field_validator("as_of")
+    @classmethod
+    def normalize_as_of(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("治理列表观察时间必须包含时区")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_projection(self) -> Self:
+        if self.total < len(self.items):
+            raise ValueError("治理列表总数不能小于当前返回数量")
+        for entry in self.items:
+            expected_overdue = entry.action_item.due_at < self.as_of
+            if entry.overdue is not expected_overdue:
+                raise ValueError("行动项逾期标识与服务器观察时间不一致")
+            if self.owner_id is not None and entry.action_item.owner_id != self.owner_id:
+                raise ValueError("治理列表包含其他负责人行动项")
+            if self.overdue_only and not entry.overdue:
+                raise ValueError("仅逾期列表包含未逾期行动项")
+        return self

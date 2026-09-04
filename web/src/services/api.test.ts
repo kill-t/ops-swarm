@@ -18,6 +18,7 @@ import {
   listExecutionCandidates,
   listIncidents,
   listInvestigationAttempts,
+  listOpenReportActionItems,
   listPendingApprovals,
   listReportActionItems,
   listVerificationCandidates,
@@ -172,6 +173,21 @@ describe("控制面 API 客户端", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [{ action_item: item, incident: { id: "incident-001" }, overdue: true }],
+            total: 1,
+            as_of: "2026-10-02T08:00:00Z",
+            owner_id: "sre-001",
+            overdue_only: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       );
     vi.stubGlobal("fetch", fetchMock);
     const creation = {
@@ -200,6 +216,9 @@ describe("控制面 API 客户端", () => {
       completion_applied: true,
       action_item: completed,
     });
+    await expect(
+      listOpenReportActionItems({ ownerId: " sre-001 " }),
+    ).resolves.toMatchObject({ total: 1, owner_id: "sre-001" });
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/v1/incident-reports/report%2F001/action-items?limit=200",
@@ -214,6 +233,11 @@ describe("控制面 API 客户端", () => {
       3,
       "/api/v1/report-action-items/item%2F001/actions/complete",
       expect.objectContaining({ method: "POST", body: JSON.stringify(completion) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/v1/report-action-items?overdue_only=false&limit=100&owner_id=sre-001",
+      expect.objectContaining({ method: "GET" }),
     );
   });
 

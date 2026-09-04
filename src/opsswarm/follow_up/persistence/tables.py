@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -63,6 +64,17 @@ class ReportActionItemRow(Base):
             "report_id",
             "status",
             "due_at",
+        ),
+        Index(
+            "ix_report_action_items_open_due",
+            "due_at",
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index(
+            "ix_report_action_items_open_owner_due",
+            "owner_id",
+            "due_at",
+            postgresql_where=text("status = 'open'"),
         ),
     )
 

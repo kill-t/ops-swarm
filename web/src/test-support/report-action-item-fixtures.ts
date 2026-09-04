@@ -1,4 +1,7 @@
-import type { ReportActionItem } from "../types/report-action-items";
+import type {
+  ReportActionItem,
+  ReportActionItemGovernanceEntry,
+} from "../types/report-action-items";
 
 export const OPEN_REPORT_ACTION_ITEM: ReportActionItem = {
   id: "action-item-001",
@@ -24,4 +27,17 @@ export const COMPLETED_REPORT_ACTION_ITEM: ReportActionItem = {
   completed_by_id: "engineer-002",
   completion_note: "演练脚本和恢复检查已经合入。",
   completed_at: "2026-09-08T08:30:00Z",
+};
+
+export const REPORT_ACTION_ITEM_GOVERNANCE_ENTRY: ReportActionItemGovernanceEntry = {
+  action_item: OPEN_REPORT_ACTION_ITEM,
+  incident: {
+    id: "incident-001",
+    display_number: 1,
+    reference: "INC-000001",
+    service_name: "order-service",
+    title: "订单接口大量返回 500",
+    severity: "p1",
+  },
+  overdue: true,
 };

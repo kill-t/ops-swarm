@@ -15,6 +15,8 @@ from opsswarm.follow_up.models import (
     ReportActionItemCreation,
     ReportActionItemEvent,
     ReportActionItemEventType,
+    ReportActionItemGovernanceEntry,
+    ReportActionItemGovernancePage,
     ReportActionItemPage,
     ReportActionItemStatus,
 )
@@ -32,6 +34,8 @@ __all__ = [
     "ReportActionItemError",
     "ReportActionItemEvent",
     "ReportActionItemEventType",
+    "ReportActionItemGovernanceEntry",
+    "ReportActionItemGovernancePage",
     "ReportActionItemIdempotencyConflict",
     "ReportActionItemNotFound",
     "ReportActionItemPage",

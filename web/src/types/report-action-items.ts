@@ -46,3 +46,31 @@ export interface CompleteReportActionItemResponse {
   completion_applied: boolean;
   action_item: ReportActionItem;
 }
+
+export interface ReportActionItemGovernanceIncident {
+  id: string;
+  display_number: number;
+  reference: string;
+  service_name: string;
+  title: string;
+  severity: "p1" | "p2" | "p3" | "p4";
+}
+
+export interface ReportActionItemGovernanceEntry {
+  action_item: ReportActionItem;
+  incident: ReportActionItemGovernanceIncident;
+  overdue: boolean;
+}
+
+export interface ReportActionItemGovernancePage {
+  items: ReportActionItemGovernanceEntry[];
+  total: number;
+  as_of: string;
+  owner_id: string | null;
+  overdue_only: boolean;
+}
+
+export interface ReportActionItemGovernanceFilters {
+  ownerId?: string;
+  overdueOnly?: boolean;
+}

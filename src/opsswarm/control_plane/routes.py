@@ -53,6 +53,7 @@ from opsswarm.control_plane.schemas import (
     RecordVerificationSampleResponse,
     ReportActionItemEventListResponse,
     ReportActionItemEventResponse,
+    ReportActionItemGovernancePageResponse,
     ReportActionItemPageResponse,
     StartInvestigationRequest,
     StartInvestigationResponse,
@@ -458,6 +459,28 @@ def create_router(clock: Clock) -> APIRouter:
 
         return ReportActionItemPageResponse.from_page(
             await store.list_for_report(report_id, limit=limit)
+        )
+
+    @router.get(
+        "/api/v1/report-action-items",
+        response_model=ReportActionItemGovernancePageResponse,
+        tags=["事故复盘"],
+    )
+    async def list_open_report_action_items(
+        store: ReportActionItemStoreDependency,
+        owner_id: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+        overdue_only: bool = False,
+        limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ) -> ReportActionItemGovernancePageResponse:
+        """按服务器时间集中读取跨事故未完成行动项。"""
+
+        return ReportActionItemGovernancePageResponse.from_page(
+            await store.list_open_governance(
+                as_of=clock(),
+                owner_id=owner_id,
+                overdue_only=overdue_only,
+                limit=limit,
+            )
         )
 
     @router.post(

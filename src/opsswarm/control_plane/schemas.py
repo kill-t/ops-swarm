@@ -50,6 +50,8 @@ from opsswarm.follow_up import (
     ReportActionItemCreation,
     ReportActionItemEvent,
     ReportActionItemEventType,
+    ReportActionItemGovernanceEntry,
+    ReportActionItemGovernancePage,
     ReportActionItemPage,
     ReportActionItemStatus,
 )
@@ -1106,6 +1108,62 @@ class ReportActionItemPageResponse(StrictApiModel):
         return cls(
             items=tuple(ReportActionItemResponse.from_item(item) for item in page.items),
             total=page.total,
+        )
+
+
+class ReportActionItemGovernanceIncidentResponse(StrictApiModel):
+    """治理列表定位行动项来源所需的最小 Incident 上下文。"""
+
+    id: UUID
+    display_number: int
+    reference: str
+    service_name: str
+    title: str
+    severity: IncidentSeverity
+
+
+class ReportActionItemGovernanceEntryResponse(StrictApiModel):
+    """跨事故待办中的行动项和来源事故。"""
+
+    action_item: ReportActionItemResponse
+    incident: ReportActionItemGovernanceIncidentResponse
+    overdue: bool
+
+    @classmethod
+    def from_entry(cls, entry: ReportActionItemGovernanceEntry) -> Self:
+        return cls(
+            action_item=ReportActionItemResponse.from_item(entry.action_item),
+            incident=ReportActionItemGovernanceIncidentResponse(
+                id=entry.incident_id,
+                display_number=entry.incident_display_number,
+                reference=f"INC-{entry.incident_display_number:06d}",
+                service_name=entry.incident_service_name,
+                title=entry.incident_title,
+                severity=entry.incident_severity,
+            ),
+            overdue=entry.overdue,
+        )
+
+
+class ReportActionItemGovernancePageResponse(StrictApiModel):
+    """服务器时间判定的跨事故未完成行动项治理页。"""
+
+    items: tuple[ReportActionItemGovernanceEntryResponse, ...]
+    total: int
+    as_of: datetime
+    owner_id: str | None
+    overdue_only: bool
+
+    @classmethod
+    def from_page(cls, page: ReportActionItemGovernancePage) -> Self:
+        return cls(
+            items=tuple(
+                ReportActionItemGovernanceEntryResponse.from_entry(item) for item in page.items
+            ),
+            total=page.total,
+            as_of=page.as_of,
+            owner_id=page.owner_id,
+            overdue_only=page.overdue_only,
         )
 
 

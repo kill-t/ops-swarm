@@ -1,6 +1,6 @@
 """复盘改进行动项的 PostgreSQL 仓储与事务边界。"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import case, func, select
@@ -10,6 +10,7 @@ from opsswarm.follow_up.errors import (
     FollowUpReportNotFound,
     ReportActionItemIdempotencyConflict,
     ReportActionItemNotFound,
+    ReportActionItemValidationError,
 )
 from opsswarm.follow_up.models import (
     ReportActionItem,
@@ -17,6 +18,8 @@ from opsswarm.follow_up.models import (
     ReportActionItemCreation,
     ReportActionItemEvent,
     ReportActionItemEventType,
+    ReportActionItemGovernanceEntry,
+    ReportActionItemGovernancePage,
     ReportActionItemPage,
     ReportActionItemStatus,
 )
@@ -28,6 +31,8 @@ from opsswarm.follow_up.state_machine import (
     complete_report_action_item,
     create_report_action_item,
 )
+from opsswarm.incidents import IncidentSeverity
+from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.reports.persistence.tables import IncidentReportRow
 
 
@@ -140,6 +145,79 @@ class ReportActionItemStore:
             return ReportActionItemPage(
                 items=tuple(_action_item(row) for row in rows),
                 total=total,
+            )
+
+    async def list_open_governance(
+        self,
+        *,
+        as_of: datetime,
+        owner_id: str | None = None,
+        overdue_only: bool = False,
+        limit: int = 100,
+    ) -> ReportActionItemGovernancePage:
+        """按服务器时间读取跨事故 open 待办，不产生任何状态变化。"""
+
+        if as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise ReportActionItemValidationError("as_of 必须包含时区")
+        normalized_as_of = as_of.astimezone(UTC)
+        if isinstance(limit, bool) or not 1 <= limit <= 200:
+            raise ReportActionItemValidationError("limit 必须在 1 到 200 之间")
+        normalized_owner_id = owner_id.strip() if owner_id is not None else None
+        if normalized_owner_id == "":
+            raise ReportActionItemValidationError("owner_id 不能为空")
+
+        conditions = [ReportActionItemRow.status == ReportActionItemStatus.OPEN.value]
+        if normalized_owner_id is not None:
+            conditions.append(ReportActionItemRow.owner_id == normalized_owner_id)
+        if overdue_only:
+            conditions.append(ReportActionItemRow.due_at < normalized_as_of)
+
+        join_conditions = (
+            ReportActionItemRow.report_id == IncidentReportRow.id,
+            IncidentReportRow.incident_id == IncidentRow.id,
+        )
+        async with self._session_factory() as session:
+            total = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ReportActionItemRow)
+                    .join(IncidentReportRow, join_conditions[0])
+                    .join(IncidentRow, join_conditions[1])
+                    .where(*conditions)
+                )
+                or 0
+            )
+            rows = (
+                await session.execute(
+                    select(ReportActionItemRow, IncidentRow)
+                    .join(IncidentReportRow, join_conditions[0])
+                    .join(IncidentRow, join_conditions[1])
+                    .where(*conditions)
+                    .order_by(
+                        ReportActionItemRow.due_at,
+                        IncidentRow.display_number,
+                        ReportActionItemRow.id,
+                    )
+                    .limit(limit)
+                )
+            ).tuples()
+            return ReportActionItemGovernancePage(
+                items=tuple(
+                    ReportActionItemGovernanceEntry(
+                        action_item=_action_item(item_row),
+                        incident_id=incident_row.id,
+                        incident_display_number=incident_row.display_number,
+                        incident_service_name=incident_row.service_name,
+                        incident_title=incident_row.title,
+                        incident_severity=IncidentSeverity(incident_row.severity),
+                        overdue=item_row.due_at < normalized_as_of,
+                    )
+                    for item_row, incident_row in rows
+                ),
+                total=total,
+                as_of=normalized_as_of,
+                owner_id=normalized_owner_id,
+                overdue_only=overdue_only,
             )
 
     async def complete(

@@ -822,6 +822,112 @@ async def test_report_action_item_rejects_missing_report_invalid_due_time_and_st
     assert stale.json()["details"] == {"expected_version": 2, "actual_version": 1}
 
 
+async def test_report_action_item_governance_filters_by_server_time_and_owner(
+    migrated_database_url: str,
+    database_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    current_time = [BASE_TIME]
+
+    def mutable_clock() -> datetime:
+        return current_time[0]
+
+    app = create_app(
+        database_settings=DatabaseSettings(database_url=migrated_database_url),
+        clock=mutable_clock,
+        operation_adapter=ApiOperationAdapter(),
+        verification_adapter=ApiVerificationAdapter(),
+    )
+    async with app.router.lifespan_context(app):
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            reports: list[str] = []
+            for number in (1, 2):
+                incident = await client.post(
+                    "/api/v1/alerts",
+                    json=alert_payload(
+                        f"governance-alert-{number}",
+                        fingerprint=f"order-service:governance-{number}",
+                    ),
+                )
+                incident_id = incident.json()["incident"]["id"]
+                closed = await close_incident_for_report(
+                    client,
+                    database_session_factory,
+                    incident_id,
+                )
+                report = await client.post(
+                    f"/api/v1/incidents/{incident_id}/reports",
+                    json={
+                        "expected_incident_version": closed["version"],
+                        "actor_id": "engineer-001",
+                    },
+                )
+                reports.append(report.json()["report"]["id"])
+
+            first = await client.post(
+                f"/api/v1/incident-reports/{reports[0]}/action-items",
+                json={
+                    "idempotency_key": "governance-item-001",
+                    "title": "补充 Redis 故障演练",
+                    "description": "一周内完成，治理查询时已经逾期",
+                    "owner_id": "sre-001",
+                    "due_at": (BASE_TIME + timedelta(days=1)).isoformat(),
+                    "actor_id": "engineer-001",
+                },
+            )
+            second = await client.post(
+                f"/api/v1/incident-reports/{reports[1]}/action-items",
+                json={
+                    "idempotency_key": "governance-item-002",
+                    "title": "补充发布检查清单",
+                    "description": "三天内完成，治理查询时尚未逾期",
+                    "owner_id": "sre-002",
+                    "due_at": (BASE_TIME + timedelta(days=3)).isoformat(),
+                    "actor_id": "engineer-001",
+                },
+            )
+            assert first.status_code == 201
+            assert second.status_code == 201
+
+            current_time[0] = BASE_TIME + timedelta(days=2)
+            all_open = await client.get("/api/v1/report-action-items")
+            overdue = await client.get(
+                "/api/v1/report-action-items",
+                params={"overdue_only": "true"},
+            )
+            owner = await client.get(
+                "/api/v1/report-action-items",
+                params={"owner_id": "sre-002"},
+            )
+            blank_owner = await client.get(
+                "/api/v1/report-action-items",
+                params={"owner_id": "   "},
+            )
+
+    assert all_open.status_code == 200
+    assert all_open.json()["total"] == 2
+    assert all_open.json()["as_of"] == "2026-01-03T08:00:00Z"
+    assert [item["action_item"]["title"] for item in all_open.json()["items"]] == [
+        "补充 Redis 故障演练",
+        "补充发布检查清单",
+    ]
+    assert [item["overdue"] for item in all_open.json()["items"]] == [True, False]
+    assert all(
+        item["incident"]["reference"].startswith("INC-")
+        for item in all_open.json()["items"]
+    )
+    assert overdue.status_code == 200
+    assert overdue.json()["total"] == 1
+    assert overdue.json()["items"][0]["action_item"]["owner_id"] == "sre-001"
+    assert overdue.json()["overdue_only"] is True
+    assert owner.status_code == 200
+    assert owner.json()["total"] == 1
+    assert owner.json()["owner_id"] == "sre-002"
+    assert owner.json()["items"][0]["action_item"]["owner_id"] == "sre-002"
+    assert blank_owner.status_code == 422
+    assert blank_owner.json()["error_code"] == "report_action_item_validation_error"
+
+
 async def test_incident_list_uses_stable_descending_cursor(
     control_client: httpx2.AsyncClient,
 ) -> None:

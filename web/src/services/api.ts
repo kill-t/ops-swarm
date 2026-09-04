@@ -23,6 +23,8 @@ import type {
   CompleteReportActionItemResponse,
   CreateReportActionItemInput,
   CreateReportActionItemResponse,
+  ReportActionItemGovernanceFilters,
+  ReportActionItemGovernancePage,
   ReportActionItemPage,
 } from "../types/report-action-items";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
@@ -170,6 +172,22 @@ export function completeReportActionItem(
   return requestJson<CompleteReportActionItemResponse>(
     `/api/v1/report-action-items/${encodeURIComponent(itemId)}/actions/complete`,
     { method: "POST", body: input, signal },
+  );
+}
+
+export function listOpenReportActionItems(
+  filters: ReportActionItemGovernanceFilters = {},
+  signal?: AbortSignal,
+): Promise<ReportActionItemGovernancePage> {
+  const parameters = new URLSearchParams({
+    overdue_only: String(filters.overdueOnly ?? false),
+    limit: "100",
+  });
+  const ownerId = filters.ownerId?.trim();
+  if (ownerId) parameters.set("owner_id", ownerId);
+  return requestJson<ReportActionItemGovernancePage>(
+    `/api/v1/report-action-items?${parameters.toString()}`,
+    { signal },
   );
 }
 

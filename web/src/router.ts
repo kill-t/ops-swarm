@@ -5,6 +5,7 @@ import EvaluationDashboardView from "./views/EvaluationDashboardView.vue";
 import ApprovalCenterView from "./views/ApprovalCenterView.vue";
 import ExecutionCenterView from "./views/ExecutionCenterView.vue";
 import VerificationCenterView from "./views/VerificationCenterView.vue";
+import FollowUpGovernanceView from "./views/FollowUpGovernanceView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -34,6 +35,11 @@ export const router = createRouter({
       path: "/evaluations/:runId?",
       name: "evaluations",
       component: EvaluationDashboardView,
+    },
+    {
+      path: "/follow-up",
+      name: "follow-up",
+      component: FollowUpGovernanceView,
     },
   ],
 });

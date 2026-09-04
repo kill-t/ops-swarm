@@ -397,7 +397,7 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 | `created_by_id` / `created_at` | `VARCHAR(100)` / `TIMESTAMPTZ` | 创建审计 |
 | `completed_by_id` / `completion_note` / `completed_at` | 可空文本与 `TIMESTAMPTZ` | open 时全部为空，completed 时全部非空 |
 
-`(report_id, idempotency_key)` 唯一；`(report_id, status, due_at)` 索引支持待完成优先读取。报告外键和应用层都不提供级联删除。
+`(report_id, idempotency_key)` 唯一；`(report_id, status, due_at)` 索引支持单份报告待完成优先读取。跨事故治理增加 `open` 部分索引：`(due_at)` 支持全局截止时间排序，`(owner_id, due_at)` 支持负责人精确筛选；已完成历史不进入这两个索引。报告外键和应用层都不提供级联删除。
 
 ### 4.27 report_action_item_events
 

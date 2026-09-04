@@ -23,6 +23,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `GET /api/v1/incident-reports/{report_id}/action-items` | 待完成优先读取有界行动项 | 报告不存在 `404`；查询参数错误 `422` |
 | `POST /api/v1/report-action-items/{item_id}/actions/complete` | 首次完成或相同完成命令幂等返回 | 不存在 `404`；版本或完成内容冲突 `409` |
 | `GET /api/v1/report-action-items/{item_id}/events` | 读取创建和完成的追加式审计事件 | 行动项不存在 `404` |
+| `GET /api/v1/report-action-items` | 跨事故读取 open 待办，支持负责人和仅逾期筛选 | 查询或领域参数错误 `422` |
 | `POST /api/v1/incidents/{id}/actions/close` | 使用当前版本关闭 `resolved` 事故 | 不存在 `404`；版本或状态冲突 `409` |
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
@@ -112,6 +113,12 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 行动项 POST 只接受幂等键、标题、描述、负责人、UTC 截止时间和本地审计操作者，且目标报告必须已经存在。`(report_id, idempotency_key)` 只能绑定一份创建内容：完全相同的重试返回 `200`、`created=false`，内容不同则返回 `409`，不提供隐式编辑。
 
 完成 POST 只接受 `expected_version`、操作者和完成说明。仓储锁定行动项后从 `open` 版本 1 迁移到 `completed` 版本 2，并在同一事务追加完成事件。完成者和说明相同的重试返回 `completion_applied=false`；不同内容不能覆盖原审计。LLM 与 Agent 没有这两类写接口的工具权限。详见[复盘改进行动项与完成审计](60-report-action-items.md)。
+
+### 2.8 跨事故改进行动项治理语义
+
+全局 GET 固定只返回 `open` 行动项，不接受状态改写或完成命令。`owner_id` 是去除首尾空白后的精确匹配，`overdue_only=true` 使用服务器 UTC `as_of` 判断 `due_at < as_of`；响应回显筛选条件和观察时间。结果按最早截止时间稳定排序，默认 100、最多 200 条，并返回筛选后的完整 `total`。
+
+每项携带来源 Incident 的最小定位信息，页面只能跳回具体事故复盘完成任务。接口不会读取 LangGraph checkpoint、调用模型、触发通知或修改业务状态。详见[跨事故改进行动项治理中心](62-follow-up-governance-center.md)。
 
 ## 3. 告警幂等 HTTP 语义
 

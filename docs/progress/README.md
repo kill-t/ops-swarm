@@ -102,3 +102,4 @@
 - [59 - 事故复盘报告生成、查看与打印](59-incident-report-ui.md)
 - [60 - 复盘改进行动项与完成审计](60-report-action-items.md)
 - [61 - 复盘改进行动项前端闭环](61-report-action-items-ui.md)
+- [62 - 跨事故改进行动项治理中心](62-follow-up-governance-center.md)
