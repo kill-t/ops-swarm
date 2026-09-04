@@ -2308,3 +2308,70 @@ p {
     grid-column: auto;
   }
 }
+
+.incident-closure-panel {
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid #355460;
+  border-radius: 12px;
+  background: #111f28;
+}
+
+.incident-closure-panel h3 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.closure-boundary {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 13px 15px;
+  border: 1px solid #38665e;
+  border-radius: 9px;
+  color: #b0d7ce;
+  background: #142c29;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.closure-form-grid small {
+  color: #7f95a7;
+  font-size: 9px;
+}
+
+.closure-confirmation {
+  padding: 11px 13px;
+  border: 1px solid #3a5964;
+  border-radius: 8px;
+  background: #102029;
+}
+
+.decision-button.close-incident {
+  border-color: #3c756b;
+  color: #c8f2e8;
+  background: #1b4b43;
+}
+
+.closure-terminal-message,
+.closure-success {
+  margin: 16px 0 0;
+  padding: 13px 15px;
+  border: 1px solid #315f57;
+  border-radius: 9px;
+  color: #b9e9de;
+  background: #142d29;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.closure-success {
+  border-style: dashed;
+}
+
+@media (max-width: 700px) {
+  .closure-boundary {
+    grid-template-columns: 1fr;
+  }
+}

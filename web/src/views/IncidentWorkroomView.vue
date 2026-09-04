@@ -71,7 +71,11 @@ onUnmounted(() => store.clearSelection());
       :evidence-board="store.evidenceBoard"
       :evidence-board-loading="store.evidenceBoardLoading"
       :evidence-board-error="store.evidenceBoardError"
+      :close-loading="store.closeLoading"
+      :close-error="store.closeError"
+      :close-message="store.closeMessage"
       @refresh-workroom="store.refreshSelectedWorkroom"
+      @close-incident="store.closeSelected"
     />
   </div>
 </template>

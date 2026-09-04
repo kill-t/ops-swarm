@@ -44,6 +44,15 @@ export interface IncidentPage {
   next_before_display_number: number | null;
 }
 
+export interface CloseIncidentAuditInput {
+  actor_id: string;
+  reason: string;
+}
+
+export interface CloseIncidentInput extends CloseIncidentAuditInput {
+  expected_version: number;
+}
+
 export interface IncidentEvent {
   cursor: number;
   incident_id: string;

@@ -1,4 +1,4 @@
-import type { Incident, IncidentPage } from "../types/incidents";
+import type { CloseIncidentInput, Incident, IncidentPage } from "../types/incidents";
 import type {
   ApprovalDecision,
   ApprovalDecisionInput,
@@ -85,6 +85,17 @@ export function listIncidents(signal?: AbortSignal): Promise<IncidentPage> {
 
 export function getIncident(incidentId: string, signal?: AbortSignal): Promise<Incident> {
   return requestJson<Incident>(`/api/v1/incidents/${encodeURIComponent(incidentId)}`, { signal });
+}
+
+export function closeIncident(
+  incidentId: string,
+  input: CloseIncidentInput,
+  signal?: AbortSignal,
+): Promise<Incident> {
+  return requestJson<Incident>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/actions/close`,
+    { method: "POST", body: input, signal },
+  );
 }
 
 export function getIncidentWorkroom(

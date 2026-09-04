@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import {
+  closeIncident,
   getEvidenceBoard,
   getIncident,
   getIncidentWorkroom,
@@ -13,7 +14,13 @@ import {
   type IncidentStreamConnection,
 } from "../services/incident-stream";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
-import type { Incident, IncidentEvent, IncidentStatus, StreamStatus } from "../types/incidents";
+import type {
+  CloseIncidentAuditInput,
+  Incident,
+  IncidentEvent,
+  IncidentStatus,
+  StreamStatus,
+} from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
@@ -73,6 +80,9 @@ export const useIncidentStore = defineStore("incidents", () => {
   const evidenceBoard = ref<EvidenceBoardSnapshot | null>(null);
   const evidenceBoardLoading = ref(false);
   const evidenceBoardError = ref<string | null>(null);
+  const closeLoading = ref(false);
+  const closeError = ref<string | null>(null);
+  const closeMessage = ref<string | null>(null);
   let streamConnection: IncidentStreamConnection | null = null;
   let selectionGeneration = 0;
   let workroomRequestGeneration = 0;
@@ -269,6 +279,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     evidenceBoard.value = null;
     evidenceBoardLoading.value = false;
     evidenceBoardError.value = null;
+    closeLoading.value = false;
+    closeError.value = null;
+    closeMessage.value = null;
     workroomRequestGeneration += 1;
     streamStatus.value = "connecting";
     detailLoading.value = true;
@@ -305,6 +318,55 @@ export const useIncidentStore = defineStore("incidents", () => {
     }
   }
 
+  async function closeSelected(input: CloseIncidentAuditInput): Promise<boolean> {
+    const incident = selectedIncident.value;
+    if (incident === null || closeLoading.value) return false;
+    if (incident.status !== "resolved") {
+      closeError.value = "只有已经确认恢复的 Incident 可以关闭。";
+      return false;
+    }
+    const selection = selectionGeneration;
+    closeLoading.value = true;
+    closeError.value = null;
+    closeMessage.value = null;
+    try {
+      const closed = await closeIncident(incident.id, {
+        expected_version: incident.version,
+        actor_id: input.actor_id.trim(),
+        reason: input.reason.trim(),
+      });
+      if (selection !== selectionGeneration || selectedIncident.value?.id !== incident.id) {
+        return false;
+      }
+      selectedIncident.value = preferNewerSnapshot(selectedIncident.value, closed);
+      incidents.value = incidents.value.map((item) =>
+        item.id === closed.id ? preferNewerSnapshot(item, closed) : item,
+      );
+      closeMessage.value = "Incident 已正式关闭，历史审计记录保持只读。";
+      await refreshWorkroom(incident.id, selection);
+      return true;
+    } catch (error) {
+      if (selection !== selectionGeneration || selectedIncident.value?.id !== incident.id) {
+        return false;
+      }
+      closeError.value = errorMessage(error);
+      try {
+        const latest = await getIncident(incident.id);
+        if (selection === selectionGeneration && selectedIncident.value?.id === incident.id) {
+          selectedIncident.value = preferNewerSnapshot(selectedIncident.value, latest);
+          incidents.value = incidents.value.map((item) =>
+            item.id === latest.id ? preferNewerSnapshot(item, latest) : item,
+          );
+        }
+      } catch {
+        // 保留原始关闭错误；读取最新状态失败不能掩盖第一次失败。
+      }
+      return false;
+    } finally {
+      if (selection === selectionGeneration) closeLoading.value = false;
+    }
+  }
+
   function clearSelection(): void {
     selectionGeneration += 1;
     streamConnection?.close();
@@ -323,6 +385,9 @@ export const useIncidentStore = defineStore("incidents", () => {
     evidenceBoard.value = null;
     evidenceBoardLoading.value = false;
     evidenceBoardError.value = null;
+    closeLoading.value = false;
+    closeError.value = null;
+    closeMessage.value = null;
     streamStatus.value = "idle";
   }
 
@@ -346,9 +411,13 @@ export const useIncidentStore = defineStore("incidents", () => {
     evidenceBoard,
     evidenceBoardLoading,
     evidenceBoardError,
+    closeLoading,
+    closeError,
+    closeMessage,
     loadIncidents,
     selectIncident,
     refreshSelectedWorkroom,
+    closeSelected,
     clearSelection,
   };
 });

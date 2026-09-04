@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import IncidentTimeline from "./IncidentTimeline.vue";
+import IncidentClosurePanel from "./IncidentClosurePanel.vue";
 import IncidentLifecycle from "./IncidentLifecycle.vue";
 import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
 import DeploymentProvenance from "./DeploymentProvenance.vue";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
-import type { Incident, IncidentEvent, StreamStatus } from "../types/incidents";
+import type {
+  CloseIncidentAuditInput,
+  Incident,
+  IncidentEvent,
+  StreamStatus,
+} from "../types/incidents";
 import type { InvestigationAttempt } from "../types/investigation-attempts";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
 
@@ -24,10 +30,14 @@ defineProps<{
   evidenceBoard: EvidenceBoardSnapshot | null;
   evidenceBoardLoading: boolean;
   evidenceBoardError: string | null;
+  closeLoading: boolean;
+  closeError: string | null;
+  closeMessage: string | null;
 }>();
 
 const emit = defineEmits<{
   refreshWorkroom: [];
+  closeIncident: [input: CloseIncidentAuditInput];
 }>();
 
 function formatDateTime(value: string | null): string {
@@ -108,6 +118,14 @@ function formatDateTime(value: string | null): string {
         :attempts="investigationAttempts"
         :loading="attemptsLoading"
         :error="attemptsError"
+      />
+
+      <IncidentClosurePanel
+        :incident="incident"
+        :loading="closeLoading"
+        :error="closeError"
+        :message="closeMessage"
+        @close="emit('closeIncident', $event)"
       />
 
       <IncidentTimeline

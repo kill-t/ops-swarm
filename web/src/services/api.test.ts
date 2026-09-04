@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  closeIncident,
   decideApprovalRequest,
   createVerificationRun,
   executeActionStep,
@@ -19,6 +20,32 @@ import {
 
 describe("控制面 API 客户端", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("关闭事故时只发送审计字段和 Incident 乐观锁", async () => {
+    const body = { id: "incident-001", status: "closed", version: 7 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      expected_version: 6,
+      actor_id: "engineer-001",
+      reason: "恢复验证通过，正式关闭事故。",
+    };
+
+    await expect(closeIncident("incident/001", input)).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/incidents/incident%2F001/actions/close",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  });
 
   it("读取事故列表并保持服务端游标结构", async () => {
     const body = { items: [], next_before_display_number: null };

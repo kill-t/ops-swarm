@@ -12,6 +12,7 @@ import type { IncidentWorkroomSnapshot } from "../types/workroom";
 import { useIncidentStore } from "./incident-store";
 
 const mocks = vi.hoisted(() => ({
+  closeIncident: vi.fn(),
   listIncidents: vi.fn(),
   getIncident: vi.fn(),
   getIncidentWorkroom: vi.fn(),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../services/api", () => ({
+  closeIncident: mocks.closeIncident,
   listIncidents: mocks.listIncidents,
   getIncident: mocks.getIncident,
   getIncidentWorkroom: mocks.getIncidentWorkroom,
@@ -147,6 +149,7 @@ describe("Incident 状态仓库", () => {
     mocks.getEvidenceBoard.mockReset();
     mocks.listInvestigationAttempts.mockReset();
     mocks.connectIncidentEvents.mockReset();
+    mocks.closeIncident.mockReset();
     mocks.getIncidentWorkroom.mockResolvedValue(WORKROOM);
     mocks.listInvestigationAttempts.mockResolvedValue({
       investigation_run_id: "run-001",
@@ -285,5 +288,72 @@ describe("Incident 状态仓库", () => {
     expect(store.evidenceBoard).toEqual(
       evidenceBoard("run-002", "deployment-evidence-002"),
     );
+  });
+
+  it("使用当前版本和人工审计信息关闭已恢复事故", async () => {
+    const resolved: Incident = {
+      ...INCIDENT,
+      status: "resolved",
+      version: 6,
+      resolved_at: "2026-01-01T08:03:00Z",
+      updated_at: "2026-01-01T08:03:00Z",
+    };
+    const closed: Incident = {
+      ...resolved,
+      status: "closed",
+      version: 7,
+      closed_at: "2026-01-01T08:04:00Z",
+      updated_at: "2026-01-01T08:04:00Z",
+    };
+    mocks.getIncident.mockResolvedValue(resolved);
+    mocks.closeIncident.mockResolvedValue(closed);
+    mocks.connectIncidentEvents.mockReturnValue({ close: vi.fn() });
+    const store = useIncidentStore();
+    await store.selectIncident(resolved.id);
+
+    await expect(
+      store.closeSelected({
+        actor_id: " engineer-001 ",
+        reason: " 恢复验证通过，正式关闭事故。 ",
+      }),
+    ).resolves.toBe(true);
+
+    expect(mocks.closeIncident).toHaveBeenCalledWith(resolved.id, {
+      expected_version: 6,
+      actor_id: "engineer-001",
+      reason: "恢复验证通过，正式关闭事故。",
+    });
+    expect(store.selectedIncident).toEqual(closed);
+    expect(store.closeMessage).toContain("正式关闭");
+  });
+
+  it("关闭冲突后重新读取复发后的最新状态", async () => {
+    const resolved: Incident = {
+      ...INCIDENT,
+      status: "resolved",
+      version: 6,
+      resolved_at: "2026-01-01T08:03:00Z",
+      updated_at: "2026-01-01T08:03:00Z",
+    };
+    const reopened: Incident = {
+      ...resolved,
+      status: "investigating",
+      version: 7,
+      resolved_at: null,
+      updated_at: "2026-01-01T08:03:30Z",
+    };
+    mocks.getIncident.mockResolvedValueOnce(resolved).mockResolvedValueOnce(reopened);
+    mocks.closeIncident.mockRejectedValue(new Error("Incident 版本已经变化"));
+    mocks.connectIncidentEvents.mockReturnValue({ close: vi.fn() });
+    const store = useIncidentStore();
+    await store.selectIncident(resolved.id);
+
+    await expect(
+      store.closeSelected({ actor_id: "engineer-001", reason: "准备关闭事故。" }),
+    ).resolves.toBe(false);
+
+    expect(store.closeError).toBe("Incident 版本已经变化");
+    expect(store.selectedIncident).toEqual(reopened);
+    expect(store.closeLoading).toBe(false);
   });
 });

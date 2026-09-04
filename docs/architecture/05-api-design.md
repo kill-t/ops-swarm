@@ -45,7 +45,7 @@ SSE 的 `id` 直接使用 `incident_events.id`，`event` 使用持久化事件�
 
 接口在发送流响应头前确认 Incident 存在。连接建立后数据库异常会终止连接，不伪造业务事件；客户端按 `retry` 提示重连并从原游标继续。每轮查询使用短生命周期数据库会话，轮询等待期间不占用连接。当前实现采用短轮询，PostgreSQL 是唯一事实来源，不维护进程内订阅队列。
 
-关闭请求只接受 `expected_version`、`actor_id` 和 `reason`。服务端固定执行 `close` 领域动作，调用方不能指定目标状态；只有 `resolved` 可以进入 `closed`。重复或过期页面使用旧版本关闭时返回 `409`，不会覆盖其他操作者已经提交的状态。
+关闭请求只接受 `expected_version`、`actor_id` 和 `reason`。服务端固定执行 `close` 领域动作，调用方不能指定目标状态；只有 `resolved` 可以进入 `closed`。重复或过期页面使用旧版本关闭时返回 `409`，不会覆盖其他操作者已经提交的状态。第 57 步的作战室页面在冲突后只读取最新 Incident，不会自动升级版本重试，详见 [已恢复 Incident 的人工关闭入口](57-incident-closure-ui.md)。
 
 告警接收先按 `(source, external_event_id)` 判断完全重复，再锁定同指纹未关闭 Incident。命中 `resolved` 时，在同一事务内保存新告警与 `incident.alert_attached`，随后执行 `reopen` 并追加状态事件；响应返回更新后的 `investigating` 快照。命中 `closed` 不会重新打开历史事故，而是创建新 Incident。完全重复告警始终返回原 Incident，即使它后来已经关闭。
 
