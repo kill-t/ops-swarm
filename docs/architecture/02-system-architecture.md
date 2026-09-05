@@ -1,6 +1,6 @@
 # OpsSwarm 系统架构
 
-本文以现有 MVP 架构为基础。下一阶段的交付顺序见 [完整多 Agent 工程版规划](64-full-multi-agent-roadmap.md)，详细运行设计见 [Agent 系统最终设计](65-agent-system-design.md)。新增轮次、专业任务、Harness、上下文、经验、MCP、动态协调、人工介入和多步骤处置均为已决定、待开发；各实现切片完成后再同步本文件、数据库与 API 事实来源。
+本文以现有 MVP 架构为基础。下一阶段的交付顺序见 [完整多 Agent 工程版规划](64-full-multi-agent-roadmap.md)，详细运行设计见 [Agent 系统最终设计](65-agent-system-design.md)。第 66 步已增加 [轮次、专业任务和尝试持久化与只读查询](66-investigation-task-persistence.md)，当前固定图尚未接入；Harness、上下文、经验、MCP、动态协调、人工介入和多步骤处置仍待开发。
 
 ## 1. 架构原则
 
@@ -158,6 +158,8 @@ LangGraph 1.x 的目标职责包括：
 多 Agent 综合节点之后运行不调用模型的 `challenge_hypothesis`；单 Agent 处理器复用同一领域函数。规则将证据标记为支持、反驳或上下文，只有至少两类独立证据支持且没有反驳时假设才通过。计划域生成独立持久化的 `draft` 草案；审批域锁定 Incident，并在同一事务中把计划和 Incident 迁移到 `awaiting_approval`、追加事件并创建绑定内容哈希的请求。批准、拒绝与本地白名单执行都由确定性应用服务处理，LangChain 和 LangGraph 不参与授权判断。
 
 ### 5.3 完整工程版运行边界（待开发）
+
+第 66 步先交付独立任务事实层：内部用例在有效父调查租约内原子创建轮次、开始和结算专业尝试，HTTP 从业务库读取有界快照。现有固定图仍沿用原处理器，没有自动产生这些任务记录，阶段证据、SSE 事件及父运行结束收尾将在图接入切片实现。以下为后续目标运行边界。
 
 LangGraph 仍是协作编排层，LangChain 承担专业 Agent 的工具循环与结构化输出。新增轻量 Harness 将角色定义、任务运行器、ContextBuilder、工具入口、预算策略和结果校验按单一职责组织；调用前校验任务、版本、租约和预算，结果与事件落库后再推进流程，不重新实现框架能力。
 

@@ -68,6 +68,8 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.tasks.api import create_collaboration_router
+from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.observability import (
     TracingRuntime,
     create_tracing_runtime,
@@ -128,6 +130,7 @@ def create_app(
     evaluation_store: EvaluationStore | None = None,
     incident_report_store: IncidentReportStore | None = None,
     report_action_item_store: ReportActionItemStore | None = None,
+    collaboration_queries: CollaborationQueries | None = None,
     database_settings: DatabaseSettings | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
@@ -173,6 +176,7 @@ def create_app(
             application.state.evaluation_store = evaluation_store
             application.state.incident_report_store = incident_report_store
             application.state.report_action_item_store = report_action_item_store
+            application.state.collaboration_queries = collaboration_queries
             try:
                 yield
             finally:
@@ -205,6 +209,7 @@ def create_app(
         application.state.evaluation_store = EvaluationStore(database.session_factory)
         application.state.incident_report_store = IncidentReportStore(database.session_factory)
         application.state.report_action_item_store = ReportActionItemStore(database.session_factory)
+        application.state.collaboration_queries = CollaborationQueries(database.session_factory)
         try:
             yield
         finally:
@@ -227,7 +232,9 @@ def create_app(
     app.state.evaluation_store = evaluation_store
     app.state.incident_report_store = incident_report_store
     app.state.report_action_item_store = report_action_item_store
+    app.state.collaboration_queries = collaboration_queries
     app.include_router(create_router(clock))
+    app.include_router(create_collaboration_router())
 
     @app.middleware("http")
     async def add_trace_id_header(

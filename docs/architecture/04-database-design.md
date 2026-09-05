@@ -413,6 +413,18 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 
 完成事务同时更新当前投影并追加事件；相同完成命令重试只返回当前记录，不写第二条事件。完整边界见[复盘改进行动项与完成审计](60-report-action-items.md)。
 
+### 4.28 调查轮次与专业任务事实
+
+具体状态与事务设计见 [调查任务持久化](66-investigation-task-persistence.md)。本片新增三个业务表，不替代现有 `work_items`、Worker 尝试或 checkpoint：
+
+| 表 | 字段与约束 |
+| --- | --- |
+| `investigation_rounds` | UUID、运行 ID、连续轮次号、分派内容及 SHA-256、`running/completed/failed`、创建与完成 UTC 时间；运行内轮次号唯一，最多三轮 |
+| `agent_tasks` | UUID、运行/轮次复合外键、轮内任务键、不可变分派、`pending/running/succeeded/failed`、版本、尝试计数和 UTC 时间；轮内任务键唯一 |
+| `agent_task_attempts` | UUID、运行/任务复合外键、父 Worker 尝试、尝试号、开始版本、状态、有限结算内容、开始/租约到期/结束时间；任务内尝试号唯一，仅一条 running 尝试 |
+
+所有写入在父工作项锁与有效租约内完成，终态内容不可被冲突重试覆盖；重试保留任务身份并增加尝试。此片不持久专业证据或新增 SSE 事件，固定图接入时再扩展阶段结果与事件的事务边界。
+
 ## 5. Incident 状态机
 
 ```mermaid

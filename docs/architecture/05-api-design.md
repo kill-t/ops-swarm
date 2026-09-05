@@ -28,6 +28,7 @@ OpenTelemetry 显式开启时，除被排除的健康检查外，控制面响应
 | `POST /api/v1/incidents/{id}/actions/start-investigation` | 原子迁移事故并创建调查运行与任务 | 不存在 `404`；版本或迁移冲突 `409` |
 | `GET /api/v1/investigations/{run_id}` | 返回运行状态、结果、指标和错误 | 不存在 `404` |
 | `GET /api/v1/investigations/{run_id}/attempts` | 按序返回 Worker 尝试、耗时、Token、费用与错误 | 调查不存在 `404` |
+| `GET /api/v1/investigations/{run_id}/collaboration` | 按序返回业务轮次、专业任务和尝试；未接入的旧运行返回空轮次 | 调查不存在 `404`；UUID 非法 `422` |
 | `GET /api/v1/investigations/{run_id}/evidence-board` | 返回结论、规范化证据、专业报告和引用 | 不存在 `404` |
 | `POST /api/v1/investigations/{run_id}/action-plans` | 首次生成草案 `201`；幂等重复 `200` | 不存在 `404`；调查或假设未就绪 `409` |
 | `GET /api/v1/investigations/{run_id}/action-plans/current` | 返回最高计划版本 | 调查或计划不存在 `404` |
@@ -119,6 +120,12 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 全局 GET 固定只返回 `open` 行动项，不接受状态改写或完成命令。`owner_id` 是去除首尾空白后的精确匹配，`overdue_only=true` 使用服务器 UTC `as_of` 判断 `due_at < as_of`；响应回显筛选条件和观察时间。结果按最早截止时间稳定排序，默认 100、最多 200 条，并返回筛选后的完整 `total`。
 
 每项携带来源 Incident 的最小定位信息，页面只能跳回具体事故复盘完成任务。接口不会读取 LangGraph checkpoint、调用模型、触发通知或修改业务状态。详见[跨事故改进行动项治理中心](62-follow-up-governance-center.md)。
+
+### 2.9 专业任务事实查询
+
+新增 `GET /api/v1/investigations/{run_id}/collaboration`，返回 `investigation_run_id` 和按轮次号排序的 `rounds`，每轮包含任务，任务包含尝试。轮次、任务和尝试分别保留自己的 ID、状态与时间，任务另有版本和不可变分派，尝试关联父 Worker 尝试并展示有限结果。服务端最多保存三轮、每轮三个专业任务、每任务三次尝试，本片返回完整有界列表。
+
+查询只读取业务库，不读取 checkpoint、不推断历史、不启动任务。已有 v1 调查没有新记录时返回 `rounds=[]`；运行不存在返回现有 `investigation_run_not_found`（404），非法 UUID 返回 `request_validation_error`（422）。不返回内部租约令牌，不提供任务状态写 API。尝试的 `running` 是持久记录状态，须结合租约到期时间判断时效，GET 不改变过期状态。详见 [调查任务持久化](66-investigation-task-persistence.md)。
 
 ## 3. 告警幂等 HTTP 语义
 

@@ -204,6 +204,7 @@ class InvestigationAttemptRow(Base):
 
     __tablename__ = "investigation_attempts"
     __table_args__ = (
+        UniqueConstraint("id", "investigation_run_id", name="uq_investigation_attempts_id_run"),
         CheckConstraint(
             f"status IN ({ATTEMPT_STATUS_SQL})",
             name="ck_investigation_attempts_status",
