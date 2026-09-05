@@ -69,6 +69,7 @@ from opsswarm.investigation.attempts import (
     ModelPricing,
     ModelUsageTelemetry,
 )
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -187,10 +188,13 @@ class StartInvestigationRequest(StrictApiModel):
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    call_budget: CallBudgetPolicy | None = None
 
     @model_validator(mode="after")
     def validate_workflow(self) -> Self:
         validate_workflow_route(self.workflow_version, self.mode, self.data_source_mode)
+        if self.call_budget is not None and self.workflow_version is not WorkflowVersion.V2:
+            raise ValueError("只有 v2 调查允许配置调用预算")
         return self
 
 
@@ -212,6 +216,7 @@ class InvestigationRunResponse(StrictApiModel):
     status: InvestigationRunStatus
     prompt_version: str
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    call_budget: CallBudgetPolicy | None = None
     graph_thread_id: str | None
     model_name: str | None
     result: InvestigationRunResult | None

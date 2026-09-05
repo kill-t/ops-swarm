@@ -290,12 +290,17 @@ class LangGraphParallelInvestigator:
 
     async def _collect(self, kind: EvidenceKind, state: _GraphState) -> _GraphUpdate:
         service = state["request"].service_name
-        if kind is EvidenceKind.LOG:
-            evidence = self._data_source.query_logs(service_name=service, lookback_minutes=15)
-        elif kind is EvidenceKind.METRIC:
-            evidence = self._data_source.query_metrics(service_name=service, lookback_minutes=15)
-        else:
-            evidence = self._data_source.list_recent_changes(service_name=service, lookback_hours=6)
+
+        def query() -> Sequence[EvidenceObservation]:
+            if kind is EvidenceKind.LOG:
+                return self._data_source.query_logs(service_name=service, lookback_minutes=15)
+            if kind is EvidenceKind.METRIC:
+                return self._data_source.query_metrics(service_name=service, lookback_minutes=15)
+            return self._data_source.list_recent_changes(service_name=service, lookback_hours=6)
+
+        evidence = (
+            await self._task_runtime.call_tool(kind, query) if self._task_runtime else query()
+        )
         return await self._analyze(kind, state, evidence)
 
     async def _analyze(
@@ -318,10 +323,18 @@ class LangGraphParallelInvestigator:
                 plan = state.get("coordination_plan", ())
                 if specialist not in plan:
                     raise SpecialistKindMismatch(f"协调计划没有包含专业节点：{specialist.value}")
-                report = await self._analyst.analyze(
-                    specialist=specialist,
-                    request=state["request"],
-                    evidence=evidence,
+
+                async def analyze() -> SpecialistReport:
+                    return await self._analyst.analyze(
+                        specialist=specialist,
+                        request=state["request"],
+                        evidence=evidence,
+                    )
+
+                report = (
+                    await self._task_runtime.call_model(specialist, analyze)
+                    if self._task_runtime
+                    else await analyze()
                 )
                 if report.specialist is not specialist:
                     raise SpecialistKindMismatch(
@@ -355,10 +368,18 @@ class LangGraphParallelInvestigator:
                 if {item.specialist for item in reports} != set(_SPECIALIST_KINDS):
                     raise IncompleteSpecialistReports("综合节点必须收到日志、指标和变更三份报告")
                 evidence = sorted(state["evidence"], key=lambda item: item.evidence_id)
-                conclusion = await self._synthesizer.synthesize(
-                    request=state["request"],
-                    evidence=evidence,
-                    reports=reports,
+
+                async def synthesize() -> InvestigationConclusion:
+                    return await self._synthesizer.synthesize(
+                        request=state["request"],
+                        evidence=evidence,
+                        reports=reports,
+                    )
+
+                conclusion = (
+                    await self._task_runtime.call_model(None, synthesize)
+                    if self._task_runtime
+                    else await synthesize()
                 )
                 unknown_ids = set(conclusion.evidence_ids) - {item.evidence_id for item in evidence}
                 if unknown_ids:

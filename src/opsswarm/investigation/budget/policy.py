@@ -1,0 +1,62 @@
+"""无需框架和数据库的调用分类与额度判定。"""
+
+from datetime import datetime, timedelta
+from typing import Literal
+
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy, CallOperation
+
+
+class CallBudgetExceeded(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__("调查调用预算已耗尽")
+
+
+def operation_kind(operation: CallOperation) -> Literal["model", "tool"]:
+    return (
+        "tool"
+        if operation
+        in (
+            CallOperation.QUERY_LOGS,
+            CallOperation.QUERY_METRICS,
+            CallOperation.LIST_CHANGES,
+        )
+        else "model"
+    )
+
+
+def operation_role(operation: CallOperation) -> str | None:
+    return {
+        CallOperation.QUERY_LOGS: "log",
+        CallOperation.ANALYZE_LOG: "log",
+        CallOperation.QUERY_METRICS: "metric",
+        CallOperation.ANALYZE_METRIC: "metric",
+        CallOperation.LIST_CHANGES: "change",
+        CallOperation.ANALYZE_CHANGE: "change",
+        CallOperation.SYNTHESIZE: None,
+    }[operation]
+
+
+def remaining_time(policy: CallBudgetPolicy, started_at: datetime, now: datetime) -> float:
+    remaining = (started_at + timedelta(seconds=policy.max_duration_seconds) - now).total_seconds()
+    if remaining <= 0:
+        raise CallBudgetExceeded("run_deadline_exceeded")
+    return remaining
+
+
+def require_capacity(
+    policy: CallBudgetPolicy,
+    operation: CallOperation,
+    *,
+    models: int,
+    tools: int,
+    task_tools: int,
+) -> None:
+    if operation_kind(operation) == "model":
+        if models >= policy.max_model_calls:
+            raise CallBudgetExceeded("model_call_budget_exceeded")
+    else:
+        if tools >= policy.max_tool_calls:
+            raise CallBudgetExceeded("tool_call_budget_exceeded")
+        if task_tools >= policy.max_tool_calls_per_task:
+            raise CallBudgetExceeded("task_tool_budget_exceeded")

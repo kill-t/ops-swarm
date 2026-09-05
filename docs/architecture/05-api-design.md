@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 68 步新增 v2 启动参数 `call_budget` 和只读 `GET /api/v1/investigations/{run_id}/call-budget`，详见 [预算接口与状态语义](68-shared-call-budget.md)。v1 携带预算配置返回 422；历史未预算运行返回 null 策略和计数，不推断为零消耗。该预算仅控制调用次数与运行时限，不表示 Token 或费用上限。
+
 第 67 步增量接口见 [固定图任务接入](67-fixed-graph-task-integration.md)：启动调查可选 `workflow_version=v2`（只接受 `multi_agent + frozen`，默认 v1），运行查询返回版本。协作路径增加按任务读取结果、游标事件列表与可重放 SSE；具体路径和错误语义由专项设计维护。旧事故时间线与最终 Evidence Board 保持原有含义。
 
 ## 1. 目标与边界

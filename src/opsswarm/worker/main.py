@@ -90,6 +90,11 @@ async def run(*, once: bool) -> bool | None:
             llm_settings,
             callbacks=(usage_tracker,),
         )
+        task_model = create_openai_compatible_model(
+            llm_settings,
+            callbacks=(usage_tracker,),
+            disable_retries=True,
+        )
         data_source: InvestigationDataSource
         if worker_settings.data_source_mode is InvestigationDataSourceMode.LIVE:
             live_settings = LiveInvestigationSettings.from_dotenv()
@@ -135,10 +140,12 @@ async def run(*, once: bool) -> bool | None:
                         session_factory=database.session_factory,
                         data_source=data_source,
                         analyst=LangChainSpecialistAnalyst(
-                            model, structured_output_method=llm_settings.structured_output_method
+                            task_model,
+                            structured_output_method=llm_settings.structured_output_method,
                         ),
                         synthesizer=LangChainConclusionSynthesizer(
-                            model, structured_output_method=llm_settings.structured_output_method
+                            task_model,
+                            structured_output_method=llm_settings.structured_output_method,
                         ),
                         checkpointer=saver,
                         tracer=tracer,

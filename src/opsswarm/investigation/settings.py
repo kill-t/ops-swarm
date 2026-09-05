@@ -121,6 +121,7 @@ def create_openai_compatible_model(
     settings: LlmSettings,
     *,
     callbacks: Sequence[BaseCallbackHandler] = (),
+    disable_retries: bool = False,
 ) -> ChatOpenAI:
     """创建模型适配器但不发起网络请求。"""
 
@@ -130,6 +131,7 @@ def create_openai_compatible_model(
         base_url=settings.base_url,
         temperature=settings.temperature,
         callbacks=list(callbacks),
+        max_retries=0 if disable_retries else None,
         extra_body=_thinking_extra_body(settings),
     )
 

@@ -66,6 +66,8 @@ from opsswarm.incidents import (
     InvalidIncidentTransition,
 )
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.budget.api import create_call_budget_router
+from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.tasks.api import create_collaboration_router
@@ -131,6 +133,7 @@ def create_app(
     incident_report_store: IncidentReportStore | None = None,
     report_action_item_store: ReportActionItemStore | None = None,
     collaboration_queries: CollaborationQueries | None = None,
+    call_budget_queries: CallBudgetQueries | None = None,
     database_settings: DatabaseSettings | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
@@ -177,6 +180,7 @@ def create_app(
             application.state.incident_report_store = incident_report_store
             application.state.report_action_item_store = report_action_item_store
             application.state.collaboration_queries = collaboration_queries
+            application.state.call_budget_queries = call_budget_queries
             try:
                 yield
             finally:
@@ -210,6 +214,7 @@ def create_app(
         application.state.incident_report_store = IncidentReportStore(database.session_factory)
         application.state.report_action_item_store = ReportActionItemStore(database.session_factory)
         application.state.collaboration_queries = CollaborationQueries(database.session_factory)
+        application.state.call_budget_queries = CallBudgetQueries(database.session_factory)
         try:
             yield
         finally:
@@ -233,8 +238,10 @@ def create_app(
     app.state.incident_report_store = incident_report_store
     app.state.report_action_item_store = report_action_item_store
     app.state.collaboration_queries = collaboration_queries
+    app.state.call_budget_queries = call_budget_queries
     app.include_router(create_router(clock))
     app.include_router(create_collaboration_router())
+    app.include_router(create_call_budget_router())
 
     @app.middleware("http")
     async def add_trace_id_header(

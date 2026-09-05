@@ -6,9 +6,11 @@
 
 MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
 
-第 66 步建立任务持久化底座，第 67 步将 [固定 v2 图接入任务事实](docs/architecture/67-fixed-graph-task-integration.md)：专业报告与证据在最终综合前保存，结果、状态和进度事件原子提交；恢复时复用已提交专业结果，父运行失败或租约接管时收尾子任务。支持按需查询专业结果与可重放协作 SSE。动态协作、完整 Harness、上下文、经验与 MCP 继续按计划建设。验证结果与下一步见 [当前推进位置](docs/progress/README.md) 和 [第 67 步记录](docs/progress/67-fixed-graph-task-integration.md)。
+第 66～67 步建立任务事实底座，并将固定 v2 图接入专业结果、协作事件与恢复核对。第 68 步加入 [运行级调用预算](docs/architecture/68-shared-call-budget.md)：模型和工具调用前持久预留次数，各专业、综合与重试共享额度和总时限；预算耗尽后停止自动重试，失联调用保留未知状态。Token/费用预算、动态协作、完整 Harness、上下文、经验与 MCP 继续按计划建设。验证结果与下一步见 [当前推进位置](docs/progress/README.md) 和 [第 68 步记录](docs/progress/68-shared-call-budget.md)。
 
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。当前 v2 只接冻结场景，前端尚无版本选择器，现场 v2 在预算与异步取证切片接入。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
+
+新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 
 MVP 阶段交付六十三个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心，第 63 步完成控制面与前端的一键 Compose 交付和真实 MVP 发布验收。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 
@@ -102,6 +104,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [Agent 系统最终设计：轻量 Harness、分层记忆与受控工具](docs/architecture/65-agent-system-design.md)
 - [调查轮次、专业任务与尝试持久化](docs/architecture/66-investigation-task-persistence.md)
 - [固定调查图接入任务事实、专业结果与进度事件](docs/architecture/67-fixed-graph-task-integration.md)
+- [运行级共享调用预算与预留账本](docs/architecture/68-shared-call-budget.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线

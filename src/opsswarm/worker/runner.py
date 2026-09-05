@@ -13,6 +13,8 @@ from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 from pydantic import model_validator
 
 from opsswarm.investigation.attempts import ModelUsageTelemetry
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
+from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.models import (
     EvidenceObservation,
@@ -70,6 +72,7 @@ class ProcessorContext(StrictModel):
     workflow_version: WorkflowVersion = WorkflowVersion.V1
     investigation_run_id: UUID | None = None
     lease_token: UUID | None = None
+    call_budget: CallBudgetPolicy | None = None
 
 
 class InvestigationProcessor(Protocol):
@@ -177,6 +180,7 @@ class InvestigationWorker:
                             workflow_version=claimed.run.workflow_version,
                             investigation_run_id=claimed.run.id,
                             lease_token=lease_token,
+                            call_budget=claimed.run.call_budget,
                         )
                     ),
                     timeout=self._processing_timeout.total_seconds(),
@@ -190,10 +194,11 @@ class InvestigationWorker:
                     occurred_at=self._clock(),
                     error=_safe_error(error),
                     retry_delay=self._retry_delay(claimed.work_item.attempt_count),
+                    retryable=not isinstance(error, CallBudgetExceeded),
                     usage=usage,
                 )
                 logger.warning(
-                    "调查任务进入重试 work_item_id=%s run_id=%s error_code=%s",
+                    "调查任务处理失败 work_item_id=%s run_id=%s error_code=%s",
                     claimed.work_item.id,
                     claimed.run.id,
                     type(error).__name__[:100],
@@ -258,6 +263,10 @@ class InvestigationWorker:
 def _safe_error(error: Exception) -> WorkItemError:
     """只保存确定性分类，避免异常消息携带密钥或模型输入。"""
 
+    if isinstance(error, CallBudgetExceeded):
+        return WorkItemError(
+            error_code=error.code, message="调查调用次数或运行时限已耗尽，停止自动重试"
+        )
     error_code = type(error).__name__[:100] or "worker_error"
     message = "调查处理器调用超时" if isinstance(error, TimeoutError) else "调查处理器执行失败"
     return WorkItemError(error_code=error_code, message=message)

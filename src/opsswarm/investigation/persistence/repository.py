@@ -18,6 +18,8 @@ from opsswarm.investigation.attempts import (
     ModelPricing,
     ModelUsageTelemetry,
 )
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
+from opsswarm.investigation.budget.settlement import close_open_reservations
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
@@ -107,6 +109,7 @@ class InvestigationStore:
         max_attempts: int = 3,
         mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
         workflow_version: WorkflowVersion = WorkflowVersion.V1,
+        call_budget: CallBudgetPolicy | None = None,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
@@ -114,6 +117,10 @@ class InvestigationStore:
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         validate_workflow_route(workflow_version, mode, data_source_mode)
+        if call_budget is not None and workflow_version is not WorkflowVersion.V2:
+            raise ValueError("只有 v2 调查允许配置调用预算")
+        if workflow_version is WorkflowVersion.V2:
+            call_budget = call_budget or CallBudgetPolicy()
         if not 1 <= max_attempts <= 10:
             raise ValueError("max_attempts 必须在 1 到 10 之间")
 
@@ -136,6 +143,7 @@ class InvestigationStore:
                 status=InvestigationRunStatus.QUEUED.value,
                 prompt_version=_PROMPT_VERSION_BY_MODE[mode],
                 workflow_version=workflow_version.value,
+                call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
                 ),
@@ -376,6 +384,7 @@ class InvestigationStore:
 
                 run_row = await _require_run(session, row.investigation_run_id)
                 if row.status == WorkItemStatus.RUNNING.value:
+                    await close_open_reservations(session, run_row.id, occurred_at)
                     await interrupt_tasks(
                         session,
                         run_row.id,
@@ -498,6 +507,7 @@ class InvestigationStore:
             await interrupt_tasks(
                 session, run_row.id, now=occurred_at, will_retry=False, expired=False
             )
+            await close_open_reservations(session, run_row.id, occurred_at)
             attempt_row = await _locked_attempt(
                 session,
                 work_item_id=work_item_id,
@@ -544,9 +554,10 @@ class InvestigationStore:
         occurred_at: datetime,
         error: WorkItemError,
         retry_delay: timedelta,
+        retryable: bool = True,
         usage: ModelUsageTelemetry | None = None,
     ) -> StoredWorkItem:
-        """记录失败；有剩余次数则延迟重试，否则进入终态。"""
+        """记录失败；允许重试且有剩余次数时延迟，否则进入终态。"""
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         if not timedelta(0) <= retry_delay <= timedelta(hours=1):
@@ -557,7 +568,8 @@ class InvestigationStore:
             work_row = await _locked_work_item(session, work_item_id)
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
-            will_retry = work_row.attempt_count < work_row.max_attempts
+            will_retry = retryable and work_row.attempt_count < work_row.max_attempts
+            await close_open_reservations(session, run_row.id, occurred_at)
             await interrupt_tasks(
                 session, run_row.id, now=occurred_at, will_retry=will_retry, expired=False
             )
@@ -575,7 +587,7 @@ class InvestigationStore:
                 error=error,
                 model_name=None,
             )
-            if work_row.attempt_count >= work_row.max_attempts:
+            if not will_retry:
                 _mark_terminal_failure(
                     work_row,
                     run_row,
@@ -892,6 +904,7 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         status=InvestigationRunStatus(row.status),
         prompt_version=row.prompt_version,
         workflow_version=WorkflowVersion(row.workflow_version),
+        call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
         graph_thread_id=row.graph_thread_id,
         model_name=row.model_name,
         result=(

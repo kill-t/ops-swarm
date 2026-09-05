@@ -1,9 +1,12 @@
 """将固定图的一次专业操作绑定到持久任务生命周期。"""
 
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from opsswarm.investigation.budget.contracts import CallOperation
+from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.models import (
     EvidenceKind,
     InvestigationArtifacts,
@@ -33,6 +36,7 @@ class FixedTaskRuntime:
         queries: CollaborationQueries,
         snapshot_id: str,
         snapshot_time: datetime,
+        call_runner: BudgetedCallRunner | None = None,
     ) -> None:
         self.run_id = run_id
         self.snapshot_id = snapshot_id
@@ -40,6 +44,7 @@ class FixedTaskRuntime:
         self._lease_token = lease_token
         self._store = store
         self._queries = queries
+        self._call_runner = call_runner
 
     async def prepare(self, request: InvestigationRequest) -> None:
         await self._store.create_round(
@@ -70,6 +75,31 @@ class FixedTaskRuntime:
 
     async def require_active(self) -> None:
         await self._store.require_active(self.run_id, lease_token=self._lease_token)
+        if self._call_runner is not None:
+            await self._call_runner.check()
+
+    async def call_tool[T](self, role: EvidenceKind, query: Callable[[], T]) -> T:
+        async def invoke() -> T:
+            return query()
+
+        operation = {
+            EvidenceKind.LOG: CallOperation.QUERY_LOGS,
+            EvidenceKind.METRIC: CallOperation.QUERY_METRICS,
+            EvidenceKind.CHANGE: CallOperation.LIST_CHANGES,
+        }[role]
+        if self._call_runner is None:
+            return await invoke()
+        return await self._call_runner.execute(operation, invoke)
+
+    async def call_model[T](
+        self, role: EvidenceKind | None, invoke: Callable[[], Awaitable[T]]
+    ) -> T:
+        operation = (
+            CallOperation(f"analyze_{role.value}") if role is not None else CallOperation.SYNTHESIZE
+        )
+        if self._call_runner is None:
+            return await invoke()
+        return await self._call_runner.execute(operation, invoke)
 
     async def run(
         self,
@@ -95,7 +125,12 @@ class FixedTaskRuntime:
         if not started.created or started.attempt is None:
             raise TaskFactConflict("task_attempt_not_acquired", "未取得新的专业执行尝试")
         try:
-            result = await operation()
+            with (
+                self._call_runner.task_scope(task.id, started.attempt.id)
+                if self._call_runner
+                else nullcontext()
+            ):
+                result = await operation()
         except Exception:
             await self._store.finish_attempt(
                 self.run_id,
@@ -118,6 +153,7 @@ class FixedTaskRuntime:
         return result
 
     async def validate_completed(self, artifacts: InvestigationArtifacts) -> None:
+        await self.require_active()
         await self._store.validate_completed(
             self.run_id,
             lease_token=self._lease_token,

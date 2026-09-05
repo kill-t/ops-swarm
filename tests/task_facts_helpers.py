@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents import ActorType, AlertSubmission, IncidentActor, IncidentSeverity
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.models import EvidenceKind, InvestigationMode
 from opsswarm.investigation.persistence import (
     ClaimedInvestigation,
@@ -32,8 +33,11 @@ async def claimed_run(
     factory: async_sessionmaker[AsyncSession],
     *,
     workflow_version: WorkflowVersion = WorkflowVersion.V1,
+    call_budget: CallBudgetPolicy | None = None,
 ) -> tuple[InvestigationStore, ClaimedInvestigation]:
-    store, _ = await started_run(factory, workflow_version=workflow_version)
+    store, _ = await started_run(
+        factory, workflow_version=workflow_version, call_budget=call_budget
+    )
     claim = await store.claim_next(
         worker_id=str(uuid4()),
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -48,6 +52,7 @@ async def started_run(
     *,
     workflow_version: WorkflowVersion = WorkflowVersion.V1,
     max_attempts: int = 3,
+    call_budget: CallBudgetPolicy | None = None,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     key = str(uuid4())
     incident = await IncidentStore(factory).ingest_alert(
@@ -73,6 +78,7 @@ async def started_run(
         mode=InvestigationMode.MULTI_AGENT,
         workflow_version=workflow_version,
         max_attempts=max_attempts,
+        call_budget=call_budget,
     )
     return store, started
 

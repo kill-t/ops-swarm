@@ -12,6 +12,7 @@ from opsswarm.investigation.attempts import (
     ModelPricing,
     ModelUsageTelemetry,
 )
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -44,6 +45,7 @@ class StoredInvestigationRun(StrictModel):
     status: InvestigationRunStatus
     prompt_version: str
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    call_budget: CallBudgetPolicy | None = None
     graph_thread_id: str | None
     model_name: str | None
     result: InvestigationRunResult | None

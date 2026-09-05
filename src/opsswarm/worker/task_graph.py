@@ -7,6 +7,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from opentelemetry.trace import Tracer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from opsswarm.investigation.budget.runtime import BudgetedCallRunner
+from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.parallel_graph import (
     ConclusionSynthesizer,
     LangGraphParallelInvestigator,
@@ -39,6 +41,7 @@ class TaskGraphFactory:
         self._tracer = tracer
         self._store = InvestigationTaskStore(session_factory, clock=clock)
         self._queries = CollaborationQueries(session_factory)
+        self._budget_store = CallBudgetStore(session_factory, clock=clock)
 
     def __call__(self, context: ProcessorContext) -> LangGraphParallelInvestigator:
         if context.investigation_run_id is None or context.lease_token is None:
@@ -58,5 +61,12 @@ class TaskGraphFactory:
                 queries=self._queries,
                 snapshot_id=self._source.snapshot_id,
                 snapshot_time=self._source.snapshot_time,
+                call_runner=BudgetedCallRunner(
+                    run_id=context.investigation_run_id,
+                    lease_token=context.lease_token,
+                    store=self._budget_store,
+                )
+                if context.call_budget is not None
+                else None,
             ),
         )

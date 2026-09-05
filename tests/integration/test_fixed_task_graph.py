@@ -39,6 +39,7 @@ def context(claim):
         workflow_version=claim.run.workflow_version,
         investigation_run_id=claim.run.id,
         lease_token=claim.work_item.lease_token,
+        call_budget=claim.run.call_budget,
     )
 
 
@@ -329,7 +330,7 @@ async def test_changed_frozen_snapshot_cannot_resume_original_tasks(
 
 async def test_input_only_checkpoint_can_resume(database_session_factory, checkpoint_database_url):
     await initialize_checkpoint_schema(checkpoint_database_url)
-    _, claim = await claimed_run(database_session_factory, workflow_version=WorkflowVersion.V2)
+    parent, claim = await claimed_run(database_session_factory, workflow_version=WorkflowVersion.V2)
     async with open_checkpoint_saver(checkpoint_database_url) as saver:
         graph = factory(database_session_factory, saver, CountingDataSource(), TaskClock())(
             context(claim)
@@ -343,10 +344,25 @@ async def test_input_only_checkpoint_can_resume(database_session_factory, checkp
         await saver.aput(
             config, initial.checkpoint, initial.metadata, initial.checkpoint["channel_versions"]
         )
-        recovered_source = CountingDataSource()
-        recovered = factory(database_session_factory, saver, recovered_source, TaskClock())(
-            context(claim)
+        await parent.fail(
+            claim.work_item.id,
+            lease_token=claim.work_item.lease_token,
+            occurred_at=BASE_TIME + timedelta(seconds=3),
+            error=WorkItemError(error_code="crash", message="模拟恢复到初始快照"),
+            retry_delay=timedelta(0),
         )
+        replacement = await parent.claim_next(
+            worker_id="input-recovery",
+            occurred_at=BASE_TIME + timedelta(seconds=4),
+            lease_duration=timedelta(seconds=30),
+        )
+        recovered_source = CountingDataSource()
+        recovered = factory(
+            database_session_factory,
+            saver,
+            recovered_source,
+            TaskClock(BASE_TIME + timedelta(seconds=4)),
+        )(context(replacement))
         result = await recovered.resume(thread_id=claim.run.graph_thread_id)
     assert result.result.tool_call_count == 3
     assert all(value == 0 for value in recovered_source.calls.values())
