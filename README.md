@@ -4,7 +4,9 @@
 
 ## 当前状态
 
-MVP 已完成发布验收；第 64 步确定了 [完整多 Agent 工程版的目标、基础约束与六阶段路线](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是后续既定架构方向，开发重点转为动态任务分解、专业工具调查、证据审查、多轮协作和人工介入。第 64 步只完成文档决策，新增能力尚未实现；下文六十三个实现切片的成果与历史评测继续保留。
+MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
+
+第 64、65 步交付的是文档决策，上述新增运行能力均为**已决定、待开发**；已有六十三个实现切片和历史评测继续保留。下一切片先建设轮次、专业任务及尝试持久化，实际完成情况与后续入口见 [当前推进位置](docs/progress/README.md) 和 [第 65 步记录](docs/progress/65-agent-system-design.md)。
 
 项目已交付六十三个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心，第 63 步完成控制面与前端的一键 Compose 交付和真实 MVP 发布验收。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 
@@ -95,11 +97,12 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [跨事故改进行动项治理中心](docs/architecture/62-follow-up-governance-center.md)
 - [MVP 一键 Compose 交付与发布验收](docs/architecture/63-mvp-compose-release.md)
 - [完整多 Agent 工程版规划与基础约束](docs/architecture/64-full-multi-agent-roadmap.md)
+- [Agent 系统最终设计：轻量 Harness、分层记忆与受控工具](docs/architecture/65-agent-system-design.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
 
-以下保留 MVP 建设路线。下一阶段按 [完整多 Agent 工程版规划](docs/architecture/64-full-multi-agent-roadmap.md) 依次推进协作底座、动态调查、人工介入与处置、复杂现场场景、工作台与权限、发布验收。
+以下保留 MVP 建设路线。下一阶段按 [最终开发顺序](docs/architecture/64-full-multi-agent-roadmap.md) 逐片推进任务持久化、最小 Harness、上下文、动态调查、MCP、手册与经验、人工介入、处置、现场工作台和发布验收；可信身份先于经验审核交付。专项规则统一保存在第 65 篇设计中，不一次生成整个工程。
 
 1. 项目章程、架构边界和最小目录。
 2. 确定性故障模拟服务与 Incident 状态机，不接 LLM。
