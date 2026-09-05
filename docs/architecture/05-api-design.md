@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 67 步增量接口见 [固定图任务接入](67-fixed-graph-task-integration.md)：启动调查可选 `workflow_version=v2`（只接受 `multi_agent + frozen`，默认 v1），运行查询返回版本。协作路径增加按任务读取结果、游标事件列表与可重放 SSE；具体路径和错误语义由专项设计维护。旧事故时间线与最终 Evidence Board 保持原有含义。
+
 ## 1. 目标与边界
 
 控制面 API 是调用方与 Incident 应用服务之间的传输边界。它负责 HTTP 输入校验、响应序列化、状态码和错误映射，不负责重复实现状态机、告警并发规则或数据库事务。

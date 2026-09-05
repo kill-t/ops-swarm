@@ -6,6 +6,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Protocol, Self
+from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
@@ -28,6 +29,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
 )
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.observability import extract_trace_context, mark_span_error
 from opsswarm.worker.usage import ModelUsageTracker
 
@@ -65,6 +67,9 @@ class ProcessorContext(StrictModel):
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
     work_item_kind: WorkItemKind
     graph_thread_id: str | None
+    workflow_version: WorkflowVersion = WorkflowVersion.V1
+    investigation_run_id: UUID | None = None
+    lease_token: UUID | None = None
 
 
 class InvestigationProcessor(Protocol):
@@ -169,6 +174,9 @@ class InvestigationWorker:
                             data_source_mode=claimed.run.data_source_mode,
                             work_item_kind=claimed.work_item.kind,
                             graph_thread_id=claimed.run.graph_thread_id,
+                            workflow_version=claimed.run.workflow_version,
+                            investigation_run_id=claimed.run.id,
+                            lease_token=lease_token,
                         )
                     ),
                     timeout=self._processing_timeout.total_seconds(),

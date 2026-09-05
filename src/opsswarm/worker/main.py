@@ -45,6 +45,7 @@ from opsswarm.worker.processor import (
 )
 from opsswarm.worker.runner import InvestigationWorker
 from opsswarm.worker.settings import InvestigationWorkerSettings
+from opsswarm.worker.task_graph import TaskGraphFactory
 from opsswarm.worker.usage import ModelUsageTracker
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,18 @@ async def run(*, once: bool) -> bool | None:
                 ),
                 multi_agent=LangGraphMultiAgentProcessor(
                     investigator=multi_agent_investigator,
+                    task_investigator_factory=TaskGraphFactory(
+                        session_factory=database.session_factory,
+                        data_source=data_source,
+                        analyst=LangChainSpecialistAnalyst(
+                            model, structured_output_method=llm_settings.structured_output_method
+                        ),
+                        synthesizer=LangChainConclusionSynthesizer(
+                            model, structured_output_method=llm_settings.structured_output_method
+                        ),
+                        checkpointer=saver,
+                        tracer=tracer,
+                    ),
                     model_name=llm_settings.model,
                     data_source_mode=worker_settings.data_source_mode,
                     evaluation_scenario=evaluation_scenario,

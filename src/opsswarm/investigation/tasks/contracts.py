@@ -58,6 +58,7 @@ class TaskAssignment(TaskModel):
     window_start: AwareDatetime
     window_end: AwareDatetime
     max_attempts: int = Field(default=3, ge=1, le=3, strict=True)
+    evidence_snapshot_id: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("window_start", "window_end")
     @classmethod

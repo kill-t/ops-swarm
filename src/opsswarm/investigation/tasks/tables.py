@@ -120,6 +120,7 @@ class AgentTaskAttemptRow(Base):
             name="fk_task_attempts_parent_run",
         ),
         UniqueConstraint("task_id", "attempt_number", name="uq_task_attempts_number"),
+        UniqueConstraint("id", "task_id", "investigation_run_id", name="uq_task_attempts_identity"),
         UniqueConstraint("task_id", "start_version", name="uq_task_attempts_start_version"),
         CheckConstraint(
             "status IN ('running', 'succeeded', 'failed', 'lease_expired')",

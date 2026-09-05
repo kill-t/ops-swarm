@@ -210,9 +210,23 @@ async def test_lease_takeover_rejects_late_results_and_preserves_attempts(
         worker_id="replacement", occurred_at=clock.current, lease_duration=timedelta(seconds=30)
     )
     assert replacement is not None
-    resumed = await store.begin_attempt(
-        claim.run.id, task.id, lease_token=replacement.work_item.lease_token, expected_version=2
-    )
+    task = (await queries.get_snapshot(claim.run.id)).rounds[0].tasks[0]
+    assert task.version == 3
+    if max_attempts == 1:
+        with pytest.raises(TaskFactConflict, match="已结束任务"):
+            await store.begin_attempt(
+                claim.run.id,
+                task.id,
+                lease_token=replacement.work_item.lease_token,
+                expected_version=task.version,
+            )
+    else:
+        resumed = await store.begin_attempt(
+            claim.run.id,
+            task.id,
+            lease_token=replacement.work_item.lease_token,
+            expected_version=task.version,
+        )
     with pytest.raises(TaskFactConflict, match="旧 Worker"):
         await store.finish_attempt(
             claim.run.id,
@@ -224,7 +238,6 @@ async def test_lease_takeover_rejects_late_results_and_preserves_attempts(
     task = (await queries.get_snapshot(claim.run.id)).rounds[0].tasks[0]
     assert task.attempts[0].status == "lease_expired"
     if max_attempts == 1:
-        assert resumed.created is False and resumed.attempt is None
         assert task.status == "failed" and task.attempt_count == 1
     else:
         assert resumed.created and resumed.attempt.id != old.attempt.id

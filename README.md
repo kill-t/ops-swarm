@@ -6,7 +6,9 @@
 
 MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
 
-第 64、65 步交付文档决策，第 66 步已完成 [轮次、专业任务及尝试持久化与查询](docs/architecture/66-investigation-task-persistence.md)：支持稳定任务身份、版本冲突、幂等结算、失败重试和租约接管。现有固定图尚未接入该事实层，动态协作、Harness、上下文、经验与 MCP 等能力继续按计划建设。实际结果与下一步见 [当前推进位置](docs/progress/README.md) 和 [第 66 步记录](docs/progress/66-investigation-task-persistence.md)。
+第 66 步建立任务持久化底座，第 67 步将 [固定 v2 图接入任务事实](docs/architecture/67-fixed-graph-task-integration.md)：专业报告与证据在最终综合前保存，结果、状态和进度事件原子提交；恢复时复用已提交专业结果，父运行失败或租约接管时收尾子任务。支持按需查询专业结果与可重放协作 SSE。动态协作、完整 Harness、上下文、经验与 MCP 继续按计划建设。验证结果与下一步见 [当前推进位置](docs/progress/README.md) 和 [第 67 步记录](docs/progress/67-fixed-graph-task-integration.md)。
+
+新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。当前 v2 只接冻结场景，前端尚无版本选择器，现场 v2 在预算与异步取证切片接入。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 MVP 阶段交付六十三个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心，第 63 步完成控制面与前端的一键 Compose 交付和真实 MVP 发布验收。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 
@@ -99,6 +101,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [完整多 Agent 工程版规划与基础约束](docs/architecture/64-full-multi-agent-roadmap.md)
 - [Agent 系统最终设计：轻量 Harness、分层记忆与受控工具](docs/architecture/65-agent-system-design.md)
 - [调查轮次、专业任务与尝试持久化](docs/architecture/66-investigation-task-persistence.md)
+- [固定调查图接入任务事实、专业结果与进度事件](docs/architecture/67-fixed-graph-task-integration.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线

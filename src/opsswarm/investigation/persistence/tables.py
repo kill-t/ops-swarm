@@ -37,6 +37,11 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
+            "workflow_version IN ('v1', 'v2') AND "
+            "(workflow_version = 'v1' OR (mode = 'multi_agent' AND data_source_mode = 'frozen'))",
+            name="ck_investigation_runs_workflow_version",
+        ),
+        CheckConstraint(
             "mode IN ('single_agent', 'multi_agent')",
             name="ck_investigation_runs_mode",
         ),
@@ -113,6 +118,7 @@ class InvestigationRunRow(Base):
     data_source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(16), nullable=False, server_default="v1")
     graph_thread_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     model_name: Mapped[str | None] = mapped_column(String(200))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

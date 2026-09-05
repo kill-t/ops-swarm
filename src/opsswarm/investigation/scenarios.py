@@ -1,5 +1,6 @@
 """可重复的单 Agent 离线调查场景。"""
 
+import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Self
@@ -45,6 +46,16 @@ class FrozenScenarioDataSource:
 
     def __init__(self, scenario: InvestigationScenario) -> None:
         self._scenario = scenario
+
+    @property
+    def snapshot_id(self) -> str:
+        """内容变化会改变身份，禁止在原任务中混用另一版冻结材料。"""
+
+        return "frozen:" + hashlib.sha256(self._scenario.model_dump_json().encode()).hexdigest()
+
+    @property
+    def snapshot_time(self) -> datetime:
+        return max(item.observed_at for item in self._scenario.evidence)
 
     def query_logs(
         self,

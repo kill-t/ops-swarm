@@ -574,6 +574,7 @@ def create_router(clock: Clock) -> APIRouter:
             actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
             reason=request.reason,
             mode=request.mode,
+            workflow_version=request.workflow_version,
             data_source_mode=request.data_source_mode,
             trace_context=capture_current_trace_context(),
         )

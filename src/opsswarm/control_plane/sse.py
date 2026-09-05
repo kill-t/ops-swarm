@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from opsswarm.control_plane.replay_stream import replay_events
 from opsswarm.control_plane.schemas import IncidentEventResponse
 from opsswarm.incidents.persistence import StoredIncidentEvent
 
@@ -66,31 +67,24 @@ class IncidentEventStream:
     ) -> AsyncIterator[str]:
         """先补发历史事件，再轮询新事件并定期发送无游标心跳。"""
 
-        if after_cursor < 0:
-            raise ValueError("after_cursor 不能小于 0")
-        cursor = after_cursor
-        last_activity = self._monotonic()
-        while not await is_disconnected():
-            records = await self._source.list_events(
-                incident_id,
-                after_cursor=cursor,
-                limit=self._settings.batch_size,
-            )
-            if records:
-                for record in records:
-                    cursor = record.cursor
-                    yield format_sse_event(
-                        record,
-                        retry_milliseconds=self._settings.retry_milliseconds,
-                    )
-                last_activity = self._monotonic()
-                # 满批说明可能仍有积压，立即继续补发，避免人为增加延迟。
-                if len(records) >= self._settings.batch_size:
-                    continue
-            elif self._monotonic() - last_activity >= self._settings.heartbeat_interval_seconds:
-                yield ": heartbeat\n\n"
-                last_activity = self._monotonic()
-            await self._sleep(self._settings.poll_interval_seconds)
+        async def fetch(cursor: int, limit: int) -> Sequence[StoredIncidentEvent]:
+            return await self._source.list_events(incident_id, after_cursor=cursor, limit=limit)
+
+        async for frame in replay_events(
+            fetch=fetch,
+            encode=lambda record: format_sse_event(
+                record,
+                retry_milliseconds=self._settings.retry_milliseconds,
+            ),
+            after_cursor=after_cursor,
+            batch_size=self._settings.batch_size,
+            poll_interval=self._settings.poll_interval_seconds,
+            heartbeat_interval=self._settings.heartbeat_interval_seconds,
+            is_disconnected=is_disconnected,
+            sleep=self._sleep,
+            monotonic=self._monotonic,
+        ):
+            yield frame
 
 
 def format_sse_event(record: StoredIncidentEvent, *, retry_milliseconds: int) -> str:

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from opsswarm.approval.models import ApprovalRequestStatus
 from opsswarm.approval.persistence import (
@@ -94,6 +94,7 @@ from opsswarm.investigation.persistence import (
     StoredInvestigationRun,
     StoredSpecialistReport,
 )
+from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.planning.models import (
     ActionParameters,
     ActionPlanCapability,
@@ -185,6 +186,12 @@ class StartInvestigationRequest(StrictApiModel):
     reason: str = Field(min_length=1, max_length=500)
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
+    workflow_version: WorkflowVersion = WorkflowVersion.V1
+
+    @model_validator(mode="after")
+    def validate_workflow(self) -> Self:
+        validate_workflow_route(self.workflow_version, self.mode, self.data_source_mode)
+        return self
 
 
 class CloseIncidentRequest(StrictApiModel):
@@ -204,6 +211,7 @@ class InvestigationRunResponse(StrictApiModel):
     data_source_mode: InvestigationDataSourceMode
     status: InvestigationRunStatus
     prompt_version: str
+    workflow_version: WorkflowVersion = WorkflowVersion.V1
     graph_thread_id: str | None
     model_name: str | None
     result: InvestigationRunResult | None

@@ -11,20 +11,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents.persistence.tables import IncidentRow
+from opsswarm.investigation.models import InvestigationArtifacts
 from opsswarm.investigation.persistence.tables import (
     InvestigationAttemptRow,
     InvestigationRunRow,
     WorkItemRow,
 )
+from opsswarm.investigation.tasks.artifact_tables import AgentTaskResultRow
 from opsswarm.investigation.tasks.contracts import (
     RoundAssignment,
-    RoundStatus,
+    TaskAssignment,
     TaskOutcome,
-    TaskStatus,
 )
 from opsswarm.investigation.tasks.errors import TaskFactConflict
-from opsswarm.investigation.tasks.policy import round_status_for_tasks, task_status_after_outcome
+from opsswarm.investigation.tasks.events import append_task_event
+from opsswarm.investigation.tasks.policy import task_status_after_outcome
 from opsswarm.investigation.tasks.records import AttemptStart, TaskAttemptRecord
+from opsswarm.investigation.tasks.results import SpecialistTaskResult
+from opsswarm.investigation.tasks.settlement import require_complete_results, settle_round
 from opsswarm.investigation.tasks.tables import (
     AgentTaskAttemptRow,
     AgentTaskRow,
@@ -100,7 +104,7 @@ class InvestigationTaskStore:
         normalized = assignment.model_copy(
             update={"tasks": tuple(sorted(assignment.tasks, key=lambda item: item.task_key))}
         )
-        specification = normalized.model_dump(mode="json")
+        specification = normalized.model_dump(mode="json", exclude_none=True)
         digest = hashlib.sha256(
             json.dumps(specification, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -155,6 +159,7 @@ class InvestigationTaskStore:
                         completed_at=None,
                     )
                 )
+            await append_task_event(session, run_id, event_type="round.created", occurred_at=now)
             return round_row.id, True
 
     async def begin_attempt(
@@ -191,12 +196,15 @@ class InvestigationTaskStore:
                 latest.status = "lease_expired"
                 latest.finished_at = now
                 await session.flush()
+                await append_task_event(
+                    session, run_id, event_type="task.interrupted", task_id=task_id, occurred_at=now
+                )
             if task.attempt_count >= task.max_attempts:
                 task.status = "failed"
                 task.version += 1
                 task.updated_at = now
                 task.completed_at = now
-                await _settle_round(session, task.round_id, now)
+                await settle_round(session, task.round_id, now)
                 return AttemptStart(task_id, None, False)
             attempt = AgentTaskAttemptRow(
                 id=uuid4(),
@@ -216,6 +224,9 @@ class InvestigationTaskStore:
             task.status = "running"
             task.updated_at = now
             session.add(attempt)
+            await append_task_event(
+                session, run_id, event_type="task.started", task_id=task_id, occurred_at=now
+            )
             return AttemptStart(task_id, _attempt_record(attempt), True)
 
     async def finish_attempt(
@@ -226,6 +237,7 @@ class InvestigationTaskStore:
         *,
         lease_token: UUID,
         outcome: TaskOutcome,
+        result: SpecialistTaskResult | None = None,
     ) -> TaskAttemptRecord:
         """在同一事务保存尝试结算、任务状态和轮次终态。"""
 
@@ -243,8 +255,28 @@ class InvestigationTaskStore:
             if attempt.investigation_attempt_id != parent.id:
                 raise TaskFactConflict("task_attempt_lease_lost", "不能结算旧 Worker 的专业尝试")
             payload = outcome.model_dump(mode="json")
+            result_payload = result.model_dump(mode="json") if result is not None else None
+            assignment = TaskAssignment.model_validate(task.assignment)
+            if result is not None and (
+                outcome.status != "succeeded"
+                or result.report.specialist is not assignment.role
+                or result.evidence_snapshot_id != assignment.evidence_snapshot_id
+                or outcome.summary != result.report.summary
+            ):
+                raise TaskFactConflict("task_result_invalid", "结果不符合任务角色、快照或结算")
+            if (
+                assignment.evidence_snapshot_id is not None
+                and outcome.status == "succeeded"
+                and result is None
+            ):
+                raise TaskFactConflict("task_result_required", "绑定证据快照的任务必须提交专业结果")
             if attempt.status != "running":
-                if attempt.outcome == payload:
+                stored_result = await session.get(AgentTaskResultRow, task_id)
+                if (
+                    attempt.outcome == payload
+                    and (stored_result.result if stored_result is not None else None)
+                    == result_payload
+                ):
                     return _attempt_record(attempt)
                 raise TaskFactConflict("task_outcome_conflict", "尝试已经保存不同的终态")
             if task.status != "running" or task.attempt_count != attempt.attempt_number:
@@ -258,8 +290,41 @@ class InvestigationTaskStore:
             task.version += 1
             task.updated_at = now
             task.completed_at = now if task.status in ("succeeded", "failed") else None
-            await _settle_round(session, task.round_id, now)
+            if result_payload is not None:
+                session.add(
+                    AgentTaskResultRow(
+                        task_id=task_id,
+                        investigation_run_id=run_id,
+                        attempt_id=attempt_id,
+                        result=result_payload,
+                        created_at=now,
+                    )
+                )
+            await append_task_event(
+                session,
+                run_id,
+                task_id=task_id,
+                occurred_at=now,
+                event_type="task.succeeded" if outcome.status == "succeeded" else "task.failed",
+            )
+            await settle_round(session, task.round_id, now)
             return _attempt_record(attempt)
+
+    async def require_active(self, run_id: UUID, *, lease_token: UUID) -> None:
+        """恢复读取已完成结果及后续综合前也必须检查当前执行资格。"""
+
+        async with self._transaction(run_id, lease_token):
+            pass
+
+    async def validate_completed(
+        self,
+        run_id: UUID,
+        *,
+        lease_token: UUID,
+        artifacts: InvestigationArtifacts,
+    ) -> None:
+        async with self._transaction(run_id, lease_token) as (session, _, _, _):
+            await require_complete_results(session, run_id, artifacts)
 
 
 def _require_lease(work: WorkItemRow | None, token: UUID, now: datetime) -> None:
@@ -282,19 +347,6 @@ async def _locked_task(session: AsyncSession, run_id: UUID, task_id: UUID) -> Ag
     if task is None:
         raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该调查")
     return task
-
-
-async def _settle_round(session: AsyncSession, round_id: UUID, now: datetime) -> None:
-    statuses = list(
-        await session.scalars(select(AgentTaskRow.status).where(AgentTaskRow.round_id == round_id))
-    )
-    status = round_status_for_tasks([TaskStatus(value) for value in statuses])
-    if status is not RoundStatus.RUNNING:
-        row = await session.get(InvestigationRoundRow, round_id)
-        if row is None:
-            raise RuntimeError("任务关联轮次缺失")
-        row.status = status.value
-        row.completed_at = now
 
 
 def _attempt_record(row: AgentTaskAttemptRow) -> TaskAttemptRecord:

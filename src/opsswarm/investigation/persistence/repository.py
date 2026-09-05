@@ -73,6 +73,8 @@ from opsswarm.investigation.prompt_versions import (
 from opsswarm.investigation.prompt_versions import (
     SINGLE_AGENT_PROMPT_VERSION as CURRENT_SINGLE_AGENT_PROMPT_VERSION,
 )
+from opsswarm.investigation.tasks.settlement import interrupt_tasks, require_complete_results
+from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.observability import TraceContextCarrier
 
 DEFAULT_PROMPT_VERSION = CURRENT_SINGLE_AGENT_PROMPT_VERSION
@@ -104,12 +106,14 @@ class InvestigationStore:
         reason: str,
         max_attempts: int = 3,
         mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
+        workflow_version: WorkflowVersion = WorkflowVersion.V1,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
         """在同一事务中迁移 Incident、创建运行并投递持久任务。"""
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
+        validate_workflow_route(workflow_version, mode, data_source_mode)
         if not 1 <= max_attempts <= 10:
             raise ValueError("max_attempts 必须在 1 到 10 之间")
 
@@ -131,6 +135,7 @@ class InvestigationStore:
                 data_source_mode=data_source_mode.value,
                 status=InvestigationRunStatus.QUEUED.value,
                 prompt_version=_PROMPT_VERSION_BY_MODE[mode],
+                workflow_version=workflow_version.value,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
                 ),
@@ -371,6 +376,13 @@ class InvestigationStore:
 
                 run_row = await _require_run(session, row.investigation_run_id)
                 if row.status == WorkItemStatus.RUNNING.value:
+                    await interrupt_tasks(
+                        session,
+                        run_row.id,
+                        now=occurred_at,
+                        will_retry=row.attempt_count < row.max_attempts,
+                        expired=True,
+                    )
                     await _expire_current_attempt(
                         session,
                         row,
@@ -481,6 +493,11 @@ class InvestigationStore:
             work_row = await _locked_work_item(session, work_item_id)
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
+            if run_row.workflow_version == WorkflowVersion.V2.value:
+                await require_complete_results(session, run_row.id, artifacts)
+            await interrupt_tasks(
+                session, run_row.id, now=occurred_at, will_retry=False, expired=False
+            )
             attempt_row = await _locked_attempt(
                 session,
                 work_item_id=work_item_id,
@@ -541,6 +558,9 @@ class InvestigationStore:
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
             will_retry = work_row.attempt_count < work_row.max_attempts
+            await interrupt_tasks(
+                session, run_row.id, now=occurred_at, will_retry=will_retry, expired=False
+            )
             attempt_row = await _locked_attempt(
                 session,
                 work_item_id=work_item_id,
@@ -871,6 +891,7 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         data_source_mode=InvestigationDataSourceMode(row.data_source_mode),
         status=InvestigationRunStatus(row.status),
         prompt_version=row.prompt_version,
+        workflow_version=WorkflowVersion(row.workflow_version),
         graph_thread_id=row.graph_thread_id,
         model_name=row.model_name,
         result=(

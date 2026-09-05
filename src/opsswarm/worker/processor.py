@@ -1,5 +1,6 @@
 """单 Agent、多 Agent 与持久模式路由处理器。"""
 
+from collections.abc import Callable
 from typing import Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -22,6 +23,7 @@ from opsswarm.investigation.scenarios import (
     InvestigationScenario,
 )
 from opsswarm.investigation.tools import InvestigationDataSource
+from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.observability import mark_span_error
 from opsswarm.worker.runner import InvestigationProcessor, ProcessorContext, ProcessorOutcome
 
@@ -130,12 +132,15 @@ class LangGraphMultiAgentProcessor:
         self,
         *,
         investigator: CheckpointedParallelInvestigator,
+        task_investigator_factory: Callable[[ProcessorContext], CheckpointedParallelInvestigator]
+        | None = None,
         model_name: str,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         evaluation_scenario: InvestigationScenario | None = RELEASE_500_SCENARIO,
         tracer: Tracer | None = None,
     ) -> None:
         self._investigator = investigator
+        self._task_investigator_factory = task_investigator_factory
         self._model_name = model_name
         self._data_source_mode = data_source_mode
         self._evaluation_scenario = evaluation_scenario
@@ -162,10 +167,18 @@ class LangGraphMultiAgentProcessor:
                 thread_id = context.graph_thread_id
                 if thread_id is None:
                     raise RuntimeError("多 Agent 调查缺少 graph_thread_id")
-                if await self._investigator.has_checkpoint(thread_id=thread_id):
-                    outcome = await self._investigator.resume(thread_id=thread_id)
+                validate_workflow_route(
+                    context.workflow_version, context.mode, context.data_source_mode
+                )
+                investigator = self._investigator
+                if context.workflow_version is WorkflowVersion.V2:
+                    if self._task_investigator_factory is None:
+                        raise RuntimeError("Worker 未装配 v2 任务调查图")
+                    investigator = self._task_investigator_factory(context)
+                if await investigator.has_checkpoint(thread_id=thread_id):
+                    outcome = await investigator.resume(thread_id=thread_id)
                 else:
-                    outcome = await self._investigator.investigate(
+                    outcome = await investigator.investigate(
                         context.request,
                         thread_id=thread_id,
                     )

@@ -7,12 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
+from opsswarm.investigation.tasks.artifact_tables import AgentTaskEventRow, AgentTaskResultRow
+from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.events import TaskEventRecord
 from opsswarm.investigation.tasks.records import (
     CollaborationSnapshot,
     RoundRecord,
     TaskAttemptRecord,
     TaskRecord,
 )
+from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import (
     AgentTaskAttemptRow,
     AgentTaskRow,
@@ -25,6 +29,44 @@ class CollaborationQueries:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    async def get_result(self, run_id: UUID, task_id: UUID) -> TaskResultRecord | None:
+        async with self._session_factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            task = await session.scalar(
+                select(AgentTaskRow).where(
+                    AgentTaskRow.id == task_id,
+                    AgentTaskRow.investigation_run_id == run_id,
+                )
+            )
+            if task is None:
+                raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
+            row = await session.get(AgentTaskResultRow, task_id)
+            return TaskResultRecord.model_validate(row, from_attributes=True) if row else None
+
+    async def list_events(
+        self,
+        run_id: UUID,
+        *,
+        after_cursor: int = 0,
+        limit: int = 100,
+    ) -> tuple[TaskEventRecord, ...]:
+        if after_cursor < 0 or not 1 <= limit <= 100:
+            raise ValueError("事件游标必须非负，每批最多 100 条")
+        async with self._session_factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            rows = await session.scalars(
+                select(AgentTaskEventRow)
+                .where(
+                    AgentTaskEventRow.investigation_run_id == run_id,
+                    AgentTaskEventRow.cursor > after_cursor,
+                )
+                .order_by(AgentTaskEventRow.cursor)
+                .limit(limit)
+            )
+            return tuple(TaskEventRecord.model_validate(row, from_attributes=True) for row in rows)
 
     async def get_snapshot(self, run_id: UUID) -> CollaborationSnapshot:
         async with self._session_factory() as session:
