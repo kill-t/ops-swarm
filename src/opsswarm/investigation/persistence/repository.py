@@ -19,6 +19,7 @@ from opsswarm.investigation.attempts import (
     ModelUsageTelemetry,
 )
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
+from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.settlement import close_open_reservations
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.errors import (
@@ -110,6 +111,7 @@ class InvestigationStore:
         mode: InvestigationMode = InvestigationMode.SINGLE_AGENT,
         workflow_version: WorkflowVersion = WorkflowVersion.V1,
         call_budget: CallBudgetPolicy | None = None,
+        model_budget: ModelBudgetPolicy | None = None,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
@@ -117,7 +119,9 @@ class InvestigationStore:
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         validate_workflow_route(workflow_version, mode, data_source_mode)
-        if call_budget is not None and workflow_version is not WorkflowVersion.V2:
+        if (
+            call_budget is not None or model_budget is not None
+        ) and workflow_version is not WorkflowVersion.V2:
             raise ValueError("只有 v2 调查允许配置调用预算")
         if workflow_version is WorkflowVersion.V2:
             call_budget = call_budget or CallBudgetPolicy()
@@ -144,6 +148,7 @@ class InvestigationStore:
                 prompt_version=_PROMPT_VERSION_BY_MODE[mode],
                 workflow_version=workflow_version.value,
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
+                model_budget=model_budget.model_dump(mode="json") if model_budget else None,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
                 ),
@@ -905,6 +910,9 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         prompt_version=row.prompt_version,
         workflow_version=WorkflowVersion(row.workflow_version),
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
+        model_budget=ModelBudgetPolicy.model_validate(row.model_budget)
+        if row.model_budget
+        else None,
         graph_thread_id=row.graph_thread_id,
         model_name=row.model_name,
         result=(

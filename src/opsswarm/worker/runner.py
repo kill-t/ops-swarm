@@ -14,6 +14,7 @@ from pydantic import model_validator
 
 from opsswarm.investigation.attempts import ModelUsageTelemetry
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
+from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.models import (
@@ -73,6 +74,7 @@ class ProcessorContext(StrictModel):
     investigation_run_id: UUID | None = None
     lease_token: UUID | None = None
     call_budget: CallBudgetPolicy | None = None
+    model_budget: ModelBudgetPolicy | None = None
 
 
 class InvestigationProcessor(Protocol):
@@ -181,6 +183,7 @@ class InvestigationWorker:
                             investigation_run_id=claimed.run.id,
                             lease_token=lease_token,
                             call_budget=claimed.run.call_budget,
+                            model_budget=claimed.run.model_budget,
                         )
                     ),
                     timeout=self._processing_timeout.total_seconds(),
@@ -265,7 +268,7 @@ def _safe_error(error: Exception) -> WorkItemError:
 
     if isinstance(error, CallBudgetExceeded):
         return WorkItemError(
-            error_code=error.code, message="调查调用次数或运行时限已耗尽，停止自动重试"
+            error_code=error.code, message="调查预算或固定模型配置阻止继续执行，停止自动重试"
         )
     error_code = type(error).__name__[:100] or "worker_error"
     message = "调查处理器调用超时" if isinstance(error, TimeoutError) else "调查处理器执行失败"

@@ -20,8 +20,10 @@ from tests.task_facts_helpers import BASE_TIME, TaskClock, assignment, claimed_r
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def prepare(db, policy=None):
-    parent, claim = await claimed_run(db, workflow_version=WorkflowVersion.V2, call_budget=policy)
+async def prepare(db, policy=None, model_budget=None):
+    parent, claim = await claimed_run(
+        db, workflow_version=WorkflowVersion.V2, call_budget=policy, model_budget=model_budget
+    )
     clock = TaskClock()
     tasks = InvestigationTaskStore(db, clock=clock)
     await tasks.create_round(

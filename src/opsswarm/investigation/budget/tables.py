@@ -1,6 +1,7 @@
 """调用预留账本的 PostgreSQL 映射与归属约束。"""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -11,6 +12,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +22,17 @@ from opsswarm.database.base import Base
 class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
+        CheckConstraint(
+            "(model_input IS NULL) = (model_allocation IS NULL) AND "
+            "(model_allocation IS NULL OR (kind = 'model' AND "
+            "jsonb_typeof(model_input) = 'object' AND "
+            "octet_length(model_input::text) <= 524288 AND "
+            "jsonb_typeof(model_allocation) = 'object' AND "
+            "octet_length(model_allocation::text) <= 8192)) AND "
+            "(model_usage IS NULL OR (model_allocation IS NOT NULL AND status <> 'reserved' AND "
+            "jsonb_typeof(model_usage) = 'object' AND octet_length(model_usage::text) <= 8192))",
+            name="ck_call_reservations_model_budget",
+        ),
         ForeignKeyConstraint(
             ["investigation_attempt_id", "investigation_run_id"],
             ["investigation_attempts.id", "investigation_attempts.investigation_run_id"],
@@ -81,3 +94,6 @@ class CallReservationRow(Base):
     error_code: Mapped[str | None] = mapped_column(String(100))
     reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    model_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    model_allocation: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    model_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

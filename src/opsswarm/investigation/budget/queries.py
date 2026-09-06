@@ -5,15 +5,24 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import defer
 
 from opsswarm.investigation.budget.contracts import (
     CallBudgetPolicy,
     CallBudgetSnapshot,
     CallReservationRecord,
 )
+from opsswarm.investigation.budget.model_contracts import (
+    ModelAllocation,
+    ModelBudgetPolicy,
+    ModelInput,
+    ReportedModelUsage,
+)
+from opsswarm.investigation.budget.model_policy import summarize_model_usage
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
+from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
 class CallBudgetQueries:
@@ -30,9 +39,13 @@ class CallBudgetQueries:
                 if run.call_budget is not None
                 else None
             )
+            model_policy = (
+                ModelBudgetPolicy.model_validate(run.model_budget) if run.model_budget else None
+            )
             rows = list(
                 await session.scalars(
                     select(CallReservationRow)
+                    .options(defer(CallReservationRow.model_input))
                     .where(
                         CallReservationRow.investigation_run_id == run_id,
                     )
@@ -51,4 +64,36 @@ class CallBudgetQueries:
                 calls=tuple(
                     CallReservationRecord.model_validate(r, from_attributes=True) for r in rows
                 ),
+                model_budget=model_policy,
+                model_usage=summarize_model_usage(
+                    model_policy,
+                    [
+                        (
+                            ModelAllocation.model_validate(r.model_allocation),
+                            ReportedModelUsage.model_validate(r.model_usage)
+                            if r.model_usage
+                            else None,
+                        )
+                        for r in rows
+                        if r.kind == "model"
+                    ],
+                )
+                if model_policy
+                else None,
+            )
+
+    async def get_model_input(self, run_id: UUID, call_id: UUID) -> ModelInput | None:
+        async with self._factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            row = await session.scalar(
+                select(CallReservationRow).where(
+                    CallReservationRow.investigation_run_id == run_id,
+                    CallReservationRow.id == call_id,
+                )
+            )
+            if row is None:
+                raise TaskFactConflict("model_input_not_found", "该运行不存在指定调用")
+            return (
+                ModelInput.model_validate(row.model_input) if row.model_input is not None else None
             )

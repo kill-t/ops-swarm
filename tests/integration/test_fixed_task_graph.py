@@ -40,6 +40,7 @@ def context(claim):
         investigation_run_id=claim.run.id,
         lease_token=claim.work_item.lease_token,
         call_budget=claim.run.call_budget,
+        model_budget=claim.run.model_budget,
     )
 
 

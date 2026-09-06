@@ -8,6 +8,12 @@ from uuid import UUID
 
 from pydantic import Field
 
+from opsswarm.investigation.budget.model_contracts import (
+    ModelAllocation,
+    ModelBudgetPolicy,
+    ModelBudgetUsage,
+    ReportedModelUsage,
+)
 from opsswarm.investigation.tasks.contracts import TaskModel
 
 
@@ -42,6 +48,8 @@ class CallReservationRecord(TaskModel):
     error_code: str | None
     reserved_at: datetime
     finished_at: datetime | None
+    model_allocation: ModelAllocation | None = None
+    model_usage: ReportedModelUsage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,3 +67,5 @@ class CallBudgetSnapshot(TaskModel):
     reserved_model_calls: int | None
     reserved_tool_calls: int | None
     calls: tuple[CallReservationRecord, ...]
+    model_budget: ModelBudgetPolicy | None = None
+    model_usage: ModelBudgetUsage | None = None

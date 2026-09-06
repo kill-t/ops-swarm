@@ -3,10 +3,13 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.investigation.budget.contracts import CallBudgetSnapshot
+from opsswarm.investigation.budget.model_contracts import ModelInput
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
 def create_call_budget_router() -> APIRouter:
@@ -22,5 +25,28 @@ def create_call_budget_router() -> APIRouter:
         if not isinstance(queries, CallBudgetQueries):
             raise RuntimeError("CallBudgetQueries 尚未初始化")
         return await queries.get_snapshot(run_id)
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/calls/{call_id}/model-input",
+        response_model=ModelInput | None,
+        responses={404: {"model": ApiErrorResponse}, 422: {"model": ApiErrorResponse}},
+    )
+    async def read_model_input(
+        run_id: UUID, call_id: UUID, request: Request
+    ) -> ModelInput | None | JSONResponse:
+        queries = getattr(request.app.state, "call_budget_queries", None)
+        if not isinstance(queries, CallBudgetQueries):
+            raise RuntimeError("CallBudgetQueries 尚未初始化")
+        try:
+            return await queries.get_model_input(run_id, call_id)
+        except TaskFactConflict as error:
+            if error.code != "model_input_not_found":
+                raise
+            return JSONResponse(
+                status_code=404,
+                content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
+                    mode="json"
+                ),
+            )
 
     return router

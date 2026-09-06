@@ -37,6 +37,11 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
+            "model_budget IS NULL OR (workflow_version = 'v2' AND call_budget IS NOT NULL AND "
+            "jsonb_typeof(model_budget) = 'object' AND octet_length(model_budget::text) <= 8192)",
+            name="ck_investigation_runs_model_budget",
+        ),
+        CheckConstraint(
             "call_budget IS NULL OR (workflow_version = 'v2' AND "
             "jsonb_typeof(call_budget) = 'object' AND octet_length(call_budget::text) <= 8192)",
             name="ck_investigation_runs_call_budget",
@@ -124,6 +129,7 @@ class InvestigationRunRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     call_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    model_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     workflow_version: Mapped[str] = mapped_column(String(16), nullable=False, server_default="v1")
     graph_thread_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     model_name: Mapped[str | None] = mapped_column(String(200))

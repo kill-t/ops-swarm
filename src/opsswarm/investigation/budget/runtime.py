@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from uuid import UUID
 
 from opsswarm.investigation.budget.contracts import CallOperation
+from opsswarm.investigation.budget.model_contracts import ModelInput, ReportedModelUsage
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.tasks.errors import TaskFactConflict
@@ -32,7 +33,15 @@ class BudgetedCallRunner:
     async def check(self) -> None:
         await self._store.check(self._run_id, lease_token=self._lease_token)
 
-    async def execute[T](self, operation: CallOperation, invoke: Callable[[], Awaitable[T]]) -> T:
+    async def execute[T](
+        self,
+        operation: CallOperation,
+        invoke: Callable[[], Awaitable[T]],
+        *,
+        model_input: ModelInput | None = None,
+        prompt_version: str | None = None,
+        usage_reader: Callable[[], ReportedModelUsage | None] = lambda: None,
+    ) -> T:
         scope = self._scope.get()
         grant = await self._store.reserve(
             self._run_id,
@@ -40,6 +49,8 @@ class BudgetedCallRunner:
             operation=operation,
             task_id=scope[0] if scope else None,
             task_attempt_id=scope[1] if scope else None,
+            model_input=model_input,
+            prompt_version=prompt_version,
         )
         if not grant.created:
             raise TaskFactConflict("call_already_reserved", "相同预留不能再次执行操作")
@@ -55,6 +66,7 @@ class BudgetedCallRunner:
                 lease_token=self._lease_token,
                 status="unknown",
                 error_code="run_deadline_exceeded" if timer.expired() else "operation_failed",
+                model_usage=usage_reader(),
             )
             if timer.expired():
                 raise CallBudgetExceeded("run_deadline_exceeded") from None
@@ -67,6 +79,7 @@ class BudgetedCallRunner:
                 lease_token=self._lease_token,
                 status="unknown",
                 error_code="operation_cancelled",
+                model_usage=usage_reader(),
             )
             raise
         except Exception:
@@ -76,10 +89,16 @@ class BudgetedCallRunner:
                 lease_token=self._lease_token,
                 status="failed",
                 error_code="operation_failed",
+                model_usage=usage_reader(),
             )
+            await self.check()
             raise
         await self._store.settle(
-            self._run_id, grant.record.id, lease_token=self._lease_token, status="succeeded"
+            self._run_id,
+            grant.record.id,
+            lease_token=self._lease_token,
+            status="succeeded",
+            model_usage=usage_reader(),
         )
         await self.check()
         return result

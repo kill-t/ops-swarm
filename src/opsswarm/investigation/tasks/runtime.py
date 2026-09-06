@@ -37,6 +37,7 @@ class FixedTaskRuntime:
         snapshot_id: str,
         snapshot_time: datetime,
         call_runner: BudgetedCallRunner | None = None,
+        model_input_budget: bool = False,
     ) -> None:
         self.run_id = run_id
         self.snapshot_id = snapshot_id
@@ -45,6 +46,7 @@ class FixedTaskRuntime:
         self._store = store
         self._queries = queries
         self._call_runner = call_runner
+        self._model_input_budget = model_input_budget
 
     async def prepare(self, request: InvestigationRequest) -> None:
         await self._store.create_round(
@@ -94,6 +96,9 @@ class FixedTaskRuntime:
     async def call_model[T](
         self, role: EvidenceKind | None, invoke: Callable[[], Awaitable[T]]
     ) -> T:
+        # 新路径在适配器组装完整输入后原子预留次数与 Token，不能在图外层重复占用。
+        if self._model_input_budget:
+            return await invoke()
         operation = (
             CallOperation(f"analyze_{role.value}") if role is not None else CallOperation.SYNTHESIZE
         )

@@ -69,5 +69,6 @@ def test_budget_model_disables_sdk_retries_without_network():
         disable_retries=True,
     )
     assert model.max_retries == 0
+    assert model.n == 1
     assert model.root_client.max_retries == 0
     assert model.root_async_client.max_retries == 0

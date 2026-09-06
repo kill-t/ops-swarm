@@ -17,6 +17,7 @@ from opsswarm.checkpoints import (
 )
 from opsswarm.database import Database, DatabaseSettings
 from opsswarm.database.asyncio_compat import create_selector_event_loop
+from opsswarm.investigation.budget.model_settings import ModelBudgetSettings
 from opsswarm.investigation.github_changes import GitHubChangeSettings
 from opsswarm.investigation.live import (
     LiveChangeProvider,
@@ -85,6 +86,7 @@ async def run(*, once: bool) -> bool | None:
     try:
         llm_settings = LlmSettings.from_dotenv()
         model_pricing = ModelPricingSettings.from_dotenv().to_pricing()
+        model_profile = ModelBudgetSettings.from_dotenv().to_profile(llm_settings, model_pricing)
         usage_tracker = ModelUsageTracker(model_pricing)
         model = create_openai_compatible_model(
             llm_settings,
@@ -137,6 +139,8 @@ async def run(*, once: bool) -> bool | None:
                 multi_agent=LangGraphMultiAgentProcessor(
                     investigator=multi_agent_investigator,
                     task_investigator_factory=TaskGraphFactory(
+                        budget_model=task_model,
+                        model_profile=model_profile,
                         session_factory=database.session_factory,
                         data_source=data_source,
                         analyst=LangChainSpecialistAnalyst(

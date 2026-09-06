@@ -132,6 +132,7 @@ def create_openai_compatible_model(
         temperature=settings.temperature,
         callbacks=list(callbacks),
         max_retries=0 if disable_retries else None,
+        n=1 if disable_retries else None,
         extra_body=_thinking_extra_body(settings),
     )
 
