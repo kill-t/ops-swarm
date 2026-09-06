@@ -10,6 +10,10 @@ from langgraph.graph import END, START, StateGraph
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
 
+from opsswarm.investigation.async_source import (
+    AsyncInvestigationDataSource,
+    ThreadedInvestigationDataSource,
+)
 from opsswarm.investigation.challenge import challenge_investigation
 from opsswarm.investigation.errors import (
     IncompleteSpecialistReports,
@@ -29,6 +33,7 @@ from opsswarm.investigation.models import (
     MultiAgentInvestigationResult,
     SpecialistReport,
 )
+from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import FrozenScenarioDataSource
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.runtime import FixedTaskRuntime
@@ -96,8 +101,11 @@ class LangGraphParallelInvestigator:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         tracer: Tracer | None = None,
         task_runtime: FixedTaskRuntime | None = None,
+        query_executor: ReadOnlyQueryExecutor | None = None,
     ) -> None:
-        self._data_source = data_source
+        self._data_source: AsyncInvestigationDataSource = ThreadedInvestigationDataSource(
+            data_source, query_executor
+        )
         if task_runtime is not None and not isinstance(data_source, FrozenScenarioDataSource):
             raise ValueError("v2 固定图当前只允许冻结数据源")
         self._task_runtime = task_runtime
@@ -291,15 +299,19 @@ class LangGraphParallelInvestigator:
     async def _collect(self, kind: EvidenceKind, state: _GraphState) -> _GraphUpdate:
         service = state["request"].service_name
 
-        def query() -> Sequence[EvidenceObservation]:
+        async def query() -> Sequence[EvidenceObservation]:
             if kind is EvidenceKind.LOG:
-                return self._data_source.query_logs(service_name=service, lookback_minutes=15)
+                return await self._data_source.query_logs(service_name=service, lookback_minutes=15)
             if kind is EvidenceKind.METRIC:
-                return self._data_source.query_metrics(service_name=service, lookback_minutes=15)
-            return self._data_source.list_recent_changes(service_name=service, lookback_hours=6)
+                return await self._data_source.query_metrics(
+                    service_name=service, lookback_minutes=15
+                )
+            return await self._data_source.list_recent_changes(
+                service_name=service, lookback_hours=6
+            )
 
         evidence = (
-            await self._task_runtime.call_tool(kind, query) if self._task_runtime else query()
+            await self._task_runtime.call_tool(kind, query) if self._task_runtime else await query()
         )
         return await self._analyze(kind, state, evidence)
 

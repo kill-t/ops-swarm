@@ -22,6 +22,7 @@ from opsswarm.investigation.parallel_model import (
     LangChainConclusionSynthesizer,
     LangChainSpecialistAnalyst,
 )
+from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import FrozenScenarioDataSource
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.runtime import FixedTaskRuntime
@@ -43,6 +44,7 @@ class TaskGraphFactory:
         clock: Callable[[], datetime] = utc_now,
         budget_model: ChatOpenAI | None = None,
         model_profile: ModelProfile | None = None,
+        query_executor: ReadOnlyQueryExecutor | None = None,
     ) -> None:
         self._source = data_source
         self._analyst = analyst
@@ -54,6 +56,7 @@ class TaskGraphFactory:
         self._budget_store = CallBudgetStore(session_factory, clock=clock)
         self._budget_model = budget_model
         self._model_profile = model_profile
+        self._query_executor = query_executor
 
     def __call__(self, context: ProcessorContext) -> LangGraphParallelInvestigator:
         if context.investigation_run_id is None or context.lease_token is None:
@@ -95,6 +98,7 @@ class TaskGraphFactory:
             )
         return LangGraphParallelInvestigator(
             data_source=self._source,
+            query_executor=self._query_executor,
             analyst=analyst,
             synthesizer=synthesizer,
             checkpointer=self._checkpointer,

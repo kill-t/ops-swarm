@@ -8,7 +8,9 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、ContextBuilder、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
 
-新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。当前 v2 只接冻结场景，前端尚无版本选择器，现场 v2 在预算与异步取证切片接入。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
+第 70 步加入 [受限异步取证](docs/architecture/70-bounded-async-evidence.md)：多 Agent Worker 用最多 3 个未完成查询桥接现有同步适配器，取证不再阻塞事件循环。取消或等待超时后，运行中的请求继续占用槽位直至真正结束，迟到材料不能进入专业报告。现场 v2 仍需下一片建立观测快照与恢复规则，验证结果见 [第 70 步记录](docs/progress/70-bounded-async-evidence.md)。
+
+新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。当前 v2 只接冻结场景，前端尚无版本选择器，现场 v2 等待观测快照与恢复规则验收后接入。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 
@@ -108,6 +110,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [固定调查图接入任务事实、专业结果与进度事件](docs/architecture/67-fixed-graph-task-integration.md)
 - [运行级共享调用预算与预留账本](docs/architecture/68-shared-call-budget.md)
 - [模型输入、Token 与估算费用预算](docs/architecture/69-model-input-budget.md)
+- [受限异步取证与迟到结果隔离](docs/architecture/70-bounded-async-evidence.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线

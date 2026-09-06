@@ -31,6 +31,7 @@ from opsswarm.investigation.parallel_model import (
     LangChainSpecialistAnalyst,
 )
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
 from opsswarm.investigation.settings import (
     LlmSettings,
@@ -83,6 +84,7 @@ async def run(*, once: bool) -> bool | None:
         f"opsswarm-investigation-worker-{worker_settings.data_source_mode.value}"
     )
     tracer = tracing_runtime.get_tracer(__name__)
+    query_executor = ReadOnlyQueryExecutor()
     try:
         llm_settings = LlmSettings.from_dotenv()
         model_pricing = ModelPricingSettings.from_dotenv().to_pricing()
@@ -116,6 +118,7 @@ async def run(*, once: bool) -> bool | None:
         async with open_checkpoint_saver(checkpoint_settings.checkpoint_database_url) as saver:
             multi_agent_investigator = LangGraphParallelInvestigator(
                 data_source=data_source,
+                query_executor=query_executor,
                 analyst=LangChainSpecialistAnalyst(
                     model,
                     structured_output_method=llm_settings.structured_output_method,
@@ -143,6 +146,7 @@ async def run(*, once: bool) -> bool | None:
                         model_profile=model_profile,
                         session_factory=database.session_factory,
                         data_source=data_source,
+                        query_executor=query_executor,
                         analyst=LangChainSpecialistAnalyst(
                             task_model,
                             structured_output_method=llm_settings.structured_output_method,
@@ -193,6 +197,7 @@ async def run(*, once: bool) -> bool | None:
             )
             return None
     finally:
+        query_executor.close()
         await database.dispose()
         tracing_runtime.shutdown()
 

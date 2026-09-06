@@ -80,18 +80,15 @@ class FixedTaskRuntime:
         if self._call_runner is not None:
             await self._call_runner.check()
 
-    async def call_tool[T](self, role: EvidenceKind, query: Callable[[], T]) -> T:
-        async def invoke() -> T:
-            return query()
-
+    async def call_tool[T](self, role: EvidenceKind, query: Callable[[], Awaitable[T]]) -> T:
         operation = {
             EvidenceKind.LOG: CallOperation.QUERY_LOGS,
             EvidenceKind.METRIC: CallOperation.QUERY_METRICS,
             EvidenceKind.CHANGE: CallOperation.LIST_CHANGES,
         }[role]
         if self._call_runner is None:
-            return await invoke()
-        return await self._call_runner.execute(operation, invoke)
+            return await query()
+        return await self._call_runner.execute(operation, query)
 
     async def call_model[T](
         self, role: EvidenceKind | None, invoke: Callable[[], Awaitable[T]]
