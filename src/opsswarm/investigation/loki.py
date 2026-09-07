@@ -28,6 +28,7 @@ from opsswarm.investigation.errors import (
     UnsupportedInvestigationTarget,
 )
 from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
+from opsswarm.observation_window import ObservationWindow
 
 DEFAULT_LOKI_BASE_URL = "http://127.0.0.1:13100"
 ALLOWED_LOKI_HOSTS = frozenset({"127.0.0.1", "localhost", "loki"})
@@ -186,20 +187,60 @@ class LokiOnlyInvestigationDataSource:
         self._validate_minutes(lookback_minutes)
         end_ns = int(self._clock() * 1_000_000_000)
         start_ns = end_ns - lookback_minutes * 60 * 1_000_000_000
+        return self._query_logs(
+            service_name=service_name,
+            lookback_minutes=lookback_minutes,
+            start_ns=start_ns,
+            end_ns=end_ns,
+        )
+
+    def query_logs_in_window(
+        self, *, service_name: str, window: ObservationWindow
+    ) -> Sequence[EvidenceObservation]:
+        self._validate_target(service_name)
+        minutes = window.telemetry_minutes()
+        window.require_elapsed(datetime.fromtimestamp(self._clock(), UTC))
+        return self._query_logs(
+            service_name=service_name,
+            lookback_minutes=minutes,
+            start_ns=int(window.window_start.timestamp()) * 1_000_000_000,
+            end_ns=int(window.window_end.timestamp()) * 1_000_000_000,
+            window=window,
+        )
+
+    def _query_logs(
+        self,
+        *,
+        service_name: str,
+        lookback_minutes: int,
+        start_ns: int,
+        end_ns: int,
+        window: ObservationWindow | None = None,
+    ) -> Sequence[EvidenceObservation]:
         payload = self._get(
             params={
                 "query": LOKI_LOG_QUERY,
                 "start": str(start_ns),
-                "end": str(end_ns),
+                # Loki 截止点不包含自身；加一纳秒统一业务窗口的闭区间语义。
+                "end": str(end_ns + 1 if window is not None else end_ns),
                 "limit": MAX_LOG_ENTRIES,
                 "direction": "backward",
             }
         )
         observed = self._validate_response(payload, start_ns=start_ns, end_ns=end_ns)
+        if window is not None and any(
+            not start_ns <= item.loki_timestamp_ns <= end_ns
+            or not window.window_start <= item.event.timestamp <= window.window_end
+            for item in observed
+        ):
+            raise InvestigationDataSourceFailure(
+                error_code="loki_invalid_timestamp", message="日志超出固定观测窗口"
+            )
         return self._build_evidence(
             observed,
             service_name=service_name,
             lookback_minutes=lookback_minutes,
+            window=window,
         )
 
     def query_metrics(
@@ -353,6 +394,7 @@ class LokiOnlyInvestigationDataSource:
         *,
         service_name: str,
         lookback_minutes: int,
+        window: ObservationWindow | None = None,
     ) -> tuple[EvidenceObservation, ...]:
         grouped: dict[str, list[_ObservedFailure]] = defaultdict(list)
         for item in observed:
@@ -367,6 +409,11 @@ class LokiOnlyInvestigationDataSource:
                 service_name=service_name,
                 lookback_minutes=lookback_minutes,
             )
+            if window is not None:
+                attributes.update(
+                    window_start=window.window_start.isoformat(),
+                    window_end=window.window_end.isoformat(),
+                )
             observed_at = entries[-1].event.timestamp
             digest = hashlib.sha256(
                 json.dumps(

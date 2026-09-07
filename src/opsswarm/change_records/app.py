@@ -25,6 +25,7 @@ from opsswarm.change_records.models import (
     ChangeSpec,
 )
 from opsswarm.change_records.persistence import ChangeRecordStore
+from opsswarm.change_records.window_api import create_window_router
 from opsswarm.database import Database, DatabaseSettings
 
 Clock = Callable[[], datetime]
@@ -223,4 +224,5 @@ def create_app(
             truncated=page.truncated,
         )
 
+    app.include_router(create_window_router(store, clock))
     return app

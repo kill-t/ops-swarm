@@ -110,6 +110,7 @@ class ChangeRecordStore:
         service_name: str,
         since: datetime,
         until: datetime,
+        recorded_until: datetime | None = None,
         limit: int = MAX_CHANGE_RECORDS,
     ) -> ChangeRecordPage:
         """按发生时间倒序返回有限结果，并显式报告是否截断。"""
@@ -122,6 +123,10 @@ class ChangeRecordStore:
             raise ValueError("until 必须包含时区")
         if since > until:
             raise ValueError("since 不能晚于 until")
+        if recorded_until is not None and (
+            recorded_until.tzinfo is None or recorded_until.utcoffset() is None
+        ):
+            raise ValueError("recorded_until 必须包含时区")
         if not 1 <= limit <= MAX_CHANGE_RECORDS:
             raise ValueError(f"limit 必须在 1 到 {MAX_CHANGE_RECORDS} 之间")
 
@@ -135,6 +140,8 @@ class ChangeRecordStore:
             .order_by(ChangeRecordRow.occurred_at.desc(), ChangeRecordRow.id.desc())
             .limit(limit + 1)
         )
+        if recorded_until is not None:
+            statement = statement.where(ChangeRecordRow.recorded_at <= recorded_until)
         async with self._session_factory() as session:
             rows: Sequence[ChangeRecordRow] = (await session.scalars(statement)).all()
         return ChangeRecordPage(

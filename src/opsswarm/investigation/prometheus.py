@@ -21,6 +21,7 @@ from opsswarm.investigation.errors import (
     UnsupportedInvestigationTarget,
 )
 from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
+from opsswarm.observation_window import ObservationWindow
 
 DEFAULT_PROMETHEUS_BASE_URL = "http://127.0.0.1:19090"
 ALLOWED_PROMETHEUS_HOSTS = frozenset({"127.0.0.1", "localhost", "prometheus"})
@@ -166,6 +167,33 @@ class PrometheusOnlyInvestigationDataSource:
         self._validate_lookback(lookback_minutes)
         end = int(self._clock())
         start = end - lookback_minutes * 60
+        return self._query_metrics(
+            service_name=service_name, lookback_minutes=lookback_minutes, start=start, end=end
+        )
+
+    def query_metrics_in_window(
+        self, *, service_name: str, window: ObservationWindow
+    ) -> Sequence[EvidenceObservation]:
+        self._validate_target(service_name)
+        minutes = window.telemetry_minutes()
+        window.require_elapsed(datetime.fromtimestamp(self._clock(), UTC))
+        return self._query_metrics(
+            service_name=service_name,
+            lookback_minutes=minutes,
+            start=int(window.window_start.timestamp()),
+            end=int(window.window_end.timestamp()),
+            window=window,
+        )
+
+    def _query_metrics(
+        self,
+        *,
+        service_name: str,
+        lookback_minutes: int,
+        start: int,
+        end: int,
+        window: ObservationWindow | None = None,
+    ) -> Sequence[EvidenceObservation]:
         step = max(2, math.ceil((end - start) / (MAX_SAMPLES_PER_SERIES - 1)))
 
         with httpx2.Client(
@@ -179,7 +207,7 @@ class PrometheusOnlyInvestigationDataSource:
                 path="/api/v1/query",
                 params={"query": PROMETHEUS_UP_QUERY, "time": end},
             )
-            self._validate_up(up_payload, expected_time=end)
+            self._validate_up(up_payload, expected_time=end, strict_bounds=window is not None)
             metrics_payload = self._get(
                 client,
                 path="/api/v1/query_range",
@@ -195,21 +223,29 @@ class PrometheusOnlyInvestigationDataSource:
             metrics_payload,
             start=start,
             end=end,
+            strict_bounds=window is not None,
         )
         attributes = self._build_attributes(
             windows,
             service_name=service_name,
             lookback_minutes=lookback_minutes,
         )
+        if window is not None:
+            attributes.update(
+                window_start=window.window_start.isoformat(),
+                window_end=window.window_end.isoformat(),
+                observation_semantics="range_query_aggregation",
+            )
         observed_at = datetime.fromtimestamp(end, UTC)
         evidence_id = self._build_evidence_id(observed_at=observed_at, attributes=attributes)
+        period = "查询窗口" if window is not None else "最近"
         return (
             EvidenceObservation(
                 evidence_id=evidence_id,
                 kind=EvidenceKind.METRIC,
                 source="prometheus-fault-lab",
                 summary=(
-                    f"Prometheus 最近 {lookback_minutes} 分钟指标：5xx 比例最新 "
+                    f"Prometheus {period} {lookback_minutes} 分钟指标：5xx 比例最新 "
                     f"{windows['http_5xx_ratio'].latest:.3f}，数据库连接池饱和度最新 "
                     f"{windows['database_pool_saturation'].latest:.3f}，"
                     f"Redis 不可用比例最新 {windows['redis_unavailable_ratio'].latest:.3f}。"
@@ -281,7 +317,7 @@ class PrometheusOnlyInvestigationDataSource:
             ) from error
 
     @staticmethod
-    def _validate_up(payload: object, *, expected_time: int) -> None:
+    def _validate_up(payload: object, *, expected_time: int, strict_bounds: bool = False) -> None:
         try:
             response = _PrometheusVectorResponse.model_validate(payload)
         except (ValueError, TypeError) as error:
@@ -304,7 +340,8 @@ class PrometheusOnlyInvestigationDataSource:
                 error_code="prometheus_invalid_labels",
                 message="Prometheus 抓取健康查询返回了不匹配的标签",
             )
-        if not abs(sample.value[0] - expected_time) <= MAX_FUTURE_CLOCK_SKEW_SECONDS:
+        tolerance = 0.0 if strict_bounds else MAX_FUTURE_CLOCK_SKEW_SECONDS
+        if not abs(sample.value[0] - expected_time) <= tolerance:
             raise InvestigationDataSourceFailure(
                 error_code="prometheus_invalid_timestamp",
                 message="Prometheus 抓取健康查询返回了异常时间",
@@ -319,7 +356,7 @@ class PrometheusOnlyInvestigationDataSource:
         if value != 1:
             raise InvestigationDataSourceFailure(
                 error_code="prometheus_target_unhealthy",
-                message="Prometheus 当前无法抓取订单服务指标",
+                message="Prometheus 在查询时刻无法抓取订单服务指标",
             )
 
     @classmethod
@@ -329,6 +366,7 @@ class PrometheusOnlyInvestigationDataSource:
         *,
         start: int,
         end: int,
+        strict_bounds: bool = False,
     ) -> dict[str, _MetricWindow]:
         try:
             response = _PrometheusMatrixResponse.model_validate(payload)
@@ -364,7 +402,9 @@ class PrometheusOnlyInvestigationDataSource:
                     error_code="prometheus_incomplete_metrics",
                     message="Prometheus 返回了重复的白名单指标",
                 )
-            windows[signal] = cls._validate_values(series.values, start=start, end=end)
+            windows[signal] = cls._validate_values(
+                series.values, start=start, end=end, strict_bounds=strict_bounds
+            )
 
         if set(windows) != set(PROMETHEUS_METRIC_NAMES):
             raise InvestigationDataSourceFailure(
@@ -379,6 +419,7 @@ class PrometheusOnlyInvestigationDataSource:
         *,
         start: int,
         end: int,
+        strict_bounds: bool = False,
     ) -> _MetricWindow:
         if not values or len(values) > MAX_SAMPLES_PER_SERIES:
             raise InvestigationDataSourceFailure(
@@ -388,7 +429,8 @@ class PrometheusOnlyInvestigationDataSource:
         parsed: list[float] = []
         previous_timestamp: float | None = None
         for timestamp, raw_value in values:
-            if not start <= timestamp <= end + MAX_FUTURE_CLOCK_SKEW_SECONDS or (
+            tolerance = 0.0 if strict_bounds else MAX_FUTURE_CLOCK_SKEW_SECONDS
+            if not start <= timestamp <= end + tolerance or (
                 previous_timestamp is not None and timestamp <= previous_timestamp
             ):
                 raise InvestigationDataSourceFailure(

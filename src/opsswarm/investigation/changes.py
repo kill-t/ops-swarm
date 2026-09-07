@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlsplit
-from uuid import UUID
 
 import httpx2
 from pydantic import Field, JsonValue, ValidationError, field_validator
@@ -23,16 +22,19 @@ from opsswarm.change_records.models import (
     DeploymentArtifactReference,
     DeploymentChange,
 )
+from opsswarm.change_records.window_models import ChangeRecordWindowResponse
 from opsswarm.fault_lab.runtime_metadata import (
     RuntimeArtifactInstance,
     RuntimeInventoryResponse,
     RuntimeInventoryUnavailableResponse,
 )
+from opsswarm.investigation.change_validation import validate_change_records
 from opsswarm.investigation.errors import (
     InvestigationDataSourceFailure,
     UnsupportedInvestigationTarget,
 )
 from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
+from opsswarm.observation_window import ObservationWindow
 
 DEFAULT_CHANGE_BASE_URL = "http://127.0.0.1:18002"
 DEFAULT_RUNTIME_BASE_URL = "http://127.0.0.1:18001"
@@ -181,36 +183,12 @@ class ChangeApiOnlyInvestigationDataSource:
                 message="变更调查查询返回了不符合契约的响应",
             ) from error
         self._validate_response_time(response, request_time=request_time)
-        if response.truncated:
-            raise InvestigationDataSourceFailure(
-                error_code="change_result_truncated",
-                message="变更调查结果已截断，不能据此形成完整时间线",
-            )
-
-        earliest = response.generated_at - timedelta(hours=lookback_hours)
-        record_ids: set[UUID] = set()
-        external_ids: set[tuple[str, str]] = set()
-        for record in response.items:
-            external_identity = (record.source, record.change.external_change_id)
-            if record.record_id in record_ids or external_identity in external_ids:
-                raise InvestigationDataSourceFailure(
-                    error_code="change_duplicate_record",
-                    message="变更调查响应包含重复记录",
-                )
-            record_ids.add(record.record_id)
-            external_ids.add(external_identity)
-            if not earliest <= record.occurred_at <= response.generated_at:
-                raise InvestigationDataSourceFailure(
-                    error_code="change_invalid_timestamp",
-                    message="变更记录发生时间不在请求窗口内",
-                )
-            if record.recorded_at > response.generated_at + timedelta(
-                seconds=MAX_FUTURE_CLOCK_SKEW_SECONDS
-            ):
-                raise InvestigationDataSourceFailure(
-                    error_code="change_invalid_timestamp",
-                    message="变更记录入库时间晚于查询生成时间",
-                )
+        validate_change_records(
+            response,
+            window_start=response.generated_at - timedelta(hours=lookback_hours),
+            window_end=response.generated_at,
+            recorded_until=response.generated_at + timedelta(seconds=MAX_FUTURE_CLOCK_SKEW_SECONDS),
+        )
 
         deployment_records = tuple(
             record for record in response.items if isinstance(record.change, DeploymentChange)
@@ -252,7 +230,66 @@ class ChangeApiOnlyInvestigationDataSource:
         )
         return tuple(sorted(observations, key=lambda item: (item.observed_at, item.evidence_id)))
 
-    def _get_changes(self, *, params: dict[str, str | int]) -> bytes:
+    def list_changes_in_window(
+        self, *, service_name: str, window: ObservationWindow
+    ) -> Sequence[EvidenceObservation]:
+        """只读取截止当时已知的历史事实，不用当前实例状态解释过去。"""
+
+        self._validate_target(service_name)
+        request_time = datetime.fromtimestamp(self._clock(), UTC)
+        window.require_elapsed(request_time)
+        payload = self._get_changes(
+            path="/api/v1/changes/window",
+            params={"service_name": service_name, **window.model_dump(mode="json")},
+        )
+        try:
+            response = ChangeRecordWindowResponse.model_validate_json(payload)
+        except ValueError as error:
+            raise InvestigationDataSourceFailure(
+                error_code="change_invalid_response", message="历史变更响应不符合窗口契约"
+            ) from error
+        if response.window != window:
+            raise InvestigationDataSourceFailure(
+                error_code="change_window_mismatch", message="变更服务返回了不同的查询窗口"
+            )
+        self._validate_response_time(response, request_time=request_time)
+        validate_change_records(
+            response,
+            window_start=window.window_start,
+            window_end=window.window_end,
+            recorded_until=window.window_end,
+        )
+        observations = []
+        for record in response.items:
+            item = self._to_evidence(
+                record,
+                runtime_inventory=None,
+                previous_artifact=None,
+                is_current_deployment=False,
+            )
+            observations.append(
+                item.model_copy(
+                    update={
+                        "attributes": {
+                            **item.attributes,
+                            "service_name": service_name,
+                            "window_start": window.window_start.isoformat(),
+                            "window_end": window.window_end.isoformat(),
+                            "recorded_at": record.recorded_at.isoformat(),
+                            "response_generated_at": response.generated_at.isoformat(),
+                            "observation_semantics": "historical_change_recorded_by_window_end",
+                        }
+                    }
+                )
+            )
+        return tuple(sorted(observations, key=lambda item: (item.observed_at, item.evidence_id)))
+
+    def _get_changes(
+        self,
+        *,
+        params: dict[str, str | int],
+        path: Literal["/api/v1/changes", "/api/v1/changes/window"] = "/api/v1/changes",
+    ) -> bytes:
         try:
             with httpx2.Client(
                 base_url=self._settings.change_base_url,
@@ -260,7 +297,7 @@ class ChangeApiOnlyInvestigationDataSource:
                 transport=self._transport,
                 trust_env=False,
             ) as client:
-                response = client.get("/api/v1/changes", params=params)
+                response = client.get(path, params=params)
         except httpx2.TimeoutException as error:
             raise InvestigationDataSourceFailure(
                 error_code="change_query_timeout",
