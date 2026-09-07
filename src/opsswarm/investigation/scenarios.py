@@ -1,6 +1,5 @@
 """可重复的单 Agent 离线调查场景。"""
 
-import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Self
@@ -9,6 +8,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from opsswarm.investigation.errors import UnsupportedInvestigationTarget
+from opsswarm.investigation.frozen_identity import frozen_snapshot_id, legacy_snapshot_ids
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -51,7 +51,11 @@ class FrozenScenarioDataSource:
     def snapshot_id(self) -> str:
         """内容变化会改变身份，禁止在原任务中混用另一版冻结材料。"""
 
-        return "frozen:" + hashlib.sha256(self._scenario.model_dump_json().encode()).hexdigest()
+        return frozen_snapshot_id(self._scenario)
+
+    @property
+    def legacy_snapshot_ids(self) -> frozenset[str]:
+        return legacy_snapshot_ids(self.snapshot_id)
 
     @property
     def snapshot_time(self) -> datetime:

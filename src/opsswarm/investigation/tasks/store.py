@@ -96,6 +96,13 @@ class InvestigationTaskStore:
             if existing is not None:
                 if existing.content_hash != digest or existing.specification != specification:
                     raise TaskFactConflict("round_content_conflict", "该轮次已绑定另一份分派")
+                tasks = await session.scalars(
+                    select(AgentTaskRow).where(AgentTaskRow.round_id == existing.id)
+                )
+                if {
+                    task.task_key: TaskAssignment.model_validate(task.assignment) for task in tasks
+                } != {task.task_key: task for task in normalized.tasks}:
+                    raise TaskFactConflict("round_task_conflict", "任务事实与已保存分派不一致")
                 return existing.id, False
             if assignment.round_number != len(previous) + 1 or (
                 previous and previous[-1].status == "running"

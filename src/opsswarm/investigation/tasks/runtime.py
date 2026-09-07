@@ -41,6 +41,7 @@ class FixedTaskRuntime:
         snapshot_id: str,
         snapshot_time: datetime,
         data_source_mode: Literal["frozen", "live"] = "frozen",
+        legacy_snapshot_ids: frozenset[str] = frozenset(),
         call_runner: BudgetedCallRunner | None = None,
         model_input_budget: bool = False,
         evidence_store: TaskEvidenceStore | None = None,
@@ -48,6 +49,9 @@ class FixedTaskRuntime:
         self.run_id = run_id
         self.snapshot_id = snapshot_id
         self.data_source_mode = data_source_mode
+        self._legacy_snapshot_ids = (
+            legacy_snapshot_ids if data_source_mode == "frozen" else frozenset()
+        )
         self._snapshot_time = snapshot_time
         self._lease_token = lease_token
         self._store = store
@@ -60,6 +64,15 @@ class FixedTaskRuntime:
         )
 
     async def prepare(self, request: InvestigationRequest) -> None:
+        await self.require_active()
+        if self._legacy_snapshot_ids:
+            existing = await self._queries.get_snapshot(self.run_id)
+            ids = {t.assignment.evidence_snapshot_id for r in existing.rounds for t in r.tasks}
+            if len(ids) == 1:
+                saved_id = next(iter(ids))
+                if saved_id is not None and saved_id in self._legacy_snapshot_ids:
+                    # 只沿用已经持久化的身份，完整分派仍由 create_round 在租约事务中核对。
+                    self.snapshot_id = saved_id
         await self._store.create_round(
             self.run_id,
             lease_token=self._lease_token,

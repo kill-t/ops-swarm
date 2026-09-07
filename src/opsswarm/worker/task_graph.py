@@ -137,6 +137,9 @@ class TaskGraphFactory:
                 snapshot_id=snapshot_id,
                 snapshot_time=snapshot_time,
                 data_source_mode=context.data_source_mode.value,
+                legacy_snapshot_ids=self._source.legacy_snapshot_ids
+                if isinstance(self._source, FrozenScenarioDataSource)
+                else frozenset(),
                 call_runner=runner,
                 model_input_budget=context.model_budget is not None,
                 evidence_store=self._evidence_store

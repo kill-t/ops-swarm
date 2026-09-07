@@ -16,6 +16,8 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 73 步接入 [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)：创建时固定 UTC 截止时间，日志、指标回看 15 分钟，历史变更回看 6 小时；并行查询经过共享预算，模型失败和 Worker 重启后复用同任务已提交材料。现场证据严格校验来源与范围，验证见 [第 73 步记录](docs/progress/73-live-task-evidence.md)。当前使用直接只读适配器，MCP 按后续阶段替换日志和指标入口。
 
+第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
+
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
@@ -120,6 +122,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [模型调用前的专业取证快照与恢复复用](docs/architecture/71-task-evidence-snapshot.md)
 - [现场来源的显式观测窗口](docs/architecture/72-explicit-observation-windows.md)
 - [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)
+- [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线
