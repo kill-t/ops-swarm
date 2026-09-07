@@ -101,7 +101,7 @@ async def test_versioned_start_and_invalid_routes_are_explicit(
     ):
         for overrides in (
             {"mode": "single_agent"},
-            {"data_source_mode": "live"},
+            {"observation_cutoff_at": "2026-09-07T00:00:00Z"},
             {"workflow_version": "v9"},
             {"evidence_policy_version": "task-evidence-v1"},
         ):

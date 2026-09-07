@@ -51,14 +51,15 @@ class CollaborationQueries:
 
     async def get_evidence(self, run_id: UUID, task_id: UUID) -> TaskEvidenceRecord | None:
         async with self._session_factory() as session:
-            if await session.get(InvestigationRunRow, run_id) is None:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
                 raise InvestigationRunNotFound(run_id)
             task = await session.get(AgentTaskRow, task_id)
             if task is None or task.investigation_run_id != run_id:
                 raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
             row = await session.get(AgentTaskEvidenceRow, task_id)
             return (
-                validated_record(row, TaskAssignment.model_validate(task.assignment))
+                validated_record(row, TaskAssignment.model_validate(task.assignment), run)
                 if row
                 else None
             )

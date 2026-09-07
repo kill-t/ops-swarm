@@ -10,7 +10,11 @@ from opsswarm.incidents import ActorType, AlertSubmission, IncidentActor, Incide
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
-from opsswarm.investigation.models import EvidenceKind, InvestigationMode
+from opsswarm.investigation.models import (
+    EvidenceKind,
+    InvestigationDataSourceMode,
+    InvestigationMode,
+)
 from opsswarm.investigation.persistence import (
     ClaimedInvestigation,
     InvestigationStore,
@@ -34,17 +38,20 @@ async def claimed_run(
     factory: async_sessionmaker[AsyncSession],
     *,
     workflow_version: WorkflowVersion = WorkflowVersion.V1,
+    data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
 ) -> tuple[InvestigationStore, ClaimedInvestigation]:
     store, _ = await started_run(
         factory,
         workflow_version=workflow_version,
+        data_source_mode=data_source_mode,
         call_budget=call_budget,
         model_budget=model_budget,
     )
     claim = await store.claim_next(
         worker_id=str(uuid4()),
+        data_source_mode=data_source_mode,
         occurred_at=BASE_TIME + timedelta(seconds=2),
         lease_duration=timedelta(seconds=30),
     )
@@ -56,6 +63,7 @@ async def started_run(
     factory: async_sessionmaker[AsyncSession],
     *,
     workflow_version: WorkflowVersion = WorkflowVersion.V1,
+    data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     max_attempts: int = 3,
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
@@ -83,6 +91,7 @@ async def started_run(
         reason="创建任务事实测试运行",
         mode=InvestigationMode.MULTI_AGENT,
         workflow_version=workflow_version,
+        data_source_mode=data_source_mode,
         max_attempts=max_attempts,
         call_budget=call_budget,
         model_budget=model_budget,

@@ -15,8 +15,5 @@ def validate_workflow_route(
     mode: InvestigationMode,
     data_source_mode: InvestigationDataSourceMode,
 ) -> None:
-    if version is WorkflowVersion.V2 and (
-        mode is not InvestigationMode.MULTI_AGENT
-        or data_source_mode is not InvestigationDataSourceMode.FROZEN
-    ):
-        raise ValueError("v2 当前只支持冻结场景的多 Agent 调查")
+    if version is WorkflowVersion.V2 and mode is not InvestigationMode.MULTI_AGENT:
+        raise ValueError("v2 当前只支持多 Agent 调查")

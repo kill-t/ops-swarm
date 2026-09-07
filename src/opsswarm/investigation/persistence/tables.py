@@ -37,8 +37,22 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
-            "evidence_policy_version IS NULL OR (evidence_policy_version = 'task-evidence-v1' "
-            "AND workflow_version = 'v2' AND call_budget IS NOT NULL)",
+            "(workflow_version = 'v2' AND data_source_mode = 'live' AND "
+            "observation_cutoff_at IS NOT NULL AND evidence_policy_version IS NOT NULL AND "
+            "evidence_policy_version = 'task-evidence-live-v1' AND "
+            "observation_cutoff_at = date_trunc('second', observation_cutoff_at) AND "
+            "observation_cutoff_at <= created_at AND "
+            "observation_cutoff_at >= TIMESTAMPTZ '1970-01-01 06:00:00+00') OR "
+            "((workflow_version <> 'v2' OR data_source_mode <> 'live') AND "
+            "observation_cutoff_at IS NULL)",
+            name="ck_investigation_runs_observation_cutoff",
+        ),
+        CheckConstraint(
+            "evidence_policy_version IS NULL OR (workflow_version = 'v2' "
+            "AND call_budget IS NOT NULL AND ((evidence_policy_version = 'task-evidence-v1' "
+            "AND data_source_mode = 'frozen') OR "
+            "(evidence_policy_version = 'task-evidence-live-v1' "
+            "AND data_source_mode = 'live')))",
             name="ck_investigation_runs_evidence_policy",
         ),
         CheckConstraint(
@@ -53,7 +67,7 @@ class InvestigationRunRow(Base):
         ),
         CheckConstraint(
             "workflow_version IN ('v1', 'v2') AND "
-            "(workflow_version = 'v1' OR (mode = 'multi_agent' AND data_source_mode = 'frozen'))",
+            "(workflow_version = 'v1' OR mode = 'multi_agent')",
             name="ck_investigation_runs_workflow_version",
         ),
         CheckConstraint(
@@ -134,6 +148,7 @@ class InvestigationRunRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     evidence_policy_version: Mapped[str | None] = mapped_column(String(32))
+    observation_cutoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     call_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     workflow_version: Mapped[str] = mapped_column(String(16), nullable=False, server_default="v1")

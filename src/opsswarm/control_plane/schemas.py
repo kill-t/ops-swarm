@@ -225,6 +225,7 @@ class InvestigationRunResponse(StrictApiModel):
     model_budget: ModelBudgetPolicy | None = None
     graph_thread_id: str | None
     evidence_policy_version: EvidencePolicyVersion | None = None
+    observation_cutoff_at: datetime | None = None
     model_name: str | None
     result: InvestigationRunResult | None
     metrics: InvestigationMetrics | None

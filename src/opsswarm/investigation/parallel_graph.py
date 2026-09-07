@@ -22,6 +22,7 @@ from opsswarm.investigation.errors import (
     UnverifiedEvidenceReference,
 )
 from opsswarm.investigation.graph_thread import build_graph_thread_id, normalize_graph_thread_id
+from opsswarm.investigation.live_window import WindowBoundLiveDataSource
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -106,8 +107,14 @@ class LangGraphParallelInvestigator:
         self._data_source: AsyncInvestigationDataSource = ThreadedInvestigationDataSource(
             data_source, query_executor
         )
-        if task_runtime is not None and not isinstance(data_source, FrozenScenarioDataSource):
-            raise ValueError("v2 固定图当前只允许冻结数据源")
+        if task_runtime is not None:
+            expected = (
+                FrozenScenarioDataSource
+                if task_runtime.data_source_mode == "frozen"
+                else WindowBoundLiveDataSource
+            )
+            if not isinstance(data_source, expected):
+                raise ValueError("v2 固定图数据源与任务模式不一致")
         self._task_runtime = task_runtime
         self._workflow_version = "v2" if task_runtime is not None else "v1"
         self._analyst = analyst
@@ -289,6 +296,7 @@ class LangGraphParallelInvestigator:
             update = await self._collect(kind, state)
             return SpecialistTaskResult(
                 evidence_snapshot_id=runtime.snapshot_id,
+                data_source_mode=runtime.data_source_mode,
                 evidence=tuple(update["evidence"]),
                 report=update["reports"][0],
             )

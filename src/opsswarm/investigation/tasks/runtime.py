@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from contextlib import nullcontext
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from opsswarm.investigation.budget.contracts import CallOperation
@@ -39,12 +40,14 @@ class FixedTaskRuntime:
         queries: CollaborationQueries,
         snapshot_id: str,
         snapshot_time: datetime,
+        data_source_mode: Literal["frozen", "live"] = "frozen",
         call_runner: BudgetedCallRunner | None = None,
         model_input_budget: bool = False,
         evidence_store: TaskEvidenceStore | None = None,
     ) -> None:
         self.run_id = run_id
         self.snapshot_id = snapshot_id
+        self.data_source_mode = data_source_mode
         self._snapshot_time = snapshot_time
         self._lease_token = lease_token
         self._store = store
@@ -62,7 +65,9 @@ class FixedTaskRuntime:
             lease_token=self._lease_token,
             assignment=RoundAssignment(
                 round_number=1,
-                goal="完成三类冻结证据的固定并行调查",
+                goal="完成三类冻结证据的固定并行调查"
+                if self.data_source_mode == "frozen"
+                else "完成固定观测窗口内的三类现场证据调查",
                 tasks=tuple(
                     TaskAssignment(
                         task_key=role.value,

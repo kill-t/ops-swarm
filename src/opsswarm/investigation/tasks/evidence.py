@@ -12,12 +12,16 @@ from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
 from opsswarm.investigation.tasks.contracts import TaskAssignment, TaskModel
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
-EvidencePolicyVersion = Literal["task-evidence-v1"]
+EvidencePolicyVersion = Literal["task-evidence-v1", "task-evidence-live-v1"]
+
+
+def live_snapshot_id(run_id: UUID, cutoff: datetime) -> str:
+    return f"live-v1:{run_id}:{cutoff.astimezone(UTC).isoformat()}"
 
 
 class TaskEvidenceSnapshot(TaskModel):
     version: EvidencePolicyVersion = "task-evidence-v1"
-    data_source_mode: Literal["frozen"] = "frozen"
+    data_source_mode: Literal["frozen", "live"] = "frozen"
     evidence_snapshot_id: str = Field(min_length=1, max_length=100)
     role: EvidenceKind
     service_name: str = Field(min_length=1, max_length=100)
@@ -32,6 +36,8 @@ class TaskEvidenceSnapshot(TaskModel):
 
     @model_validator(mode="after")
     def validate_material(self) -> Self:
+        if (self.version == "task-evidence-live-v1") != (self.data_source_mode == "live"):
+            raise ValueError("取证策略与数据来源模式不一致")
         if not timedelta(0) < self.window_end - self.window_start <= timedelta(days=1):
             raise ValueError("取证时间窗必须为正且不超过一天")
         if len({e.evidence_id for e in self.evidence}) != len(self.evidence):
@@ -43,6 +49,20 @@ class TaskEvidenceSnapshot(TaskModel):
             for e in self.evidence
         ):
             raise ValueError("证据角色、时间窗或来源不符合取证范围")
+        if self.data_source_mode == "live":
+            expected_source = {
+                EvidenceKind.LOG: "loki-fault-lab",
+                EvidenceKind.METRIC: "prometheus-fault-lab",
+                EvidenceKind.CHANGE: "change-simulator",
+            }[self.role]
+            if any(
+                e.source != expected_source
+                or e.attributes.get("service_name") != self.service_name
+                or e.attributes.get("window_start") != self.window_start.isoformat()
+                or e.attributes.get("window_end") != self.window_end.isoformat()
+                for e in self.evidence
+            ):
+                raise ValueError("现场材料缺少匹配的来源、服务或窗口信息")
         if len(_canonical(self)) > 131072:
             raise ValueError("取证快照不能超过 128 KiB")
         return self

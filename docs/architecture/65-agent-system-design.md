@@ -1,8 +1,8 @@
 # OpsSwarm Agent 系统最终设计：轻量 Harness、分层记忆与受控工具
 
-第 72 步增加 [现场来源显式观测窗口](72-explicit-observation-windows.md)，区分历史变更与当前运行清单；来源侧查询可复用固定时间参数，不代表上游材料不可变，也不代表现场 v2 已接入。
+第 72 步增加 [现场来源显式观测窗口](72-explicit-observation-windows.md)，区分历史变更与当前运行清单；来源侧查询可复用固定时间参数，固定参数不代表上游材料不可变。第 73 步完成 [现场 v2 持久任务取证](73-live-task-evidence.md)，运行固定窗口及来源策略，异步查询后保存不可变材料，并在重启后复用。
 
-后续第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)，供现有多 Agent Worker 桥接同步来源；第 71 步加入 [模型调用前的取证快照](71-task-evidence-snapshot.md)，固定新运行策略并复用同任务已提交材料。现场 v2、ContextBuilder、动态工具循环和 MCP 仍待开发。以下目标设计与历史现状快照继续保留原有含义，实际状态见进度索引。
+后续第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)，供现有多 Agent Worker 桥接同步来源；第 71 步加入 [模型调用前的取证快照](71-task-evidence-snapshot.md)，固定新运行策略并复用同任务已提交材料。现场 v2 的本地直接适配器路径由第 73 步接入；ContextBuilder、动态工具循环和 MCP 仍待开发，GitHub 历史窗口及独立当前运行材料尚未加入 v2。以下目标设计与历史现状快照继续保留原有含义，实际状态见进度索引。
 
 ## 1. 决策状态与项目目标
 

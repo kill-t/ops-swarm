@@ -25,7 +25,15 @@ def material():
 
 
 @pytest.mark.parametrize(
-    "case", ["duplicate", "wrong_role", "unknown_reference", "missing_source", "live", "oversized"]
+    "case",
+    [
+        "duplicate",
+        "wrong_role",
+        "unknown_reference",
+        "missing_source",
+        "unknown_source",
+        "oversized",
+    ],
 )
 def test_invalid_specialist_material_is_rejected(case):
     value = material()
@@ -37,8 +45,8 @@ def test_invalid_specialist_material_is_rejected(case):
         value["report"]["evidence_ids"] = ["imagined-evidence"]
     elif case == "missing_source":
         value["evidence"][0]["source"] = ""
-    elif case == "live":
-        value["data_source_mode"] = "live"
+    elif case == "unknown_source":
+        value["data_source_mode"] = "unknown"
     else:
         base = value["evidence"][0]
         value["evidence"] = [
@@ -50,9 +58,7 @@ def test_invalid_specialist_material_is_rejected(case):
         SpecialistTaskResult.model_validate(value)
 
 
-@pytest.mark.parametrize(
-    "mode,source", [("single_agent", "frozen"), ("single_agent", "live"), ("multi_agent", "live")]
-)
+@pytest.mark.parametrize("mode,source", [("single_agent", "frozen"), ("single_agent", "live")])
 def test_v2_rejects_unsupported_routes(mode, source):
     with pytest.raises(ValidationError, match="v2 当前只支持"):
         StartInvestigationRequest(
@@ -65,12 +71,13 @@ def test_v2_rejects_unsupported_routes(mode, source):
         )
 
 
-def test_default_v1_and_explicit_v2_are_compatible():
+@pytest.mark.parametrize("source", ["frozen", "live"])
+def test_default_v1_and_explicit_v2_are_compatible(source):
     fields = {"expected_version": 1, "actor_id": "engineer", "reason": "测试入口"}
     assert StartInvestigationRequest(**fields).workflow_version == "v1"
     assert (
         StartInvestigationRequest(
-            **fields, mode="multi_agent", workflow_version="v2"
+            **fields, mode="multi_agent", data_source_mode=source, workflow_version="v2"
         ).workflow_version
         == "v2"
     )

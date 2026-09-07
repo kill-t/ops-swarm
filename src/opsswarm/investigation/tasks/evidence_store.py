@@ -1,23 +1,26 @@
 """在有效任务尝试下保存和复用已成功取证的不可变材料。"""
 
 from collections.abc import Callable, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.investigation.budget.tables import CallReservationRow
-from opsswarm.investigation.models import EvidenceObservation
+from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.evidence import (
+    EvidencePolicyVersion,
     TaskEvidenceRecord,
     TaskEvidenceSnapshot,
     evidence_hash,
+    live_snapshot_id,
     require_matching_assignment,
 )
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
@@ -51,7 +54,7 @@ class TaskEvidenceStore:
         ) as (session, parent, _, run, _):
             assignment = await _current_assignment(session, run, parent.id, task_id, attempt_id)
             row = await session.get(AgentTaskEvidenceRow, task_id)
-            return validated_record(row, assignment) if row else None
+            return validated_record(row, assignment, run) if row else None
 
     async def save(
         self,
@@ -68,6 +71,8 @@ class TaskEvidenceStore:
             assignment = await _current_assignment(session, run, parent.id, task_id, attempt_id)
             assert assignment.evidence_snapshot_id is not None
             snapshot = TaskEvidenceSnapshot(
+                version=cast(EvidencePolicyVersion, run.evidence_policy_version),
+                data_source_mode="live" if run.data_source_mode == "live" else "frozen",
                 evidence_snapshot_id=assignment.evidence_snapshot_id,
                 role=assignment.role,
                 service_name=assignment.service_name,
@@ -77,7 +82,7 @@ class TaskEvidenceStore:
             )
             row = await session.get(AgentTaskEvidenceRow, task_id)
             if row is not None:
-                record = validated_record(row, assignment)
+                record = validated_record(row, assignment, run)
                 if record.snapshot != snapshot:
                     raise TaskFactConflict("task_evidence_conflict", "不能覆盖已提交的取证快照")
                 return record
@@ -115,7 +120,7 @@ class TaskEvidenceStore:
                 session, run_id, task_id=task_id, event_type="task.evidence_saved", occurred_at=now
             )
             await session.flush()
-            return validated_record(row, assignment)
+            return validated_record(row, assignment, run)
 
 
 async def _current_assignment(
@@ -125,7 +130,10 @@ async def _current_assignment(
     task_id: UUID,
     attempt_id: UUID,
 ) -> TaskAssignment:
-    if run.evidence_policy_version != "task-evidence-v1" or run.data_source_mode != "frozen":
+    if (run.evidence_policy_version, run.data_source_mode) not in (
+        ("task-evidence-v1", "frozen"),
+        ("task-evidence-live-v1", "live"),
+    ):
         raise TaskFactConflict("task_evidence_policy_mismatch", "运行未启用受支持的取证策略")
     task = await session.get(AgentTaskRow, task_id)
     attempt = await session.get(AgentTaskAttemptRow, attempt_id)
@@ -144,14 +152,40 @@ async def _current_assignment(
     assignment = TaskAssignment.model_validate(task.assignment)
     if assignment.evidence_snapshot_id is None:
         raise TaskFactConflict("task_evidence_scope_missing", "任务没有固定证据范围")
+    require_run_assignment(run, assignment)
     return assignment
 
 
-def validated_record(row: AgentTaskEvidenceRow, assignment: TaskAssignment) -> TaskEvidenceRecord:
+def require_run_assignment(run: InvestigationRunRow, assignment: TaskAssignment) -> None:
+    if run.data_source_mode != "live":
+        return
+    cutoff = run.observation_cutoff_at
+    duration = (
+        timedelta(hours=6) if assignment.role is EvidenceKind.CHANGE else timedelta(minutes=15)
+    )
+    if (
+        run.evidence_policy_version != "task-evidence-live-v1"
+        or cutoff is None
+        or assignment.window_end != cutoff
+        or assignment.window_start != cutoff - duration
+        or assignment.evidence_snapshot_id != live_snapshot_id(run.id, cutoff)
+    ):
+        raise TaskFactConflict("task_evidence_scope_mismatch", "现场任务与运行固定窗口不一致")
+
+
+def validated_record(
+    row: AgentTaskEvidenceRow, assignment: TaskAssignment, run: InvestigationRunRow
+) -> TaskEvidenceRecord:
     try:
         record = TaskEvidenceRecord.model_validate(row, from_attributes=True)
     except ValueError:
         raise TaskFactConflict("task_evidence_corrupt", "取证快照内容完整性校验失败") from None
+    require_run_assignment(run, assignment)
+    if (
+        record.snapshot.version != run.evidence_policy_version
+        or record.snapshot.data_source_mode != run.data_source_mode
+    ):
+        raise TaskFactConflict("task_evidence_policy_mismatch", "快照与运行取证策略不一致")
     require_matching_assignment(record.snapshot, assignment)
     return record
 
@@ -165,7 +199,7 @@ async def require_result_evidence(
     row = await session.get(AgentTaskEvidenceRow, task.id)
     if row is None:
         raise TaskFactConflict("task_evidence_required", "专业结果缺少已提交的取证快照")
-    record = validated_record(row, TaskAssignment.model_validate(task.assignment))
+    record = validated_record(row, TaskAssignment.model_validate(task.assignment), run)
     if (
         record.snapshot.evidence_snapshot_id != result.evidence_snapshot_id
         or record.snapshot.data_source_mode != result.data_source_mode

@@ -50,6 +50,7 @@ class StoredInvestigationRun(StrictModel):
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
+    observation_cutoff_at: datetime | None = None
     graph_thread_id: str | None
     model_name: str | None
     result: InvestigationRunResult | None

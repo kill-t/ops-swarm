@@ -1,6 +1,7 @@
 """组合受限适配器的真实现场调查数据源。"""
 
 from collections.abc import Sequence
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Self, cast
 
@@ -12,6 +13,7 @@ from opsswarm.investigation.github_changes import (
     GitHubChangeSettings,
     GitHubEnrichedChangeDataSource,
 )
+from opsswarm.investigation.live_window import UnsupportedLiveTaskSource, WindowBoundLiveDataSource
 from opsswarm.investigation.loki import LokiOnlyInvestigationDataSource
 from opsswarm.investigation.models import EvidenceObservation
 from opsswarm.investigation.prometheus import PrometheusOnlyInvestigationDataSource
@@ -53,6 +55,21 @@ class LiveInvestigationDataSource:
         self._logs = logs if logs is not None else LokiOnlyInvestigationDataSource()
         self._metrics = metrics if metrics is not None else PrometheusOnlyInvestigationDataSource()
         self._changes = changes if changes is not None else ChangeApiOnlyInvestigationDataSource()
+
+    def bind_window(self, *, service_name: str, cutoff: datetime) -> WindowBoundLiveDataSource:
+        if not (
+            isinstance(self._logs, LokiOnlyInvestigationDataSource)
+            and isinstance(self._metrics, PrometheusOnlyInvestigationDataSource)
+            and isinstance(self._changes, ChangeApiOnlyInvestigationDataSource)
+        ):
+            raise UnsupportedLiveTaskSource("现场 v2 仅支持 Loki、Prometheus 和本地历史变更源")
+        return WindowBoundLiveDataSource(
+            logs=self._logs,
+            metrics=self._metrics,
+            changes=self._changes,
+            service_name=service_name,
+            cutoff=cutoff,
+        )
 
     def query_logs(
         self,

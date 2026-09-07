@@ -13,6 +13,9 @@ from opsswarm.investigation.budget.model_contracts import ModelProfile
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.budget.store import CallBudgetStore
+from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
+from opsswarm.investigation.models import InvestigationDataSourceMode
 from opsswarm.investigation.parallel_graph import (
     ConclusionSynthesizer,
     LangGraphParallelInvestigator,
@@ -24,6 +27,7 @@ from opsswarm.investigation.parallel_model import (
 )
 from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import FrozenScenarioDataSource
+from opsswarm.investigation.tasks.evidence import live_snapshot_id
 from opsswarm.investigation.tasks.evidence_store import TaskEvidenceStore
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.runtime import FixedTaskRuntime
@@ -63,8 +67,28 @@ class TaskGraphFactory:
     def __call__(self, context: ProcessorContext) -> LangGraphParallelInvestigator:
         if context.investigation_run_id is None or context.lease_token is None:
             raise ValueError("v2 调查需要系统注入运行与租约身份")
-        if not isinstance(self._source, FrozenScenarioDataSource):
-            raise ValueError("v2 固定图只接受冻结场景")
+        source: InvestigationDataSource = self._source
+        if context.data_source_mode is InvestigationDataSourceMode.LIVE:
+            if (
+                not isinstance(self._source, LiveInvestigationDataSource)
+                or context.observation_cutoff_at is None
+                or context.evidence_policy_version != "task-evidence-live-v1"
+                or context.call_budget is None
+            ):
+                raise UnsupportedLiveTaskSource("现场 v2 缺少匹配的来源、窗口或取证预算策略")
+            snapshot_time = context.observation_cutoff_at
+            snapshot_id = live_snapshot_id(context.investigation_run_id, snapshot_time)
+            source = self._source.bind_window(
+                service_name=context.request.service_name, cutoff=snapshot_time
+            )
+        else:
+            if (
+                not isinstance(self._source, FrozenScenarioDataSource)
+                or context.observation_cutoff_at is not None
+                or context.evidence_policy_version not in (None, "task-evidence-v1")
+            ):
+                raise ValueError("冻结 v2 缺少匹配的冻结数据源或取证策略")
+            snapshot_id, snapshot_time = self._source.snapshot_id, self._source.snapshot_time
         runner = (
             BudgetedCallRunner(
                 run_id=context.investigation_run_id,
@@ -99,7 +123,7 @@ class TaskGraphFactory:
                 model_caller=caller,
             )
         return LangGraphParallelInvestigator(
-            data_source=self._source,
+            data_source=source,
             query_executor=self._query_executor,
             analyst=analyst,
             synthesizer=synthesizer,
@@ -110,8 +134,9 @@ class TaskGraphFactory:
                 lease_token=context.lease_token,
                 store=self._store,
                 queries=self._queries,
-                snapshot_id=self._source.snapshot_id,
-                snapshot_time=self._source.snapshot_time,
+                snapshot_id=snapshot_id,
+                snapshot_time=snapshot_time,
+                data_source_mode=context.data_source_mode.value,
                 call_runner=runner,
                 model_input_budget=context.model_budget is not None,
                 evidence_store=self._evidence_store

@@ -17,6 +17,7 @@ from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
+from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
 from opsswarm.investigation.models import (
     EvidenceObservation,
     HypothesisChallenge,
@@ -77,6 +78,7 @@ class ProcessorContext(StrictModel):
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
+    observation_cutoff_at: datetime | None = None
 
 
 class InvestigationProcessor(Protocol):
@@ -187,6 +189,7 @@ class InvestigationWorker:
                             call_budget=claimed.run.call_budget,
                             model_budget=claimed.run.model_budget,
                             evidence_policy_version=claimed.run.evidence_policy_version,
+                            observation_cutoff_at=claimed.run.observation_cutoff_at,
                         )
                     ),
                     timeout=self._processing_timeout.total_seconds(),
@@ -200,7 +203,9 @@ class InvestigationWorker:
                     occurred_at=self._clock(),
                     error=_safe_error(error),
                     retry_delay=self._retry_delay(claimed.work_item.attempt_count),
-                    retryable=not isinstance(error, CallBudgetExceeded),
+                    retryable=not isinstance(
+                        error, (CallBudgetExceeded, UnsupportedLiveTaskSource)
+                    ),
                     usage=usage,
                 )
                 logger.warning(
@@ -269,6 +274,11 @@ class InvestigationWorker:
 def _safe_error(error: Exception) -> WorkItemError:
     """只保存确定性分类，避免异常消息携带密钥或模型输入。"""
 
+    if isinstance(error, UnsupportedLiveTaskSource):
+        return WorkItemError(
+            error_code="unsupported_live_task_source",
+            message="现场 v2 来源、窗口或策略不匹配；需要 Loki、Prometheus 与本地历史变更组合",
+        )
     if isinstance(error, CallBudgetExceeded):
         return WorkItemError(
             error_code=error.code, message="调查预算或固定模型配置阻止继续执行，停止自动重试"

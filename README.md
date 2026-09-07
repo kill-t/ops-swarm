@@ -10,11 +10,13 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 70 步加入 [受限异步取证](docs/architecture/70-bounded-async-evidence.md)：多 Agent Worker 用最多 3 个未完成查询桥接现有同步适配器，取证不再阻塞事件循环。取消或等待超时后，运行中的请求继续占用槽位直至真正结束，迟到材料不能进入专业报告，验证结果见 [第 70 步记录](docs/progress/70-bounded-async-evidence.md)。
 
-第 71 步加入 [模型调用前的专业取证快照](docs/architecture/71-task-evidence-snapshot.md)：新 v2 在模型分析前保存有界证据、任务范围、来源、散列与成功工具引用，模型失败后复用已提交材料。运行由服务端固定 `evidence_policy_version=task-evidence-v1`，历史运行保持原恢复方式。按任务的只读 evidence 接口可在报告形成前查询取证结果，验证见 [第 71 步记录](docs/progress/71-task-evidence-snapshot.md)。现场 v2 尚未开放，来源侧时间窗口由第 72 步继续补齐。
+第 71 步加入 [模型调用前的专业取证快照](docs/architecture/71-task-evidence-snapshot.md)：新冻结 v2 在模型分析前保存有界证据、任务范围、来源、散列与成功工具引用，模型失败后复用已提交材料。运行由服务端固定 `evidence_policy_version=task-evidence-v1`，历史运行保持原恢复方式。按任务的只读 evidence 接口可在报告形成前查询取证结果，验证见 [第 71 步记录](docs/progress/71-task-evidence-snapshot.md)。这是冻结路径的交付记录，现场路径由第 72～73 步补齐。
 
-第 72 步增加 [显式观测窗口](docs/architecture/72-explicit-observation-windows.md)：日志、指标和本地变更适配器可按传入的固定 UTC 范围查询；历史变更按发生时间和记录截止过滤，不请求当前运行清单。原相对查询兼容保留。来源侧能力与验证见 [第 72 步记录](docs/progress/72-explicit-observation-windows.md)，现场 v2 的运行窗口固定、异步装配与快照接入仍待下一片交付。
+第 72 步增加 [显式观测窗口](docs/architecture/72-explicit-observation-windows.md)：日志、指标和本地变更适配器可按传入的固定 UTC 范围查询；历史变更按发生时间和记录截止过滤，不请求当前运行清单。原相对查询兼容保留。来源侧能力与验证见 [第 72 步记录](docs/progress/72-explicit-observation-windows.md)，现场任务接入由第 73 步完成。
 
-新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。当前 v2 只接冻结场景，前端尚无版本选择器，现场 v2 等待运行级窗口、现场材料与快照恢复装配后接入。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
+第 73 步接入 [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)：创建时固定 UTC 截止时间，日志、指标回看 15 分钟，历史变更回看 6 小时；并行查询经过共享预算，模型失败和 Worker 重启后复用同任务已提交材料。现场证据严格校验来源与范围，验证见 [第 73 步记录](docs/progress/73-live-task-evidence.md)。当前使用直接只读适配器，MCP 按后续阶段替换日志和指标入口。
+
+新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 
@@ -117,6 +119,7 @@ OpsSwarm 与原 Enterprise AI Assistant 的边界明确：原项目聚焦文档�
 - [受限异步取证与迟到结果隔离](docs/architecture/70-bounded-async-evidence.md)
 - [模型调用前的专业取证快照与恢复复用](docs/architecture/71-task-evidence-snapshot.md)
 - [现场来源的显式观测窗口](docs/architecture/72-explicit-observation-windows.md)
+- [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)
 - [开发进度与复盘](docs/progress/README.md)
 
 ## 实施路线

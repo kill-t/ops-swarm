@@ -15,7 +15,7 @@ class SpecialistTaskResult(TaskModel):
     """一份已校验的专业报告及实际查询所得材料，不代表最终根因。"""
 
     evidence_snapshot_id: str = Field(min_length=1, max_length=100)
-    data_source_mode: Literal["frozen"] = "frozen"
+    data_source_mode: Literal["frozen", "live"] = "frozen"
     report: SpecialistReport
     evidence: tuple[EvidenceObservation, ...] = Field(max_length=20)
     tool_call_count: Literal[1] = 1
