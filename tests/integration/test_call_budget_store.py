@@ -4,13 +4,14 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy, CallGrant, CallOperation
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.models import WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.store import InvestigationTaskStore
@@ -24,6 +25,16 @@ async def prepare(db, policy=None, model_budget=None):
     parent, claim = await claimed_run(
         db, workflow_version=WorkflowVersion.V2, call_budget=policy, model_budget=model_budget
     )
+    if model_budget is not None:
+        # 此处覆盖第 69 步原始预算契约；新任务上下文另有材料完整性测试。
+        async with db() as session, session.begin():
+            await session.execute(
+                update(InvestigationRunRow)
+                .where(
+                    InvestigationRunRow.id == claim.run.id,
+                )
+                .values(context_policy_version=None)
+            )
     clock = TaskClock()
     tasks = InvestigationTaskStore(db, clock=clock)
     await tasks.create_round(
@@ -210,6 +221,9 @@ async def test_legacy_v2_keeps_unknown_budget_and_migration_does_not_invent_hist
             select(InvestigationRunRow).where(InvestigationRunRow.id == claim.run.id)
         )
         run.call_budget = None
+        # 模拟引入预算之前的真实历史行，同时保留后续策略的空值语义。
+        run.evidence_policy_version = None
+        run.context_policy_version = None
     snapshot = await CallBudgetQueries(database_session_factory).get_snapshot(claim.run.id)
     assert (
         snapshot.policy is None

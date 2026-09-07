@@ -37,6 +37,12 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
+            "context_policy_version IS NULL OR (context_policy_version = 'task-context-v1' AND "
+            "workflow_version = 'v2' AND model_budget IS NOT NULL AND "
+            "evidence_policy_version IS NOT NULL)",
+            name="ck_investigation_runs_context_policy",
+        ),
+        CheckConstraint(
             "(workflow_version = 'v2' AND data_source_mode = 'live' AND "
             "observation_cutoff_at IS NOT NULL AND evidence_policy_version IS NOT NULL AND "
             "evidence_policy_version = 'task-evidence-live-v1' AND "
@@ -147,6 +153,7 @@ class InvestigationRunRow(Base):
     data_source_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    context_policy_version: Mapped[str | None] = mapped_column(String(32))
     evidence_policy_version: Mapped[str | None] = mapped_column(String(32))
     observation_cutoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     call_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

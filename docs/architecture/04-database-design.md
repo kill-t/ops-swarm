@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 75 步 [任务上下文清单](75-task-context-builder.md)：新增 `investigation_runs.context_policy_version` 和调用预留表 `context_manifest` JSONB（上限 32 KiB），迁移版本为 `0036_task_context_manifest`。清单、实际 ModelInput 与预算预留原子提交，事务内重新核对材料来源；历史列保持 null，已保存策略或清单阻止降级。
+
 第 74 步 [冻结身份兼容](74-stable-frozen-identity.md) 不新增迁移：新任务使用确定性内容身份，已有任务通过有限内容兼容表沿用旧身份；不改写旧分派、材料散列、事件或 checkpoint。
 
 第 73 步 [现场 v2 持久任务取证](73-live-task-evidence.md) 为现场 v2 固定只读截止时间与独立取证策略，迁移放开现场多 Agent 路由；快照继续使用原表且保持冻结散列兼容。以下第 67—72 步的冻结限定是历史边界，由本片明确扩展。

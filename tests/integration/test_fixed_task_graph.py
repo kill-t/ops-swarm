@@ -42,6 +42,7 @@ def context(claim):
         lease_token=claim.work_item.lease_token,
         call_budget=claim.run.call_budget,
         model_budget=claim.run.model_budget,
+        context_policy_version=claim.run.context_policy_version,
         evidence_policy_version=claim.run.evidence_policy_version,
         observation_cutoff_at=claim.run.observation_cutoff_at,
     )

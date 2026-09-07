@@ -17,6 +17,7 @@ from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
+from opsswarm.investigation.context.contracts import ContextPolicyVersion
 from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
 from opsswarm.investigation.models import (
     EvidenceObservation,
@@ -77,6 +78,7 @@ class ProcessorContext(StrictModel):
     lease_token: UUID | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
+    context_policy_version: ContextPolicyVersion | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
     observation_cutoff_at: datetime | None = None
 
@@ -188,6 +190,7 @@ class InvestigationWorker:
                             lease_token=lease_token,
                             call_budget=claimed.run.call_budget,
                             model_budget=claimed.run.model_budget,
+                            context_policy_version=claimed.run.context_policy_version,
                             evidence_policy_version=claimed.run.evidence_policy_version,
                             observation_cutoff_at=claimed.run.observation_cutoff_at,
                         )

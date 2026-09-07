@@ -20,6 +20,7 @@ from opsswarm.investigation.budget.model_contracts import (
 )
 from opsswarm.investigation.budget.model_policy import summarize_model_usage
 from opsswarm.investigation.budget.tables import CallReservationRow
+from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
@@ -97,3 +98,28 @@ class CallBudgetQueries:
             return (
                 ModelInput.model_validate(row.model_input) if row.model_input is not None else None
             )
+
+    async def get_context_manifest(self, run_id: UUID, call_id: UUID) -> ContextManifest | None:
+        async with self._factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            row = await session.scalar(
+                select(CallReservationRow)
+                .options(defer(CallReservationRow.model_input))
+                .where(
+                    CallReservationRow.investigation_run_id == run_id,
+                    CallReservationRow.id == call_id,
+                )
+            )
+            if row is None:
+                raise TaskFactConflict("context_manifest_not_found", "该运行不存在指定调用")
+            if row.context_manifest is None:
+                return None
+            manifest = ContextManifest.model_validate(row.context_manifest)
+            if (
+                manifest.investigation_run_id != run_id
+                or manifest.task_id != row.task_id
+                or manifest.allocation.model_dump(mode="json") != row.model_allocation
+            ):
+                raise TaskFactConflict("context_manifest_corrupt", "上下文清单与调用记录不一致")
+            return manifest

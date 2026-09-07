@@ -6,7 +6,7 @@
 
 MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
 
-第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、ContextBuilder、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
+第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、上下文按需读取与摘要、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
 
 第 70 步加入 [受限异步取证](docs/architecture/70-bounded-async-evidence.md)：多 Agent Worker 用最多 3 个未完成查询桥接现有同步适配器，取证不再阻塞事件循环。取消或等待超时后，运行中的请求继续占用槽位直至真正结束，迟到材料不能进入专业报告，验证结果见 [第 70 步记录](docs/progress/70-bounded-async-evidence.md)。
 
@@ -18,11 +18,13 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
 
+第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；按需读取、摘要和动态工具循环仍待后续切片。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。
+
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 
-Token/费用预算通过启动请求的 `model_budget` 单独启用，默认不改变现有 v2 行为。Worker 需配置 `LLM_BUDGET_PROFILE_ID`、`LLM_CONTEXT_WINDOW_TOKENS` 和模型单价，并与请求中的 `profile` 完全匹配；默认单次输入估算上限 24000、输出上限 4096、累计费用估算上限 1 美元。估算覆盖消息和输出 Schema，采用保守字节规则，不能当成供应商精确计数或硬扣费上限。调用输入可按运行和调用 ID 单独查询，具体配置与边界见第 69 篇设计。
+Token/费用预算通过启动请求的 `model_budget` 单独启用，默认不改变现有 v2 行为。Worker 需配置 `LLM_BUDGET_PROFILE_ID`、`LLM_CONTEXT_WINDOW_TOKENS` 和模型单价，并与请求中的 `profile` 完全匹配；默认单次输入估算上限 24000、输出上限 4096、累计费用估算上限 1 美元。估算覆盖消息和输出 Schema，采用保守字节规则，不能当成供应商精确计数或硬扣费上限。调用输入可按运行和调用 ID 单独查询，具体配置与边界见第 69 篇设计。新运行同时固定上下文提示版本 `fixed-task-context-v1`，清单通过 `GET /api/v1/investigations/{run_id}/calls/{call_id}/context-manifest` 读取；工具调用和历史调用返回 null，清单不出现在预算列表中。
 
 MVP 阶段交付六十三个小切片：前五十一步完成了三个确定性故障的调查、审批、白名单执行、恢复验证、作战室、评测体系、统一现场数据源、跨进程 trace、常驻调查工作池、逐次尝试审计、成本展示、GitHub 只读变更来源、部署 Commit 关联、受限 CI/CD 摄取、不可变镜像 digest、单实例运行核对和严格滚动发布判定；第 52～53 步建立短时 Ed25519 运行证明和独立签发控制器，第 54～57 步依次增加本地审批中心、受控执行中心、恢复验证中心和人工关闭入口，第 58～62 步完成不可变复盘快照、生成查看与打印页面、改进行动项前后端闭环及跨事故治理中心，第 63 步完成控制面与前端的一键 Compose 交付和真实 MVP 发布验收。工程师可以复核计划后批准，单独确认并执行数据库中的白名单步骤，观察 Worker 验证结果，人工关闭 Incident、生成可复现报告并跟踪后续改进；浏览器不能提交动作参数、命令、验证阈值、观测值或报告结论。Evidence 与页面继续明确区分已验签和未签名来源。冻结模式继续提供公平评测，现场模式使用真实模型与真实遥测，但不对固定答案计算准确率。
 

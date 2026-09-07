@@ -26,7 +26,7 @@ async def test_downgrade_refuses_to_remove_pinned_model_budget(database_session_
         await session.execute(
             update(InvestigationRunRow)
             .where(InvestigationRunRow.id == started.run.id)
-            .values(evidence_policy_version=None)
+            .values(evidence_policy_version=None, context_policy_version=None)
         )
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     with pytest.raises(DBAPIError, match="不能删除"):
@@ -35,5 +35,5 @@ async def test_downgrade_refuses_to_remove_pinned_model_budget(database_session_
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0035_live_task_evidence"
+            == "0036_task_context_manifest"
         )

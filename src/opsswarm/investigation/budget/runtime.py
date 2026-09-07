@@ -10,6 +10,7 @@ from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.model_contracts import ModelInput, ReportedModelUsage
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.store import CallBudgetStore
+from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
@@ -30,6 +31,11 @@ class BudgetedCallRunner:
         finally:
             self._scope.reset(token)
 
+    @property
+    def current_task_id(self) -> UUID | None:
+        scope = self._scope.get()
+        return scope[0] if scope else None
+
     async def check(self) -> None:
         await self._store.check(self._run_id, lease_token=self._lease_token)
 
@@ -40,6 +46,7 @@ class BudgetedCallRunner:
         *,
         model_input: ModelInput | None = None,
         prompt_version: str | None = None,
+        context_manifest: ContextManifest | None = None,
         usage_reader: Callable[[], ReportedModelUsage | None] = lambda: None,
     ) -> T:
         scope = self._scope.get()
@@ -51,6 +58,7 @@ class BudgetedCallRunner:
             task_attempt_id=scope[1] if scope else None,
             model_input=model_input,
             prompt_version=prompt_version,
+            context_manifest=context_manifest,
         )
         if not grant.created:
             raise TaskFactConflict("call_already_reserved", "相同预留不能再次执行操作")

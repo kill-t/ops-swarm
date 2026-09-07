@@ -41,6 +41,7 @@ async def test_start_pins_model_profile_and_rejects_invalid_configuration(
     ):
         for changed in (
             {"workflow_version": "v1"},
+            {"context_policy_version": None},
             {"model_budget": {**policy, "max_input_tokens": True}},
             {"model_budget": {**policy, "max_output_tokens_per_call": 0}},
             {"model_budget": {**policy, "max_estimated_cost_usd": "101"}},
@@ -55,6 +56,8 @@ async def test_start_pins_model_profile_and_rejects_invalid_configuration(
         assert response.status_code == 200
         run = response.json()["investigation"]
         assert run["model_budget"] == policy and run["call_budget"] is not None
+        assert run["context_policy_version"] == "task-context-v1"
+        assert run["prompt_version"] == "fixed-task-context-v1"
         budget = (await client.get(f"/api/v1/investigations/{run['id']}/call-budget")).json()
         assert budget["model_budget"] == policy
         assert budget["model_usage"]["committed_input_tokens"] == 0

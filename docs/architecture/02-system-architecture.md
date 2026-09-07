@@ -1,12 +1,14 @@
 # OpsSwarm 系统架构
 
+第 75 步接入 [任务 ContextBuilder](75-task-context-builder.md)：新建且显式启用模型预算的 v2 运行固定上下文策略，按任务读取持久材料，专业节点隔离、综合节点核对已提交报告；实际输入、材料清单和预算预留同事务落库。历史策略不回填，完整上下文压缩与按需读取仍分片建设。
+
 第 74 步 [冻结身份兼容](74-stable-frozen-identity.md) 让新冻结身份跨进程保持确定性，已有内置版本任务通过有限内容映射沿用旧身份；完整分派与任务事实一致性仍在租约事务中校验，现场身份与工作流版本不变。
 
 第 72 步为三个本地现场适配器增加 [显式观测窗口](72-explicit-observation-windows.md)，历史变更不混入当前运行清单；原相对查询保持兼容。第 73 步完成 [现场 v2 持久任务取证](73-live-task-evidence.md)：运行固定截止时间和独立来源策略，绑定适配器经过原有异步执行器与预算入口，取证快照可在重启后复用；暂不支持 GitHub 组合源，不请求当前运行清单。
 
 第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)：多 Agent 图通过异步端口桥接现有只读适配器，线程槽位跨重试保留到请求真正结束。第 71 步接入 [模型调用前的专业取证快照](71-task-evidence-snapshot.md)，新冻结 v2 运行固定取证策略，快照在专业模型前持久化，技术重试复用同任务材料；来源侧显式时间窗由第 72 步补齐，现场 v2 任务接入由第 73 步完成；遥测 MCP 仍按后续阶段交付。
 
-本文以现有 MVP 架构为基础。下一阶段的交付顺序见 [完整多 Agent 工程版规划](64-full-multi-agent-roadmap.md)，详细运行设计见 [Agent 系统最终设计](65-agent-system-design.md)。第 66 步增加任务事实底座，第 67 步将 [冻结 v2 固定图接入专业结果、事件与恢复核对](67-fixed-graph-task-integration.md)，第 68 步加入 [运行级调用次数与时限预算](68-shared-call-budget.md)，第 69 步增加显式启用的 [模型输入与估算费用预算](69-model-input-budget.md)；完整 Harness、ContextBuilder、经验、MCP、动态协调、图内人工介入和多步骤处置仍待开发。
+本文以现有 MVP 架构为基础。下一阶段的交付顺序见 [完整多 Agent 工程版规划](64-full-multi-agent-roadmap.md)，详细运行设计见 [Agent 系统最终设计](65-agent-system-design.md)。第 66 步增加任务事实底座，第 67 步将 [冻结 v2 固定图接入专业结果、事件与恢复核对](67-fixed-graph-task-integration.md)，第 68 步加入 [运行级调用次数与时限预算](68-shared-call-budget.md)，第 69 步增加显式启用的 [模型输入与估算费用预算](69-model-input-budget.md)；完整 Harness、上下文按需读取与摘要、经验、MCP、动态协调、图内人工介入和多步骤处置仍待开发。
 
 ## 1. 架构原则
 

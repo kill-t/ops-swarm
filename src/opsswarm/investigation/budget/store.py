@@ -34,6 +34,8 @@ from opsswarm.investigation.budget.policy import (
     require_capacity,
 )
 from opsswarm.investigation.budget.tables import CallReservationRow
+from opsswarm.investigation.context.contracts import ContextManifest
+from opsswarm.investigation.context.reservation import validate_context_reservation
 from opsswarm.investigation.persistence.lease import (
     active_investigation_transaction,
     normalized_now,
@@ -107,6 +109,7 @@ class CallBudgetStore:
         task_attempt_id: UUID | None = None,
         model_input: ModelInput | None = None,
         prompt_version: str | None = None,
+        context_manifest: ContextManifest | None = None,
     ) -> CallGrant:
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock
@@ -149,6 +152,16 @@ class CallBudgetStore:
                     or attempt.status != "running"
                 ):
                     raise TaskFactConflict("call_scope_invalid", "调用不属于当前有效专业尝试")
+            await validate_context_reservation(
+                session,
+                run,
+                operation,
+                task_id,
+                model_input,
+                context_manifest,
+                prompt_version,
+            )
+            manifest_data = context_manifest.model_dump(mode="json") if context_manifest else None
             key = f"{parent.id}:{task_attempt_id or 'root'}:{operation.value}"
             records = list(
                 await session.scalars(
@@ -162,6 +175,8 @@ class CallBudgetStore:
             )
             existing = next((r for r in records if r.idempotency_key == key), None)
             if existing is not None:
+                if existing.context_manifest != manifest_data:
+                    raise TaskFactConflict("context_replay_conflict", "同一预留不能改写上下文清单")
                 if existing.model_allocation != (
                     allocation.model_dump(mode="json") if allocation else None
                 ):
@@ -212,6 +227,7 @@ class CallBudgetStore:
                 model_input=model_input.model_dump(mode="json") if model_input else None,
                 model_allocation=allocation.model_dump(mode="json") if allocation else None,
                 model_usage=None,
+                context_manifest=manifest_data,
             )
             session.add(row)
             await session.flush()

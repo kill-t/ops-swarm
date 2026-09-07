@@ -18,16 +18,23 @@ from opsswarm.investigation.budget.model_contracts import (
 from opsswarm.investigation.budget.model_policy import allocate_input
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
+from opsswarm.investigation.context.service import TaskContextService
 from opsswarm.investigation.prompt_versions import MULTI_AGENT_PROMPT_VERSION
 
 
 class BudgetedModelCaller:
     def __init__(
-        self, model: BaseChatModel, policy: ModelBudgetPolicy, runner: BudgetedCallRunner
+        self,
+        model: BaseChatModel,
+        policy: ModelBudgetPolicy,
+        runner: BudgetedCallRunner,
+        *,
+        context_service: TaskContextService | None = None,
     ) -> None:
         self._model = model
         self._policy = policy
         self._runner = runner
+        self._context_service = context_service
 
     async def invoke[T: BaseModel](
         self,
@@ -54,7 +61,25 @@ class BudgetedModelCaller:
             tool_schema=convert_to_openai_tool(schema),
             structured_output_method=self._policy.profile.structured_output_method,
         )
-        allocate_input(self._policy, model_input, prompt_version=MULTI_AGENT_PROMPT_VERSION)
+        prompt_version = MULTI_AGENT_PROMPT_VERSION
+        manifest = None
+        if self._context_service is not None:
+            await self._runner.check()
+            packet = await self._context_service.prepare(
+                model_input,
+                operation,
+                self._runner.current_task_id,
+                self._policy,
+            )
+            model_input, manifest = packet.model_input, packet.manifest
+            prompt_version = manifest.prompt_version
+            messages = [
+                SystemMessage(content=m.content)
+                if m.role == "system"
+                else HumanMessage(content=m.content)
+                for m in model_input.messages
+            ]
+        allocate_input(self._policy, model_input, prompt_version=prompt_version)
         usage: ReportedModelUsage | None = None
         # 固定配置不允许兼容层静默替换输出方式；装配本身不发起请求。
         try:
@@ -102,6 +127,7 @@ class BudgetedModelCaller:
             operation,
             invoke,
             model_input=model_input,
-            prompt_version=MULTI_AGENT_PROMPT_VERSION,
+            prompt_version=prompt_version,
+            context_manifest=manifest,
             usage_reader=lambda: usage,
         )

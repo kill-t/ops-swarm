@@ -13,6 +13,7 @@ from opsswarm.investigation.budget.model_contracts import ModelProfile
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.budget.store import CallBudgetStore
+from opsswarm.investigation.context.service import TaskContextService
 from opsswarm.investigation.live import LiveInvestigationDataSource
 from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
 from opsswarm.investigation.models import InvestigationDataSourceMode
@@ -51,6 +52,7 @@ class TaskGraphFactory:
         model_profile: ModelProfile | None = None,
         query_executor: ReadOnlyQueryExecutor | None = None,
     ) -> None:
+        self._session_factory = session_factory
         self._source = data_source
         self._analyst = analyst
         self._synthesizer = synthesizer
@@ -111,7 +113,16 @@ class TaskGraphFactory:
                 or model.n != 1
             ):
                 raise CallBudgetExceeded("model_budget_profile_mismatch")
-            caller = BudgetedModelCaller(model, context.model_budget, runner)
+            caller = BudgetedModelCaller(
+                model,
+                context.model_budget,
+                runner,
+                context_service=TaskContextService(
+                    self._session_factory, context.investigation_run_id
+                )
+                if context.context_policy_version is not None
+                else None,
+            )
             analyst = LangChainSpecialistAnalyst(
                 model,
                 structured_output_method=profile.structured_output_method,

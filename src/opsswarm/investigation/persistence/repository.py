@@ -23,6 +23,11 @@ from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.settlement import close_open_reservations
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
+from opsswarm.investigation.context.contracts import (
+    CONTEXT_POLICY_VERSION,
+    CONTEXT_PROMPT_VERSION,
+    ContextPolicyVersion,
+)
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
     InvestigationRunNotFound,
@@ -151,10 +156,13 @@ class InvestigationStore:
                 mode=mode.value,
                 data_source_mode=data_source_mode.value,
                 status=InvestigationRunStatus.QUEUED.value,
-                prompt_version=_PROMPT_VERSION_BY_MODE[mode],
+                prompt_version=CONTEXT_PROMPT_VERSION
+                if model_budget
+                else _PROMPT_VERSION_BY_MODE[mode],
                 workflow_version=workflow_version.value,
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
+                context_policy_version=CONTEXT_POLICY_VERSION if model_budget else None,
                 observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
                 evidence_policy_version="task-evidence-live-v1"
                 if live_v2
@@ -922,6 +930,7 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         prompt_version=row.prompt_version,
         workflow_version=WorkflowVersion(row.workflow_version),
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
+        context_policy_version=cast(ContextPolicyVersion | None, row.context_policy_version),
         evidence_policy_version=cast(EvidencePolicyVersion | None, row.evidence_policy_version),
         observation_cutoff_at=row.observation_cutoff_at,
         model_budget=ModelBudgetPolicy.model_validate(row.model_budget)

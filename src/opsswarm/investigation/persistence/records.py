@@ -14,6 +14,7 @@ from opsswarm.investigation.attempts import (
 )
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
+from opsswarm.investigation.context.contracts import ContextPolicyVersion
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -49,6 +50,7 @@ class StoredInvestigationRun(StrictModel):
     workflow_version: WorkflowVersion = WorkflowVersion.V1
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
+    context_policy_version: ContextPolicyVersion | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
     observation_cutoff_at: datetime | None = None
     graph_thread_id: str | None

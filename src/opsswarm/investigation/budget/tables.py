@@ -22,6 +22,12 @@ from opsswarm.database.base import Base
 class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
+        CheckConstraint(
+            "context_manifest IS NULL OR (model_input IS NOT NULL AND kind = 'model' AND "
+            "jsonb_typeof(context_manifest) = 'object' AND "
+            "octet_length(context_manifest::text) <= 32768)",
+            name="ck_call_reservations_context_manifest",
+        ),
         UniqueConstraint(
             "id",
             "task_id",
@@ -101,6 +107,7 @@ class CallReservationRow(Base):
     error_code: Mapped[str | None] = mapped_column(String(100))
     reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    context_manifest: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_allocation: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
