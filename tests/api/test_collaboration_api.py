@@ -103,6 +103,7 @@ async def test_versioned_start_and_invalid_routes_are_explicit(
             {"mode": "single_agent"},
             {"data_source_mode": "live"},
             {"workflow_version": "v9"},
+            {"evidence_policy_version": "task-evidence-v1"},
         ):
             rejected = await client.post(url, json={**body, **overrides})
             assert rejected.status_code == 422
@@ -111,6 +112,7 @@ async def test_versioned_start_and_invalid_routes_are_explicit(
         assert response.status_code == 200
         run = response.json()["investigation"]
         assert run["workflow_version"] == "v2"
+        assert run["evidence_policy_version"] == "task-evidence-v1"
         assert (await client.get(f"/api/v1/investigations/{run['id']}")).json()[
             "workflow_version"
         ] == "v2"

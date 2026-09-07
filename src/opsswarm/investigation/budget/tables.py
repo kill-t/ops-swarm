@@ -22,6 +22,13 @@ from opsswarm.database.base import Base
 class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "task_id",
+            "task_attempt_id",
+            "investigation_run_id",
+            name="uq_call_reservations_evidence_scope",
+        ),
         CheckConstraint(
             "(model_input IS NULL) = (model_allocation IS NULL) AND "
             "(model_allocation IS NULL OR (kind = 'model' AND "

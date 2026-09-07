@@ -24,6 +24,7 @@ from opsswarm.investigation.tasks.contracts import (
 )
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
+from opsswarm.investigation.tasks.evidence_store import require_result_evidence
 from opsswarm.investigation.tasks.policy import task_status_after_outcome
 from opsswarm.investigation.tasks.records import AttemptStart, TaskAttemptRecord
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
@@ -243,6 +244,8 @@ class InvestigationTaskStore:
                 and result is None
             ):
                 raise TaskFactConflict("task_result_required", "绑定证据快照的任务必须提交专业结果")
+            if result is not None:
+                await require_result_evidence(session, run_id, task, result)
             if attempt.status != "running":
                 stored_result = await session.get(AgentTaskResultRow, task_id)
                 if (

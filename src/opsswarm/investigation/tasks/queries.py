@@ -8,8 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskEventRow, AgentTaskResultRow
+from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import TaskEventRecord
+from opsswarm.investigation.tasks.evidence import TaskEvidenceRecord
+from opsswarm.investigation.tasks.evidence_store import validated_record
+from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.records import (
     CollaborationSnapshot,
     RoundRecord,
@@ -44,6 +48,20 @@ class CollaborationQueries:
                 raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
             row = await session.get(AgentTaskResultRow, task_id)
             return TaskResultRecord.model_validate(row, from_attributes=True) if row else None
+
+    async def get_evidence(self, run_id: UUID, task_id: UUID) -> TaskEvidenceRecord | None:
+        async with self._session_factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            task = await session.get(AgentTaskRow, task_id)
+            if task is None or task.investigation_run_id != run_id:
+                raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
+            row = await session.get(AgentTaskEvidenceRow, task_id)
+            return (
+                validated_record(row, TaskAssignment.model_validate(task.assignment))
+                if row
+                else None
+            )
 
     async def list_events(
         self,

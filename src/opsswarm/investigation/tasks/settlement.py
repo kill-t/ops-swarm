@@ -16,6 +16,7 @@ from opsswarm.investigation.tasks.contracts import (
 )
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
+from opsswarm.investigation.tasks.evidence_store import require_result_evidence
 from opsswarm.investigation.tasks.policy import round_status_for_tasks
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.tables import (
@@ -129,6 +130,8 @@ async def require_complete_results(
     ):
         raise TaskFactConflict("task_round_mismatch", "v2 固定图必须完成唯一首轮")
     results = [SpecialistTaskResult.model_validate(result.result) for _, result in rows]
+    for (task, _), result in zip(rows, results, strict=True):
+        await require_result_evidence(session, run_id, task, result)
     assignments = [TaskAssignment.model_validate(task.assignment) for task, _ in rows]
     if (
         {item.report.specialist for item in results} != set(EvidenceKind)

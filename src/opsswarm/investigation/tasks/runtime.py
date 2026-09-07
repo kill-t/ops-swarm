@@ -1,7 +1,8 @@
 """将固定图的一次专业操作绑定到持久任务生命周期。"""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import nullcontext
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.models import (
     EvidenceKind,
+    EvidenceObservation,
     InvestigationArtifacts,
     InvestigationRequest,
 )
@@ -19,6 +21,7 @@ from opsswarm.investigation.tasks.contracts import (
     TaskStatus,
 )
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.evidence_store import TaskEvidenceStore
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.store import InvestigationTaskStore
@@ -38,6 +41,7 @@ class FixedTaskRuntime:
         snapshot_time: datetime,
         call_runner: BudgetedCallRunner | None = None,
         model_input_budget: bool = False,
+        evidence_store: TaskEvidenceStore | None = None,
     ) -> None:
         self.run_id = run_id
         self.snapshot_id = snapshot_id
@@ -47,6 +51,10 @@ class FixedTaskRuntime:
         self._queries = queries
         self._call_runner = call_runner
         self._model_input_budget = model_input_budget
+        self._evidence_store = evidence_store
+        self._scope: ContextVar[tuple[UUID, UUID] | None] = ContextVar(
+            "task_evidence_scope", default=None
+        )
 
     async def prepare(self, request: InvestigationRequest) -> None:
         await self._store.create_round(
@@ -80,7 +88,19 @@ class FixedTaskRuntime:
         if self._call_runner is not None:
             await self._call_runner.check()
 
-    async def call_tool[T](self, role: EvidenceKind, query: Callable[[], Awaitable[T]]) -> T:
+    async def call_tool(
+        self, role: EvidenceKind, query: Callable[[], Awaitable[Sequence[EvidenceObservation]]]
+    ) -> Sequence[EvidenceObservation]:
+        scope = self._scope.get()
+        if self._evidence_store is not None:
+            if scope is None or self._call_runner is None:
+                raise TaskFactConflict("task_evidence_scope_missing", "取证缺少任务身份或预算入口")
+            stored = await self._evidence_store.read_for_attempt(
+                self.run_id, scope[0], scope[1], lease_token=self._lease_token
+            )
+            if stored is not None:
+                await self.require_active()
+                return stored.snapshot.evidence
         operation = {
             EvidenceKind.LOG: CallOperation.QUERY_LOGS,
             EvidenceKind.METRIC: CallOperation.QUERY_METRICS,
@@ -88,7 +108,13 @@ class FixedTaskRuntime:
         }[role]
         if self._call_runner is None:
             return await query()
-        return await self._call_runner.execute(operation, query)
+        evidence = await self._call_runner.execute(operation, query)
+        if self._evidence_store is not None and scope is not None:
+            saved = await self._evidence_store.save(
+                self.run_id, scope[0], scope[1], lease_token=self._lease_token, evidence=evidence
+            )
+            return saved.snapshot.evidence
+        return evidence
 
     async def call_model[T](
         self, role: EvidenceKind | None, invoke: Callable[[], Awaitable[T]]
@@ -117,6 +143,10 @@ class FixedTaskRuntime:
             stored = await self._queries.get_result(self.run_id, task.id)
             if stored is None or stored.result.evidence_snapshot_id != self.snapshot_id:
                 raise TaskFactConflict("task_result_missing", "已成功任务缺少匹配的专业快照")
+            if self._evidence_store is not None:
+                await self._evidence_store.validate_result(
+                    self.run_id, task.id, stored.result, lease_token=self._lease_token
+                )
             return stored.result
         started = await self._store.begin_attempt(
             self.run_id,
@@ -126,6 +156,7 @@ class FixedTaskRuntime:
         )
         if not started.created or started.attempt is None:
             raise TaskFactConflict("task_attempt_not_acquired", "未取得新的专业执行尝试")
+        token = self._scope.set((task.id, started.attempt.id))
         try:
             with (
                 self._call_runner.task_scope(task.id, started.attempt.id)
@@ -144,6 +175,8 @@ class FixedTaskRuntime:
                 ),
             )
             raise
+        finally:
+            self._scope.reset(token)
         await self._store.finish_attempt(
             self.run_id,
             task.id,

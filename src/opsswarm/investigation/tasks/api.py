@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import TaskEventRecord
+from opsswarm.investigation.tasks.evidence import TaskEvidenceRecord
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.records import CollaborationSnapshot
 from opsswarm.investigation.tasks.results import TaskResultRecord
@@ -61,6 +62,28 @@ def create_collaboration_router() -> APIRouter:
                     error_code=error.code,
                     message=str(error),
                 ).model_dump(mode="json"),
+            )
+
+    @router.get(
+        "/investigations/{run_id}/collaboration/tasks/{task_id}/evidence",
+        response_model=TaskEvidenceRecord | None,
+        responses={404: {"model": ApiErrorResponse}, 422: {"model": ApiErrorResponse}},
+    )
+    async def read_evidence(
+        run_id: UUID,
+        task_id: UUID,
+        queries: Annotated[CollaborationQueries, Depends(get_collaboration_queries)],
+    ) -> TaskEvidenceRecord | None | JSONResponse:
+        try:
+            return await queries.get_evidence(run_id, task_id)
+        except TaskFactConflict as error:
+            if error.code != "task_not_found":
+                raise
+            return JSONResponse(
+                status_code=404,
+                content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
+                    mode="json"
+                ),
             )
 
     @router.get(

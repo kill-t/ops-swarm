@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import cast
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import and_, or_, select
@@ -76,6 +77,7 @@ from opsswarm.investigation.prompt_versions import (
 from opsswarm.investigation.prompt_versions import (
     SINGLE_AGENT_PROMPT_VERSION as CURRENT_SINGLE_AGENT_PROMPT_VERSION,
 )
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tasks.settlement import interrupt_tasks, require_complete_results
 from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.observability import TraceContextCarrier
@@ -149,6 +151,9 @@ class InvestigationStore:
                 workflow_version=workflow_version.value,
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
+                evidence_policy_version="task-evidence-v1"
+                if workflow_version is WorkflowVersion.V2
+                else None,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
                 ),
@@ -910,6 +915,7 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         prompt_version=row.prompt_version,
         workflow_version=WorkflowVersion(row.workflow_version),
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
+        evidence_policy_version=cast(EvidencePolicyVersion | None, row.evidence_policy_version),
         model_budget=ModelBudgetPolicy.model_validate(row.model_budget)
         if row.model_budget
         else None,

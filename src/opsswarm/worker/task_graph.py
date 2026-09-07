@@ -24,6 +24,7 @@ from opsswarm.investigation.parallel_model import (
 )
 from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import FrozenScenarioDataSource
+from opsswarm.investigation.tasks.evidence_store import TaskEvidenceStore
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.runtime import FixedTaskRuntime
 from opsswarm.investigation.tasks.store import InvestigationTaskStore, utc_now
@@ -57,6 +58,7 @@ class TaskGraphFactory:
         self._budget_model = budget_model
         self._model_profile = model_profile
         self._query_executor = query_executor
+        self._evidence_store = TaskEvidenceStore(session_factory, clock=clock)
 
     def __call__(self, context: ProcessorContext) -> LangGraphParallelInvestigator:
         if context.investigation_run_id is None or context.lease_token is None:
@@ -112,5 +114,8 @@ class TaskGraphFactory:
                 snapshot_time=self._source.snapshot_time,
                 call_runner=runner,
                 model_input_budget=context.model_budget is not None,
+                evidence_store=self._evidence_store
+                if context.evidence_policy_version is not None
+                else None,
             ),
         )

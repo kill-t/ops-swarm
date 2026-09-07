@@ -3,11 +3,13 @@
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.worker.processor import LangGraphMultiAgentProcessor
@@ -107,12 +109,24 @@ async def test_graph_reserves_before_calls_and_stops_without_retry(
         assert all(task.status in ("succeeded", "failed") for task in tasks)
 
 
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_retry_reuses_successful_tasks_but_accumulates_model_and_tool_slots(
-    database_session_factory, checkpoint_database_url
+    database_session_factory, checkpoint_database_url, legacy
 ):
     await initialize_checkpoint_schema(checkpoint_database_url)
     parent, started = await started_run(
         database_session_factory, workflow_version=WorkflowVersion.V2
+    )
+    if legacy:
+        # 模拟迁移前的运行；新策略不能隐式改变其恢复语义。
+        async with database_session_factory() as session, session.begin():
+            await session.execute(
+                update(InvestigationRunRow)
+                .where(InvestigationRunRow.id == started.run.id)
+                .values(evidence_policy_version=None)
+            )
+    assert (await parent.get_run(started.run.id)).evidence_policy_version == (
+        None if legacy else "task-evidence-v1"
     )
     clock = TaskClock(BASE_TIME + timedelta(seconds=2))
     source = CountingDataSource()
@@ -139,8 +153,9 @@ async def test_retry_reuses_successful_tasks_but_accumulates_model_and_tool_slot
         SpecialistAnalystStub(),
     )
     after = await CallBudgetQueries(database_session_factory).get_snapshot(started.run.id)
-    assert after.reserved_model_calls == 5 and after.reserved_tool_calls == 4
-    assert sum(recovered.calls.values()) == 1
+    assert after.reserved_model_calls == 5
+    assert after.reserved_tool_calls == (4 if legacy else 3)
+    assert sum(recovered.calls.values()) == (1 if legacy else 0)
     assert after.started_at == before.started_at and after.deadline == before.deadline
     assert (await parent.get_run(started.run.id)).status == "succeeded"
 

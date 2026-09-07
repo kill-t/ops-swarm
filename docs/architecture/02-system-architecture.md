@@ -1,6 +1,6 @@
 # OpsSwarm 系统架构
 
-第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)：多 Agent 图通过异步端口桥接现有只读适配器，线程槽位跨重试保留到请求真正结束，现场 v2 继续等待快照与恢复规则验收。
+第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)：多 Agent 图通过异步端口桥接现有只读适配器，线程槽位跨重试保留到请求真正结束。第 71 步接入 [模型调用前的专业取证快照](71-task-evidence-snapshot.md)，新冻结 v2 运行固定取证策略，快照在专业模型前持久化，技术重试复用同任务材料；现场 v2 还需显式来源时间窗与当前部署采集语义。
 
 本文以现有 MVP 架构为基础。下一阶段的交付顺序见 [完整多 Agent 工程版规划](64-full-multi-agent-roadmap.md)，详细运行设计见 [Agent 系统最终设计](65-agent-system-design.md)。第 66 步增加任务事实底座，第 67 步将 [冻结 v2 固定图接入专业结果、事件与恢复核对](67-fixed-graph-task-integration.md)，第 68 步加入 [运行级调用次数与时限预算](68-shared-call-budget.md)，第 69 步增加显式启用的 [模型输入与估算费用预算](69-model-input-budget.md)；完整 Harness、ContextBuilder、经验、MCP、动态协调、图内人工介入和多步骤处置仍待开发。
 

@@ -1,6 +1,6 @@
 # OpsSwarm Agent 系统最终设计：轻量 Harness、分层记忆与受控工具
 
-后续第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)，供现有多 Agent Worker 桥接同步来源；该实现不等于现场 v2、动态工具循环或 MCP 已完成。以下目标设计与历史现状快照继续保留原有含义，实际状态见进度索引。
+后续第 70 步交付 [受限异步取证](70-bounded-async-evidence.md)，供现有多 Agent Worker 桥接同步来源；第 71 步加入 [模型调用前的取证快照](71-task-evidence-snapshot.md)，固定新运行策略并复用同任务已提交材料。现场 v2、ContextBuilder、动态工具循环和 MCP 仍待开发。以下目标设计与历史现状快照继续保留原有含义，实际状态见进度索引。
 
 ## 1. 决策状态与项目目标
 

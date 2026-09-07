@@ -32,6 +32,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
     WorkItemStatus,
 )
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.observability import TraceContextCarrier
 
@@ -48,6 +49,7 @@ class StoredInvestigationRun(StrictModel):
     workflow_version: WorkflowVersion = WorkflowVersion.V1
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
+    evidence_policy_version: EvidencePolicyVersion | None = None
     graph_thread_id: str | None
     model_name: str | None
     result: InvestigationRunResult | None

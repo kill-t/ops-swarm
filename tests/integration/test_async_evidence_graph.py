@@ -140,6 +140,7 @@ async def test_graph_reserves_before_thread_and_rejects_late_results(
             for professional in snapshot.rounds[0].tasks:
                 assert professional.status != "succeeded"
                 assert await facts.get_result(claim.run.id, professional.id) is None
+                assert await facts.get_evidence(claim.run.id, professional.id) is None
         finally:
             await drain(executor, *source.gates.values())
             executor.close()

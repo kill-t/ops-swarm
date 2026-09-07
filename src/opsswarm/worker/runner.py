@@ -32,6 +32,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
 )
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.observability import extract_trace_context, mark_span_error
 from opsswarm.worker.usage import ModelUsageTracker
@@ -75,6 +76,7 @@ class ProcessorContext(StrictModel):
     lease_token: UUID | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
+    evidence_policy_version: EvidencePolicyVersion | None = None
 
 
 class InvestigationProcessor(Protocol):
@@ -184,6 +186,7 @@ class InvestigationWorker:
                             lease_token=lease_token,
                             call_budget=claimed.run.call_budget,
                             model_budget=claimed.run.model_budget,
+                            evidence_policy_version=claimed.run.evidence_policy_version,
                         )
                     ),
                     timeout=self._processing_timeout.total_seconds(),

@@ -96,6 +96,7 @@ from opsswarm.investigation.persistence import (
     StoredInvestigationRun,
     StoredSpecialistReport,
 )
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.planning.models import (
     ActionParameters,
@@ -223,6 +224,7 @@ class InvestigationRunResponse(StrictApiModel):
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     graph_thread_id: str | None
+    evidence_policy_version: EvidencePolicyVersion | None = None
     model_name: str | None
     result: InvestigationRunResult | None
     metrics: InvestigationMetrics | None

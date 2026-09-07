@@ -18,6 +18,7 @@ TaskEventType = Literal[
     "task.succeeded",
     "task.failed",
     "task.interrupted",
+    "task.evidence_saved",
 ]
 
 

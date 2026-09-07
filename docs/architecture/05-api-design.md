@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 71 步增加运行取证策略版本及专业取证快照只读端点，见 [专业取证快照](71-task-evidence-snapshot.md)。取证材料可以早于专业报告查询；未采集返回 null，已采集空结果返回包含空数组的记录，现场 v2 仍未开放。
+
 第 69 步增加显式 `model_budget` 启动配置、预算汇总与单次模型输入只读查询，详见 [模型输入预算](69-model-input-budget.md)。不向 API 提交模型密钥或执行地址，未启用模型预算的旧路径继续兼容。
 
 第 68 步新增 v2 启动参数 `call_budget` 和只读 `GET /api/v1/investigations/{run_id}/call-budget`，详见 [预算接口与状态语义](68-shared-call-budget.md)。v1 携带预算配置返回 422；历史未预算运行返回 null 策略和计数，不推断为零消耗。该预算仅控制调用次数与运行时限，不表示 Token 或费用上限。

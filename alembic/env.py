@@ -20,6 +20,7 @@ from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.budget import tables as investigation_budget_tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.investigation.tasks import artifact_tables as task_artifact_tables  # noqa: F401
+from opsswarm.investigation.tasks import evidence_tables as task_evidence_tables  # noqa: F401
 from opsswarm.investigation.tasks import tables as investigation_task_tables  # noqa: F401
 from opsswarm.planning.persistence import tables as planning_tables  # noqa: F401
 from opsswarm.reports.persistence import tables as report_tables  # noqa: F401

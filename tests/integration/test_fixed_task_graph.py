@@ -13,6 +13,7 @@ from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenari
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskResultRow
 from opsswarm.investigation.tasks.contracts import TaskOutcome
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.store import InvestigationTaskStore
 from opsswarm.investigation.workflow_versions import WorkflowVersion
@@ -41,6 +42,7 @@ def context(claim):
         lease_token=claim.work_item.lease_token,
         call_budget=claim.run.call_budget,
         model_budget=claim.run.model_budget,
+        evidence_policy_version=claim.run.evidence_policy_version,
     )
 
 
@@ -133,7 +135,7 @@ async def test_worker_persists_stage_results_and_resumes_failed_specialist(
     )
     if fail_logs:
         assert sources[1].calls == {
-            EvidenceKind.LOG: 1,
+            EvidenceKind.LOG: 0,
             EvidenceKind.METRIC: 0,
             EvidenceKind.CHANGE: 0,
         }
@@ -203,9 +205,11 @@ async def test_business_commit_before_checkpoint_reuses_result(
     )
 
 
+@pytest.mark.parametrize("missing", ["result", "evidence"])
 async def test_checkpoint_version_mismatch_and_missing_business_result_fail_closed(
     database_session_factory,
     checkpoint_database_url,
+    missing,
 ):
     await initialize_checkpoint_schema(checkpoint_database_url)
     _, claim = await claimed_run(database_session_factory, workflow_version=WorkflowVersion.V2)
@@ -222,14 +226,14 @@ async def test_checkpoint_version_mismatch_and_missing_business_result_fail_clos
         )
         with pytest.raises(RuntimeError, match="版本不兼容"):
             await legacy.resume(thread_id=claim.run.graph_thread_id)
+        table = AgentTaskResultRow if missing == "result" else AgentTaskEvidenceRow
         async with database_session_factory() as session, session.begin():
             row = await session.scalar(
-                select(AgentTaskResultRow).where(
-                    AgentTaskResultRow.investigation_run_id == claim.run.id
-                )
+                select(table).where(table.investigation_run_id == claim.run.id)
             )
             await session.delete(row)
-        with pytest.raises(TaskFactConflict, match="必须提交三个专业结果"):
+        message = "必须提交三个专业结果" if missing == "result" else "缺少已提交的取证快照"
+        with pytest.raises(TaskFactConflict, match=message):
             await graph.resume(thread_id=claim.run.graph_thread_id)
 
 
