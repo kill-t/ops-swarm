@@ -23,6 +23,16 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
+            "invocation_index BETWEEN 0 AND 99",
+            name="ck_call_reservations_invocation_index",
+        ),
+        CheckConstraint(
+            "idempotency_key = investigation_attempt_id::text || ':' || "
+            "COALESCE(task_attempt_id::text, 'root') || ':' || operation || "
+            "CASE WHEN invocation_index = 0 THEN '' ELSE ':' || invocation_index::text END",
+            name="ck_call_reservations_invocation_key",
+        ),
+        CheckConstraint(
             "context_manifest IS NULL OR (model_input IS NOT NULL AND kind = 'model' AND "
             "jsonb_typeof(context_manifest) = 'object' AND "
             "octet_length(context_manifest::text) <= 32768)",
@@ -100,6 +110,7 @@ class CallReservationRow(Base):
     task_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    invocation_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     kind: Mapped[str] = mapped_column(String(8), nullable=False)

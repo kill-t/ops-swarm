@@ -42,6 +42,7 @@ class CallReservationRecord(TaskModel):
     task_id: UUID | None
     task_attempt_id: UUID | None
     sequence: int
+    invocation_index: int = Field(default=0, ge=0, le=99, strict=True)
     operation: CallOperation
     kind: Literal["model", "tool"]
     status: Literal["reserved", "succeeded", "failed", "unknown"]

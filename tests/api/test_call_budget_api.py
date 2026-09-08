@@ -14,6 +14,33 @@ from tests.task_facts_helpers import started_run
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+async def test_call_budget_exposes_server_assigned_slots(
+    migrated_database_url, database_session_factory
+):
+    from tests.integration.test_call_budget_store import prepare
+    from tests.integration.test_repeated_calls import reserve_slot
+
+    _, claim, _, _, attempts, store = await prepare(database_session_factory)
+    for index in (0, 1):
+        await reserve_slot(store, claim, attempts["log"], index)
+    app = create_app(database_settings=DatabaseSettings(database_url=migrated_database_url))
+    async with (
+        app.router.lifespan_context(app),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
+        ) as client,
+    ):
+        url = f"/api/v1/investigations/{claim.run.id}/call-budget"
+        response = await client.get(url)
+        assert response.status_code == 200
+        budget = response.json()
+        assert [c["invocation_index"] for c in budget["calls"]] == [0, 1]
+        assert budget["reserved_tool_calls"] == 2
+        assert "lease_token" not in str(budget) and "idempotency_key" not in str(budget)
+        assert (await client.post(url, json={"invocation_index": 2})).status_code == 405
+        assert (await client.get(url)).json() == budget
+
+
 async def test_start_pins_policy_and_budget_history_is_read_only(
     migrated_database_url, database_session_factory
 ):

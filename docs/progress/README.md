@@ -10,7 +10,7 @@
 | --- | --- |
 | 已有运行交付 | 第 63 步 MVP 发布已验收，见 [发布记录](63-mvp-compose-release.md)；历史测试结果不是本轮重新执行的结果 |
 | 最新文档切片 | 第 65 步 Agent 系统最终设计，文档已验收，检查结果见 [切片记录](65-agent-system-design.md) |
-| 最新实现切片 | 第 76 步证据目录与详情读取应用服务/API 已验收，见 [切片记录](76-context-evidence-reader.md)；393 项测试通过，覆盖目录与详情一致性、范围隔离、版本冲突和冻结/现场并发 |
+| 最新实现切片 | 第 77 步重复调用身份已验收，见 [切片记录](77-repeated-call-identity.md)；448 项测试通过，覆盖同尝试多次预留、共享预算、并发幂等、迁移与恢复；模型工具循环仍待接入 |
 | 当前架构来源 | [第 64 篇总路线](../architecture/64-full-multi-agent-roadmap.md) + [第 65 篇专项设计](../architecture/65-agent-system-design.md) |
 | 待开发能力 | 完整 Harness、模型按需工具读取与工作摘要、动态协作、MCP、经验、图内人工介入和多步骤处置 |
 | 下一切片 | 接入有界模型按需读取与新上下文策略，保存工具消息配对及预算，再推进结构化工作摘要 |
@@ -132,3 +132,4 @@
 - [74 - 冻结场景身份的确定性与历史兼容](74-stable-frozen-identity.md)
 - [75 - 任务上下文组装与材料清单](75-task-context-builder.md)
 - [76 - 上下文证据目录与受控详情读取](76-context-evidence-reader.md)
+- [77 - 同一尝试内的重复调用身份](77-repeated-call-identity.md)

@@ -20,7 +20,9 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；按需读取、摘要和动态工具循环仍待后续切片。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。
 
-第 76 步增加 [证据目录与受控详情读取](docs/architecture/76-context-evidence-reader.md)：按调用查询完整摘要目录，通过任务、证据 ID 和快照散列读取详情；越界和过期引用明确失败。此为只读应用服务与控制面 API，模型按需工具循环仍待下一片接入，详见 [第 76 步记录](docs/progress/76-context-evidence-reader.md)。
+第 76 步增加 [证据目录与受控详情读取](docs/architecture/76-context-evidence-reader.md)：按调用查询完整摘要目录，通过任务、证据 ID 和快照散列读取详情；越界和过期引用明确失败。此为只读应用服务与控制面 API，模型按需工具循环仍待后续切片接入，详见 [第 76 步记录](docs/progress/76-context-evidence-reader.md)。
+
+第 77 步增加 [重复调用身份](docs/architecture/77-repeated-call-identity.md)：同一专业尝试可独立预留多次操作，每次仍计入共享预算；默认槽位兼容旧幂等键。模型工具循环尚未启用，见 [本次记录](docs/progress/77-repeated-call-identity.md)。
 
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 

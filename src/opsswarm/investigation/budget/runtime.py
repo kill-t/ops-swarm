@@ -47,6 +47,7 @@ class BudgetedCallRunner:
         model_input: ModelInput | None = None,
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
+        invocation_index: int = 0,
         usage_reader: Callable[[], ReportedModelUsage | None] = lambda: None,
     ) -> T:
         scope = self._scope.get()
@@ -59,6 +60,7 @@ class BudgetedCallRunner:
             model_input=model_input,
             prompt_version=prompt_version,
             context_manifest=context_manifest,
+            invocation_index=invocation_index,
         )
         if not grant.created:
             raise TaskFactConflict("call_already_reserved", "相同预留不能再次执行操作")

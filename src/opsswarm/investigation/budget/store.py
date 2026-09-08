@@ -15,6 +15,7 @@ from opsswarm.investigation.budget.contracts import (
     CallOperation,
     CallReservationRecord,
 )
+from opsswarm.investigation.budget.identity import reservation_key
 from opsswarm.investigation.budget.model_contracts import (
     ModelAllocation,
     ModelBudgetPolicy,
@@ -110,10 +111,12 @@ class CallBudgetStore:
         model_input: ModelInput | None = None,
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
+        invocation_index: int = 0,
     ) -> CallGrant:
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock
         ) as (session, parent, _, run, now):
+            key = reservation_key(parent.id, task_attempt_id, operation, invocation_index)
             policy = _policy(run)
             assert run.started_at is not None
             remaining_time(policy, run.started_at, now)
@@ -162,7 +165,6 @@ class CallBudgetStore:
                 prompt_version,
             )
             manifest_data = context_manifest.model_dump(mode="json") if context_manifest else None
-            key = f"{parent.id}:{task_attempt_id or 'root'}:{operation.value}"
             records = list(
                 await session.scalars(
                     select(CallReservationRow)
@@ -217,6 +219,7 @@ class CallBudgetStore:
                 task_id=task_id,
                 task_attempt_id=task_attempt_id,
                 sequence=len(records) + 1,
+                invocation_index=invocation_index,
                 idempotency_key=key,
                 operation=operation.value,
                 kind=operation_kind(operation),
