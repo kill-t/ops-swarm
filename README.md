@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+新会话继续开发先读 [项目状态与交接入口](docs/PROJECT_STATE.md)：包含已验收边界、代码定位、下一切片与验证方式；临时进度不放入 AGENTS.md。
+
 MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
 
 第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、上下文按需读取与摘要、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
