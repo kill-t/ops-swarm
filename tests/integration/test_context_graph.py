@@ -12,6 +12,8 @@ import pytest
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.context.builder import content_hash
+from opsswarm.investigation.context.evidence_contracts import EvidenceReadRequest
+from opsswarm.investigation.context.evidence_reader import ContextEvidenceReader
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -100,6 +102,25 @@ async def test_parallel_incidents_use_separate_committed_contexts(
                 assert task.status == "succeeded"
                 record = await facts.get_result(run_id, material.material_id)
                 assert content_hash(record.result) == material.content_sha256
+        reader = ContextEvidenceReader(run_id=run_id, call_id=call.id, calls=budget, tasks=facts)
+        catalog = await reader.catalog()
+        assert {g.task_id for g in catalog.groups} == expected_ids
+        assert all(g.data_source_mode == mode for g in catalog.groups)
+        returned = []
+        for group in catalog.groups:
+            for entry in group.entries:
+                detail = await reader.read(
+                    EvidenceReadRequest(
+                        task_id=group.task_id,
+                        evidence_id=entry.evidence_id,
+                        snapshot_sha256=group.snapshot_sha256,
+                    )
+                )
+                assert detail.evidence.summary == entry.summary
+                returned.append(detail.evidence.model_dump(mode="json"))
+        assert sorted(returned, key=lambda e: e["evidence_id"]) == sorted(
+            data["evidence"], key=lambda e: e["evidence_id"]
+        )
         target = InvestigationRequest.model_validate(data["incident"])
         evidence = [EvidenceObservation.model_validate(e) for e in data["evidence"]]
         if role == "synthesis":
@@ -171,3 +192,14 @@ async def test_parallel_incidents_use_separate_committed_contexts(
         assert sorted(seen[run_id]) == ["change", "log", "metric", "synthesis"]
         calls = await budget.get_snapshot(run_id)
         assert calls.reserved_model_calls == 4 and calls.reserved_tool_calls == 3
+
+        # 已完成调用的目录仍按原材料读取，不需要有效 Worker 租约。
+        for call in calls.calls:
+            reader = ContextEvidenceReader(
+                run_id=run_id, call_id=call.id, calls=budget, tasks=facts
+            )
+            catalog = await reader.catalog()
+            if call.kind == "tool":
+                assert catalog is None
+            else:
+                assert len(catalog.groups) == (3 if call.operation == "synthesize" else 1)

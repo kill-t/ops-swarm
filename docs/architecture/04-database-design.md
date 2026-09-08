@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 76 步 [上下文证据读取](76-context-evidence-reader.md)：复用已有调用清单和任务快照，不新增迁移或材料副本；按保存的散列校验，读取不修改任何业务事实。
+
 第 75 步 [任务上下文清单](75-task-context-builder.md)：新增 `investigation_runs.context_policy_version` 和调用预留表 `context_manifest` JSONB（上限 32 KiB），迁移版本为 `0036_task_context_manifest`。清单、实际 ModelInput 与预算预留原子提交，事务内重新核对材料来源；历史列保持 null，已保存策略或清单阻止降级。
 
 第 74 步 [冻结身份兼容](74-stable-frozen-identity.md) 不新增迁移：新任务使用确定性内容身份，已有任务通过有限内容兼容表沿用旧身份；不改写旧分派、材料散列、事件或 checkpoint。

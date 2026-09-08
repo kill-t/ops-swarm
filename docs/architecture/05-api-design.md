@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 76 步 [上下文证据读取](76-context-evidence-reader.md)：新增按调用范围的 evidence-catalog 和单条 evidence 只读端点；详情携带快照散列，过期或损坏材料明确失败。
+
 第 75 步 [任务上下文清单](75-task-context-builder.md)：运行响应增加服务器固定的 `context_policy_version`，启动请求不能自行指定或清空。新增 `GET /api/v1/investigations/{run_id}/calls/{call_id}/context-manifest`，已有历史/工具调用返回 null；运行不存在或调用越界返回 404，非法 UUID 返回 422。原 model-input 和预算接口保持兼容，预算列表不返回清单正文。
 
 第 74 步 [冻结身份兼容](74-stable-frozen-identity.md) 保持接口及字段不变；新冻结任务的范围 ID 带 `frozen-v2:` 前缀，旧任务仍返回持久化的原身份，不自动改写历史响应。

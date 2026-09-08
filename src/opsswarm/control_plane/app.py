@@ -68,6 +68,7 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.api import create_call_budget_router
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.context.evidence_api import create_context_evidence_router
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.tasks.api import create_collaboration_router
@@ -242,6 +243,7 @@ def create_app(
     app.include_router(create_router(clock))
     app.include_router(create_collaboration_router())
     app.include_router(create_call_budget_router())
+    app.include_router(create_context_evidence_router())
 
     @app.middleware("http")
     async def add_trace_id_header(
