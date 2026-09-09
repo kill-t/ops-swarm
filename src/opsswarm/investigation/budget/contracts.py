@@ -33,6 +33,9 @@ class CallOperation(StrEnum):
     ANALYZE_METRIC = "analyze_metric"
     ANALYZE_CHANGE = "analyze_change"
     SYNTHESIZE = "synthesize"
+    READ_LOG_EVIDENCE = "read_log_evidence"
+    READ_METRIC_EVIDENCE = "read_metric_evidence"
+    READ_CHANGE_EVIDENCE = "read_change_evidence"
 
 
 class CallReservationRecord(TaskModel):

@@ -209,6 +209,7 @@ class ContextBuilder:
         return ContextPacket(
             model_input=model_input,
             manifest=ContextManifest(
+                version=sources.context_policy_version,
                 investigation_run_id=sources.run_id,
                 task_id=sources.task_id,
                 role=role.value if role else "synthesis",

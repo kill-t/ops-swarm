@@ -1,5 +1,14 @@
 # OpsSwarm 控制面 API 设计
 
+第 79 步 [专业按需证据读取](79-bounded-evidence-reading.md) 扩展启动与只读查询，以下规则替代第 75 步“启动请求不能指定上下文策略”的当前限制，历史请求行为保留：
+
+- 启动调查可显式提供 `context_policy_version=task-context-v1` 或 `evidence-read-v1`，均要求 v2 和 model_budget；新策略另要求 profile.structured_output_method=function_calling。省略字段仍沿用现有选择，显式 null 或不兼容配置返回 422。
+- `GET /api/v1/investigations/{run_id}/calls/{call_id}/interaction` 返回 `investigation_run_id`、`call_id`、`tool_request` 和 `result`；旧调用、尚无返回或拒绝的调用相应字段为 null。模型结果保存规范化 assistant 请求及框架报告确认，业务工具结果保存配对 tool 消息与有界证据内容。
+- 原 `/model-input` 增加独立 `version=evidence-loop-input-v1` 表示，包含完整消息、输出与工具 schema；旧响应没有新增 version 字段。新专业 `/context-manifest` 的 tool_names 为 `["read_evidence"]`，综合仍为空；工具 schema 包含输出协议，但报告确认不计业务工具次数。
+- 新查询按 run/call 精确绑定，不存在或跨运行调用返回 404，非法 UUID 返回 422，写请求返回 405，不返回租约。专业模型工具不直接调用 HTTP API，也不能提供任务、运行、尝试或授权范围。
+
+`call-budget` 是累计模型/工具预留与用量的权威查询，包含重试与读取。历史 `result.tool_call_count` / 评测字段继续表示固定图三次取证，不扩张旧结果契约；不能用该字段代表新循环的实际总工具调用。新专业无效结果仅保存失败状态及用量，未通过规范化的供应商正文不进入可重放历史。
+
 第 77 步 [重复调用身份](77-repeated-call-identity.md)：call-budget 的 calls 条目增加只读 `invocation_index`，默认 0；不开放调用预留或修改槽位的 HTTP 入口。
 
 第 76 步 [上下文证据读取](76-context-evidence-reader.md)：新增按调用范围的 evidence-catalog 和单条 evidence 只读端点；详情携带快照散列，过期或损坏材料明确失败。

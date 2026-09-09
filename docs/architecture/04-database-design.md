@@ -1,5 +1,17 @@
 # OpsSwarm 数据库设计
 
+第 79 步 [专业按需证据读取](79-bounded-evidence-reading.md)：迁移 `0038_evidence_read_loop` 扩展运行上下文策略并在 `investigation_call_reservations` 新增 `tool_request`、`call_result` 两个可空 JSONB 列。历史行保持 null，不重写旧模型输入或散列。
+
+| 新增或扩展项 | 约束与事务边界 |
+| --- | --- |
+| `context_policy_version=evidence-read-v1` | 仅 v2、已固定模型预算与取证策略，profile 必须使用 function_calling；默认选择规则保留 task-context-v1 |
+| `read_log_evidence` / `read_metric_evidence` / `read_change_evidence` | 分类为 tool，绑定对应专业任务与尝试；与原取证共用任务/运行工具额度 |
+| `tool_request` | 仅且必须出现在新读取操作；数据库对象上限 8 KiB，保存父模型调用 ID、tool_call_id 和读取参数；应用在原子预留事务内验证同运行、任务、尝试、槽位与精确参数 |
+| `call_result` | 只能随非 reserved 状态保存，kind 与调用类型相同；模型只接受新输入版本，工具必须有 tool_request；数据库对象上限 64 KiB，应用规范化 JSON 上限 32 KiB |
+| 新模型输入与结果 | LoopModelInput 独立版本保存完整配对历史，材料清单仍与预留原子提交；模型/工具返回与结算同事务提交，后续输入从成功账本重建 |
+
+任何新策略、新输入、读取操作或交互事实存在时均阻止降级；不能通过清空其中一个字段绕过审计保护。专业内部循环不新建 checkpoint 表，新尝试复用业务证据快照但不重放旧调用，既有预算继续占用。
+
 第 77 步 [重复调用身份](77-repeated-call-identity.md)：迁移 `0037_call_invocation_index` 增加调用槽位 `invocation_index`，旧记录为 0 并保留原键，非零槽位阻止降级；所有槽位共享原运行预算。
 
 第 76 步 [上下文证据读取](76-context-evidence-reader.md)：复用已有调用清单和任务快照，不新增迁移或材料副本；按保存的散列校验，读取不修改任何业务事实。

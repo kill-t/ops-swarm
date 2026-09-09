@@ -7,10 +7,11 @@ from contextvars import ContextVar
 from uuid import UUID
 
 from opsswarm.investigation.budget.contracts import CallOperation
-from opsswarm.investigation.budget.model_contracts import ModelInput, ReportedModelUsage
+from opsswarm.investigation.budget.model_contracts import ReportedModelUsage
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.context.contracts import ContextManifest
+from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, EvidenceToolRequest
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
@@ -36,6 +37,11 @@ class BudgetedCallRunner:
         scope = self._scope.get()
         return scope[0] if scope else None
 
+    @property
+    def current_attempt_id(self) -> UUID | None:
+        scope = self._scope.get()
+        return scope[1] if scope else None
+
     async def check(self) -> None:
         await self._store.check(self._run_id, lease_token=self._lease_token)
 
@@ -44,10 +50,13 @@ class BudgetedCallRunner:
         operation: CallOperation,
         invoke: Callable[[], Awaitable[T]],
         *,
-        model_input: ModelInput | None = None,
+        model_input: AnyModelInput | None = None,
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
         invocation_index: int = 0,
+        tool_request: EvidenceToolRequest | None = None,
+        result_reader: Callable[[], CallResult | None] = lambda: None,
+        reservation_observer: Callable[[UUID], None] = lambda _: None,
         usage_reader: Callable[[], ReportedModelUsage | None] = lambda: None,
     ) -> T:
         scope = self._scope.get()
@@ -61,9 +70,11 @@ class BudgetedCallRunner:
             prompt_version=prompt_version,
             context_manifest=context_manifest,
             invocation_index=invocation_index,
+            tool_request=tool_request,
         )
         if not grant.created:
             raise TaskFactConflict("call_already_reserved", "相同预留不能再次执行操作")
+        reservation_observer(grant.record.id)
         remaining = await self._store.check(self._run_id, lease_token=self._lease_token)
         timer = asyncio.timeout(remaining)
         try:
@@ -77,6 +88,7 @@ class BudgetedCallRunner:
                 status="unknown",
                 error_code="run_deadline_exceeded" if timer.expired() else "operation_failed",
                 model_usage=usage_reader(),
+                call_result=result_reader(),
             )
             if timer.expired():
                 raise CallBudgetExceeded("run_deadline_exceeded") from None
@@ -90,6 +102,7 @@ class BudgetedCallRunner:
                 status="unknown",
                 error_code="operation_cancelled",
                 model_usage=usage_reader(),
+                call_result=result_reader(),
             )
             raise
         except Exception:
@@ -100,6 +113,7 @@ class BudgetedCallRunner:
                 status="failed",
                 error_code="operation_failed",
                 model_usage=usage_reader(),
+                call_result=result_reader(),
             )
             await self.check()
             raise
@@ -109,6 +123,7 @@ class BudgetedCallRunner:
             lease_token=self._lease_token,
             status="succeeded",
             model_usage=usage_reader(),
+            call_result=result_reader(),
         )
         await self.check()
         return result

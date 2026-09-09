@@ -24,9 +24,11 @@ from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.settlement import close_open_reservations
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.context.contracts import (
-    CONTEXT_POLICY_VERSION,
-    CONTEXT_PROMPT_VERSION,
     ContextPolicyVersion,
+)
+from opsswarm.investigation.context.selection import (
+    resolve_context_policy,
+    select_context_prompt,
 )
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
@@ -119,6 +121,7 @@ class InvestigationStore:
         workflow_version: WorkflowVersion = WorkflowVersion.V1,
         call_budget: CallBudgetPolicy | None = None,
         model_budget: ModelBudgetPolicy | None = None,
+        context_policy_version: ContextPolicyVersion | None = None,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
@@ -130,6 +133,11 @@ class InvestigationStore:
             call_budget is not None or model_budget is not None
         ) and workflow_version is not WorkflowVersion.V2:
             raise ValueError("只有 v2 调查允许配置调用预算")
+        context_policy_version = resolve_context_policy(
+            workflow_version,
+            model_budget,
+            context_policy_version,
+        )
         if workflow_version is WorkflowVersion.V2:
             call_budget = call_budget or CallBudgetPolicy()
         if not 1 <= max_attempts <= 10:
@@ -156,13 +164,14 @@ class InvestigationStore:
                 mode=mode.value,
                 data_source_mode=data_source_mode.value,
                 status=InvestigationRunStatus.QUEUED.value,
-                prompt_version=CONTEXT_PROMPT_VERSION
-                if model_budget
-                else _PROMPT_VERSION_BY_MODE[mode],
+                prompt_version=select_context_prompt(
+                    context_policy_version,
+                    _PROMPT_VERSION_BY_MODE[mode],
+                ),
                 workflow_version=workflow_version.value,
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
-                context_policy_version=CONTEXT_POLICY_VERSION if model_budget else None,
+                context_policy_version=context_policy_version,
                 observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
                 evidence_policy_version="task-evidence-live-v1"
                 if live_v2

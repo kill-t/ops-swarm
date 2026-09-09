@@ -3,12 +3,11 @@
 from uuid import UUID
 
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.context.catalog import catalog_group
 from opsswarm.investigation.context.contracts import ContextManifest, ContextMaterial
 from opsswarm.investigation.context.evidence_contracts import (
     ContextEvidenceDetail,
     EvidenceCatalog,
-    EvidenceCatalogEntry,
-    EvidenceCatalogGroup,
     EvidenceReadRequest,
 )
 from opsswarm.investigation.models import EvidenceKind
@@ -80,30 +79,7 @@ class ContextEvidenceReader:
         groups = []
         for ref in self._references(manifest):
             record = await self._record(manifest, ref)
-            snapshot = record.snapshot
-            groups.append(
-                EvidenceCatalogGroup(
-                    task_id=record.task_id,
-                    version=snapshot.version,
-                    snapshot_id=snapshot.evidence_snapshot_id,
-                    snapshot_sha256=record.content_sha256,
-                    data_source_mode=snapshot.data_source_mode,
-                    service_name=snapshot.service_name,
-                    role=snapshot.role,
-                    window_start=snapshot.window_start,
-                    window_end=snapshot.window_end,
-                    entries=tuple(
-                        EvidenceCatalogEntry(
-                            evidence_id=e.evidence_id,
-                            kind=e.kind,
-                            source=e.source,
-                            summary=e.summary,
-                            observed_at=e.observed_at,
-                        )
-                        for e in sorted(snapshot.evidence, key=lambda e: e.evidence_id)
-                    ),
-                )
-            )
+            groups.append(catalog_group(record))
         if manifest.role == "synthesis" and {g.role for g in groups} != set(EvidenceKind):
             raise TaskFactConflict("context_evidence_corrupt", "综合清单没有完整的专业范围")
         return EvidenceCatalog(

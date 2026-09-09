@@ -1,12 +1,13 @@
 """上下文输入、材料引用与每次调用的不可变清单。"""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from opsswarm.investigation.budget.model_contracts import ModelAllocation, ModelInput
+from opsswarm.investigation.budget.model_contracts import ModelAllocation
+from opsswarm.investigation.loop.contracts import AnyModelInput
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -17,7 +18,7 @@ from opsswarm.investigation.tasks.contracts import TaskAssignment, TaskModel
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion, TaskEvidenceRecord
 from opsswarm.investigation.tasks.results import TaskResultRecord
 
-ContextPolicyVersion = Literal["task-context-v1"]
+ContextPolicyVersion = Literal["task-context-v1", "evidence-read-v1"]
 CONTEXT_POLICY_VERSION: ContextPolicyVersion = "task-context-v1"
 CONTEXT_PROMPT_VERSION: Literal["fixed-task-context-v1"] = "fixed-task-context-v1"
 
@@ -46,17 +47,25 @@ class ContextManifest(TaskModel):
     role: Literal["log", "metric", "change", "synthesis"]
     role_version: Literal["fixed-roles-v1"] = "fixed-roles-v1"
     workflow_version: Literal["v2"] = "v2"
-    prompt_version: Literal["fixed-task-context-v1"] = CONTEXT_PROMPT_VERSION
+    prompt_version: Literal["fixed-task-context-v1", "evidence-read-v1"] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=3, max_length=10)
-    # 固定图尚未向模型提供业务工具或压缩，禁止清单虚构这些能力。
-    tool_names: tuple[str, ...] = Field(default=(), max_length=0)
+    tool_names: tuple[str, ...] = Field(default=(), max_length=1)
     trimming: tuple[str, ...] = Field(default=(), max_length=0)
     allocation: ModelAllocation
 
+    @model_validator(mode="after")
+    def validate_strategy(self) -> Self:
+        loop = self.version == "evidence-read-v1" and self.role != "synthesis"
+        if self.tool_names != (("read_evidence",) if loop else ()) or self.prompt_version != (
+            "evidence-read-v1" if loop else "fixed-task-context-v1"
+        ):
+            raise ValueError("上下文策略与提示、工具集合不匹配")
+        return self
+
 
 class ContextPacket(TaskModel):
-    model_input: ModelInput
+    model_input: AnyModelInput
     manifest: ContextManifest
 
 
@@ -75,3 +84,4 @@ class ContextSources:
     request: InvestigationRequest
     evidence_policy_version: EvidencePolicyVersion
     tasks: tuple[ContextTaskMaterial, ...]
+    context_policy_version: ContextPolicyVersion = CONTEXT_POLICY_VERSION

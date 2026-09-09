@@ -19,7 +19,6 @@ from opsswarm.investigation.budget.identity import reservation_key
 from opsswarm.investigation.budget.model_contracts import (
     ModelAllocation,
     ModelBudgetPolicy,
-    ModelInput,
     ReportedModelUsage,
 )
 from opsswarm.investigation.budget.model_policy import (
@@ -37,6 +36,8 @@ from opsswarm.investigation.budget.policy import (
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.reservation import validate_context_reservation
+from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, EvidenceToolRequest
+from opsswarm.investigation.loop.ledger import validate_call_result, validate_tool_request
 from opsswarm.investigation.persistence.lease import (
     active_investigation_transaction,
     normalized_now,
@@ -108,10 +109,11 @@ class CallBudgetStore:
         operation: CallOperation,
         task_id: UUID | None = None,
         task_attempt_id: UUID | None = None,
-        model_input: ModelInput | None = None,
+        model_input: AnyModelInput | None = None,
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
         invocation_index: int = 0,
+        tool_request: EvidenceToolRequest | None = None,
     ) -> CallGrant:
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock
@@ -163,7 +165,13 @@ class CallBudgetStore:
                 model_input,
                 context_manifest,
                 prompt_version,
+                task_attempt_id,
+                invocation_index,
             )
+            await validate_tool_request(
+                session, run, task_id, task_attempt_id, operation, invocation_index, tool_request
+            )
+            request_data = tool_request.model_dump(mode="json") if tool_request else None
             manifest_data = context_manifest.model_dump(mode="json") if context_manifest else None
             records = list(
                 await session.scalars(
@@ -177,6 +185,8 @@ class CallBudgetStore:
             )
             existing = next((r for r in records if r.idempotency_key == key), None)
             if existing is not None:
+                if existing.tool_request != request_data:
+                    raise TaskFactConflict("tool_input_replay_conflict", "同一读取不能改写参数")
                 if existing.context_manifest != manifest_data:
                     raise TaskFactConflict("context_replay_conflict", "同一预留不能改写上下文清单")
                 if existing.model_allocation != (
@@ -231,6 +241,8 @@ class CallBudgetStore:
                 model_allocation=allocation.model_dump(mode="json") if allocation else None,
                 model_usage=None,
                 context_manifest=manifest_data,
+                tool_request=request_data,
+                call_result=None,
             )
             session.add(row)
             await session.flush()
@@ -249,12 +261,13 @@ class CallBudgetStore:
         error_code: Literal["operation_failed", "operation_cancelled", "run_deadline_exceeded"]
         | None = None,
         model_usage: ReportedModelUsage | None = None,
+        call_result: CallResult | None = None,
     ) -> CallReservationRecord:
         if (status == "succeeded") != (error_code is None):
             raise ValueError("调用结算状态与错误码不一致")
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock
-        ) as (session, parent, _, _, now):
+        ) as (session, parent, _, run, now):
             row = await session.scalar(
                 select(CallReservationRow).where(
                     CallReservationRow.id == reservation_id,
@@ -266,16 +279,20 @@ class CallBudgetStore:
             if model_usage is not None and row.model_allocation is None:
                 raise TaskFactConflict("model_usage_not_allowed", "该调用没有模型输入预留")
             usage_data = model_usage.model_dump(mode="json") if model_usage is not None else None
+            result_data = call_result.model_dump(mode="json") if call_result is not None else None
             if row.status != "reserved":
                 if (
                     row.status != status
                     or row.error_code != error_code
                     or row.model_usage != usage_data
+                    or row.call_result != result_data
                 ):
                     raise TaskFactConflict("call_settlement_conflict", "调用已保存另一种结算结果")
             else:
+                await validate_call_result(session, run, row, status, call_result)
                 row.status = status
                 row.error_code = error_code
                 row.finished_at = now
                 row.model_usage = usage_data
+                row.call_result = result_data
             return CallReservationRecord.model_validate(row, from_attributes=True)

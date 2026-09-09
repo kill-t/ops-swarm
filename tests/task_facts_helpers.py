@@ -10,6 +10,7 @@ from opsswarm.incidents import ActorType, AlertSubmission, IncidentActor, Incide
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
+from opsswarm.investigation.context.contracts import ContextPolicyVersion
 from opsswarm.investigation.models import (
     EvidenceKind,
     InvestigationDataSourceMode,
@@ -41,6 +42,7 @@ async def claimed_run(
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
+    context_policy_version: ContextPolicyVersion | None = None,
 ) -> tuple[InvestigationStore, ClaimedInvestigation]:
     store, _ = await started_run(
         factory,
@@ -48,6 +50,7 @@ async def claimed_run(
         data_source_mode=data_source_mode,
         call_budget=call_budget,
         model_budget=model_budget,
+        context_policy_version=context_policy_version,
     )
     claim = await store.claim_next(
         worker_id=str(uuid4()),
@@ -67,6 +70,7 @@ async def started_run(
     max_attempts: int = 3,
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
+    context_policy_version: ContextPolicyVersion | None = None,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     key = str(uuid4())
     incident = await IncidentStore(factory).ingest_alert(
@@ -95,6 +99,7 @@ async def started_run(
         max_attempts=max_attempts,
         call_budget=call_budget,
         model_budget=model_budget,
+        context_policy_version=context_policy_version,
     )
     return store, started
 

@@ -9,11 +9,11 @@ from opsswarm.investigation.budget.model_contracts import (
     ModelAllocation,
     ModelBudgetPolicy,
     ModelBudgetUsage,
-    ModelInput,
     ModelProfile,
     ReportedModelUsage,
 )
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
+from opsswarm.investigation.loop.contracts import AnyModelInput
 
 
 def estimate_cost(profile: ModelProfile, inputs: int, outputs: int) -> Decimal:
@@ -27,7 +27,7 @@ def estimate_cost(profile: ModelProfile, inputs: int, outputs: int) -> Decimal:
 
 
 def allocate_input(
-    policy: ModelBudgetPolicy, model_input: ModelInput, *, prompt_version: str
+    policy: ModelBudgetPolicy, model_input: AnyModelInput, *, prompt_version: str
 ) -> ModelAllocation:
     payload = json.dumps(
         model_input.model_dump(mode="json"),

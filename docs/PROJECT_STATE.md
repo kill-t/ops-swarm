@@ -1,41 +1,34 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-08。本快照对应最新业务代码提交 `090a44e`（第 77 步），交接文档为第 78 步独立文档切片。开始交接时分支为 `main`，Git 工作区干净，暂存与未暂存差异均为空。后续会话必须再次运行 Git 检查，不能把本段当成实时状态。
+核对日期：2026-09-09。当前切片为第 79 步专业 Agent 有界按需证据读取，基线为 main 的 `4c8e67f`（第 78 步交接）。本文随第 79 步独立提交保存；实际提交与工作区状态须以 `git log`、`git status` 再次核对。第 79 步统一验收结果见其进度记录，不能沿用历史测试数量。
 
 ## 1. 新会话阅读顺序
 
-1. 阅读 [AGENTS.md](../AGENTS.md) 和本文件，确认项目根目录、单一职责、测试与提交要求。
-2. 阅读 [进度索引](progress/README.md)、[第 77 步验收](progress/77-repeated-call-identity.md) 与 [第 78 步交接记录](progress/78-development-handoff.md)。最新实现与最新文档切片分别记录。
-3. 阅读 [第 64 篇总路线](architecture/64-full-multi-agent-roadmap.md) 和 [第 65 篇 Agent 设计](architecture/65-agent-system-design.md)，按下一切片涉及的主题按需读取，不需要每次通读全部历史文档。
-4. 用本文件第 6 节定位实际代码，再核对 [数据库设计](architecture/04-database-design.md) 和 [API 设计](architecture/05-api-design.md)。发现文档与代码冲突时先查对应提交和测试，保留历史事实并修正当前入口。
+1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
+2. 阅读 [第 79 步设计](architecture/79-bounded-evidence-reading.md) 与 [验收记录](progress/79-bounded-evidence-reading.md)，需要历史边界时再读 [第 77 步](progress/77-repeated-call-identity.md)、[第 78 步](progress/78-development-handoff.md)。
+3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
+4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
-架构文档规定目标与契约，代码和迁移展示实现，进度记录提供当次验收证据。本文件负责导航和当前事实摘要，不重复维护完整设计。
+架构规定目标与契约，代码和迁移展示实现，进度记录提供验收证据。本文是当前事实摘要，不替代专项来源。
 
-## 2. 项目当前目标
+## 2. 项目目标与边界
 
-在已交付 MVP 上建设完整多 Agent 事故响应平台，用于学习、现场演示及简历表达，重点区别于用户已有的 RAG 项目：任务分解、专业工具调查、共享事实、分层记忆、上下文管理、动态补查、独立审查、人工介入和持久化恢复。
-
-多 Agent 是既定方向，不再用单、多 Agent 收益比较决定是否继续。继续按可运行、可测试、可解释的小切片推进；当前全部真实环境操作仅限本地 Docker Compose 演练系统。
+在 MVP 上建设完整多 Agent 事故响应平台，展示任务分解、专业调查、共享事实、分层记忆、上下文管理、动态补查、独立审查、人工介入和持久恢复。多 Agent 是既定方向，按小切片推进；真实环境操作仅限隔离的本地 Docker Compose 演练系统，不读取原 RAG 仓库。
 
 ## 3. 当前架构与技术栈
 
-| 层次 | 当前实现与事实来源 |
-| --- | --- |
-| 后端 | Python 3.12、FastAPI、Pydantic 2，模块化单体；依赖范围见 [pyproject.toml](../pyproject.toml)，精确解析版本见 [uv.lock](../uv.lock) |
-| 持久化 | PostgreSQL 17、SQLAlchemy 2 异步、Psycopg 3、Alembic；业务数据库和 LangGraph checkpoint 分离 |
-| 调度 | 独立调查 Worker 与恢复验证 Worker；PostgreSQL 持久任务、租约、幂等与尝试审计 |
-| Agent | LangChain/LangGraph 1.x；多 Agent 当前为固定并行专业调查与综合，保留 v1 和独立 v2 路径；内部 Harness 已有任务、预算、上下文组件，整体仍未完成 |
-| 取证 | Loki、Prometheus、本地变更服务只读适配器；冻结与现场来源显式区分；现场多 Agent 取证经受限异步执行器，尚未走 MCP |
-| 前端与观测 | `web/` 下 Vue 3、TypeScript、Pinia、Vue Router、Vite，REST/可重放 SSE；OpenTelemetry 与 Jaeger；依赖以 [web/package.json](../web/package.json) 和锁文件为准 |
-| 部署 | [compose.yaml](../compose.yaml) 包含控制面、前端、数据库、调查/验证 Worker、监控与故障演练服务；尚无 telemetry-mcp 服务 |
-
-业务迁移当前唯一 head 为 `0037_call_invocation_index`，来自 [第 37 个迁移](../alembic/versions/20260908_0037_call_invocation_index.py)。这是仓库迁移状态，不代表任意本地演练数据库已升级；本次交接未连接或修改演练数据库。
+- Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
+- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
+- 当前仍固定日志、指标、变更三个专业任务和综合节点。新策略只读取已保存证据，不动态查询遥测或创建补查任务。
+- 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
+- Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0038_evidence_read_loop`；第 79 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
-MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、证据、审批、白名单执行、恢复验证、人工关闭、不可变复盘报告、改进行动项与作战室已形成演练闭环。原单 Agent 路径、固定多 Agent 路径、评测数据和历史结果保留。本次交接没有重新执行完整 MVP 发布演示。
+MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、证据、审批、白名单执行、恢复验证、人工关闭、不可变复盘报告、改进行动项与作战室已形成演练闭环。原单 Agent 路径、固定多 Agent 路径、评测数据和历史结果保留。第 79 步没有重新执行完整 MVP 发布演示。
 
-本次长会话推进的工程版记录可由 Git 历史逐项核对：
+此前工程版记录可由 Git 历史逐项核对：
 
 | 切片 | 提交 | 已交付边界 |
 | --- | --- | --- |
@@ -49,81 +42,57 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [75](progress/75-task-context-builder.md) | `6fc4f67` | 最小 ContextBuilder、任务隔离、不可变材料清单与输入预留原子提交 |
 | [76](progress/76-context-evidence-reader.md) | `05844ca` | 已保存调用范围内的证据目录与受控详情读取服务/API |
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
+| [79](progress/79-bounded-evidence-reading.md) | 本片独立提交 | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-## 5. 正在进行、尚未完成及已知限制
+## 5. 当前能力与限制
 
-交接时没有半成品业务代码或待提交业务修改；本轮仅整理文档。下一功能切片尚未开始实现。第 78 步占用交接记录编号，后续功能切片从第 79 步继续。
+第 79 步通过显式 `context_policy_version=evidence-read-v1` 开启专业按需读取；必须同时提供 v2 与 function_calling 模型预算 profile。省略字段仍按旧规则选择 task-context-v1 或 null，v1/历史 v2 不升级。
 
-以下能力不能写进简历或交接为“已完成”：
+- 专业模型先接收本任务目录，最多每轮一个 read_evidence 或 SpecialistReport 请求。工具参数只有证据 ID 与快照散列，运行、任务、尝试和角色由系统注入；报告只能引用本尝试成功读取的证据。
+- 每次模型/业务工具调用前预留，返回与结算同事务保存。下一输入从成功且完整配对的账本重新组装并在预算事务内复核。内部循环没有独立 checkpoint；未完成任务技术重试从原快照目录开始，新尝试不清空预算。
+- 综合仍接收三个已提交专业报告和完整有界证据。冻结和现场模式均使用假模型/假传输回归，没有新的真实模型或现场发布验收。
+- 默认预算仍为 12 次模型、18 次工具、每任务 6 次工具、300 秒。原始取证与按需读取共用额度。默认输出预留 4096、累计 24000 无法支持至少七次模型调用；开启者必须显式配置合适预算，测试使用单次输出 1024，不静默提高上限。
+- call-budget 是累计实际调用预留和用量的查询入口。旧 result.tool_call_count / 评测字段仍表示固定图三次取证，不能称作新循环总工具数。
+- 输入采用保守字节估算；未知用量保持未知。合法响应也受 32 KiB 规范化 JSON 上限约束，未通过校验的原始正文不保存为历史；失败仍保留状态与可取得的供应商用量。没有证明 Token 或费用下降。
+- 工具失败可能被框架转换成本地错误消息，但不完整历史在下一请求前即被拒绝；既有 Worker 技术重试仍有界且消耗原预算。
 
-- 专业 Agent 主动选择证据详情、多步工具循环和完整工具消息配对。当前目录 API 供复核保存材料使用，模型仍接收完整有界证据。
-- 结构化工作摘要、历史裁剪与压缩；现有清单中的工具集合和裁剪记录被明确限制为空。
-- 动态协调分派、跨专业补查、开放未知假设的完整流程、独立审查 Agent 和有界多轮调查。目标六个逻辑角色不等于六个动态 Agent 已部署。
-- 日志/指标 MCP、版本化调查手册按需加载、可信操作员身份、经验候选提取/审核/检索/停用闭环。
-- 图内人工暂停、补充、取消和恢复；已有业务审批不等于 LangGraph interrupt/resume 已接入。
-- 规划 Agent、多步骤处置、部分失败停止、验证失败回流、跨服务复合场景工作台与完整工程版发布验收。已有 MVP 白名单动作和复盘报告不能代替这些目标能力。
+尚未完成：结构化工作摘要与历史裁剪；动态分派/跨专业补查/独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
-已知限制和后续风险：
+## 6. 下一步代码导航
 
-- v2 需启动 API 显式选择；默认仍是 v1，前端没有版本选择器。Token/费用预算由 model_budget 单独启用；未启用时不能宣称保存了完整输入预算清单。
-- 新建且启用模型预算的 v2 固定 `task-context-v1` / `fixed-task-context-v1`；历史策略保持原值或 null。升级不能静默改变旧输入散列与 checkpoint 语义。
-- 现场 v2 固定 UTC 截止，日志/指标回看 15 分钟，变更回看 6 小时；Worker 当前只接受本地 simulator 变更配置，GitHub 组合来源明确拒绝。现场失败不回退冻结证据，历史变更不冒充当前部署证明。
-- 输入预算采用保守字节估算，输出和费用仍受供应商实际行为影响；未知用量留作未知，不把预算预留数称为模型精确调用次数。
-- 当前 v2 默认 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用、300 秒总时限；模型预算另有累计输出上限。接入循环不能静默提高配置，取证与后续工具读取是否共用任务额度须按既有预算语义落实。
-- 证据目录内部仍加载最多三个完整有界快照进行校验；本轮没有证明 Token 或检索成本下降。
-- 没有确认中的测试失败。第 77 步 448 项回归通过是该次范围内结果，不能当成全仓、所有生产连接或下一次提交的验收。
-
-## 6. 下一步必须知道的代码边界
-
-| 入口 | 下一会话需要核实的事实 |
+| 入口 | 边界 |
 | --- | --- |
-| [worker/task_graph.py](../src/opsswarm/worker/task_graph.py) | 每个父尝试装配 v2、固定来源和策略；模型预算 profile 必须匹配，SDK 重试为 0、n 为 1 |
-| [parallel_model.py](../src/opsswarm/investigation/parallel_model.py)、[budget/model_caller.py](../src/opsswarm/investigation/budget/model_caller.py) | 专业/综合结构化模型调用，当前没有专业业务工具循环 |
-| [tasks/runtime.py](../src/opsswarm/investigation/tasks/runtime.py) | 任务尝试、结果提交、取证复用和恢复边界；技术重试与补查任务不能混同 |
-| [context/builder.py](../src/opsswarm/investigation/context/builder.py)、[context/reservation.py](../src/opsswarm/investigation/context/reservation.py) | 专业只用本任务，综合用三个已完成专业；预算事务内重新组装并比较真实输入/材料清单 |
-| [context/contracts.py](../src/opsswarm/investigation/context/contracts.py)、[context/loading.py](../src/opsswarm/investigation/context/loading.py) | 只接受 task-context-v1；不能只放宽消息字段就称新策略已接入 |
-| [context/evidence_reader.py](../src/opsswarm/investigation/context/evidence_reader.py) | 绑定已保存 run_id/call_id 的目录和详情；首轮模型前目录的构造需要独立设计，不能伪造已保存调用 |
-| [budget/model_contracts.py](../src/opsswarm/investigation/budget/model_contracts.py) | 当前 ModelInput 只有 system/user 文本消息，不承载 assistant 工具调用及 tool 响应；演进时保留旧序列化和散列 |
-| [budget/store.py](../src/opsswarm/investigation/budget/store.py)、[budget/runtime.py](../src/opsswarm/investigation/budget/runtime.py) | 请求前租约校验/原子预留、共享账本与结算；相同预留拒绝再执行 |
-| [budget/contracts.py](../src/opsswarm/investigation/budget/contracts.py)、[budget/policy.py](../src/opsswarm/investigation/budget/policy.py) | 当前只登记三类取证操作和专业/综合模型操作，read_evidence 尚未进入操作白名单；新工具需要同步确定角色、计费分类和数据库约束 |
-| [budget/identity.py](../src/opsswarm/investigation/budget/identity.py)、[budget/tables.py](../src/opsswarm/investigation/budget/tables.py) | invocation_index 为运行层指定的 0–99 槽位，默认 0 保留旧键；不是轮次、自动循环计数、工具参数或缓存身份；尚无完整模型输出/工具交互账本 |
+| [worker/task_graph.py](../src/opsswarm/worker/task_graph.py) | 按固定运行策略装配新旧 Analyst，profile 必须匹配，SDK 重试为 0、n 为 1 |
+| [loop/agent.py](../src/opsswarm/investigation/loop/agent.py)、[loop/middleware.py](../src/opsswarm/investigation/loop/middleware.py) | create_agent/ToolStrategy 原生循环及每次请求的预算、返回审计；每个专业尝试独立 middleware |
+| [loop/contracts.py](../src/opsswarm/investigation/loop/contracts.py)、[loop/messages.py](../src/opsswarm/investigation/loop/messages.py) | 新输入版本、消息适配与配对，旧 ModelInput 未改变序列化 |
+| [loop/context.py](../src/opsswarm/investigation/loop/context.py)、[loop/ledger.py](../src/opsswarm/investigation/loop/ledger.py) | 首轮目录、成功历史、报告读取资格、参数/来源/结果复核；尚无工作摘要 |
+| [context/catalog.py](../src/opsswarm/investigation/context/catalog.py)、[context/evidence_reader.py](../src/opsswarm/investigation/context/evidence_reader.py) | 新旧入口共用目录投影；详情仍绑定真实保存的模型 call_id |
+| [context/selection.py](../src/opsswarm/investigation/context/selection.py)、[context/reservation.py](../src/opsswarm/investigation/context/reservation.py) | 启动策略选择及预留事务内按版本重建输入，综合保持旧文本调用 |
+| [budget/store.py](../src/opsswarm/investigation/budget/store.py)、[budget/runtime.py](../src/opsswarm/investigation/budget/runtime.py) | 有效父租约、原子预留、共享额度、结算幂等与迟到阻断；相同预留不能重发外部请求 |
+| [tasks/runtime.py](../src/opsswarm/investigation/tasks/runtime.py) | 稳定任务、新尝试、快照复用及专业结果恢复，不把技术重试当成补查 |
 
-本会话曾查看本地 LangChain 的 create_agent 与异步模型/工具 middleware 入口，以确认可以复用框架；没有完成工具循环选型实验。下一会话应按 uv.lock 和本地安装源码核实 create_agent、ToolStrategy 及 middleware 的实际契约，不凭记忆编造 SDK 参数。
+第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
 
-**以下只是待验证的实现建议，并非已定契约：**先让专业 Agent 使用目录和一个受限 read_evidence 工具，综合节点可暂保留结构化单次调用；通过框架 middleware 对每次真实模型/业务工具调用预留与结算。策略名、开启方式、消息表结构、输出工具是否计入业务工具预算、错误配对及崩溃后从何处重启，都要先形成可测试设计，不能从聊天草案直接当成代码现状。
+## 7. 保留的重要决定
 
-## 7. 重要决策及原因
+LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注权限、上下文、预算和审计；checkpoint 不替代业务事实。内部 Agent 不使用 A2A，MCP 只用于后续只读遥测。经验从复盘生成候选，经可信人工确认后启用，不是当前事实或执行授权。新能力固定新策略，旧运行不静默换输入和恢复语义。
 
-| 决策 | 原因与边界 |
-| --- | --- |
-| LangGraph + LangChain + 轻量 Harness | 复用调度、工具循环和 checkpoint；项目代码专注上下文、预算、权限、业务审计，不重建框架 |
-| PostgreSQL 事实 + checkpoint 快照 | 业务提交与 checkpoint 不假设跨库原子；恢复必须核对已提交材料和结果 |
-| 内部结构化任务，不用 A2A | 当前没有独立部署的外部 Agent 互操作需求；遥测 MCP 属于后续明确交付项 |
-| 经验人工确认、简单确定性检索 | 避免未经确认的历史经验变成当前事实或授权；先建立可信身份，暂不引入向量库或独立压缩模型 |
-| 新能力固定新策略、保留旧路径 | 避免旧运行恢复时输入含义、预算和审计发生静默变化 |
-| 先完成第 77 步调用身份 | 原幂等键会阻止同尝试重复操作；现在已有独立槽位，但完整消息与工具授权仍需下一片设计 |
+开发子智能体按独立边界与难度分配；主 Agent 核实关键结论、统一测试和提交。开发 Agent 的资源偏好不改变 OpsSwarm 业务角色的模型或预算。
 
-全部长期约束以 AGENTS.md 和第 65 篇为准。本次新增的开发偏好是：按独立子任务难度选择子智能体、模型和思考强度，尽量减少重复上下文；主 Agent 负责验收和提交。它不改变应用中角色模型、预算配置或运行权限。
+## 8. 下一功能切片
 
-## 8. 下一步建议与验收目标
+第 80 步：**结构化工作摘要**。先写设计，明确摘要内容、源交互/证据引用、不可变版本、生成与替换时机、材料验证及失败行为，再接入当前专业循环。摘要必须保留反证、失败查询、未解问题和人工约束；不得虚构事实或把未经读取的材料变为证据，不增加独立 LLM 压缩服务。
 
-下一功能切片：**专业 Agent 有界按需证据读取**。先写第 79 篇设计，并按需更新数据库/API 设计，然后实现；允许依据新发现再拆为独立可运行切片，但应清楚说明必要性和剩余范围。
+验收重点：摘要能回溯原始交互和证据；引用、范围、版本和大小校验；必要材料超限时停止调用；上下文替换不破坏工具消息配对；新旧策略与技术重试兼容；真实 PostgreSQL 验证不可变写入和幂等。是否本片同时启用历史裁剪应根据最小可运行边界明确决定，不能只扩展字段就声称摘要已投入使用。
 
-1. 明确新上下文策略、首轮目录、后续完整消息和工具调用配对契约，保护 v1/现有 v2 恢复。
-2. 按职责复用证据服务、预算入口和 LangChain 循环；身份/范围由系统注入，工具只开放证据读取。
-3. 模型返回、工具参数、响应、证据散列与调用槽位形成可追溯记录；先持久化或预留，再推进下一外部调用。复用调用槽位不能代替工具输入一致性和结果大小校验。
-4. 每个角色、每次循环、技术重试共享原运行额度；错误、超时、非法工具、迟到结果、未知用量和恢复边界都必须可验证。
-5. 使用假模型和固定工具结果验证目录→读取→报告、越权拒绝、消息配对、预算前置、两个事故隔离、崩溃恢复；真实 PostgreSQL 验证事务与迁移。同步文档并创建一个中文提交。
+之后仍按第 64/65 篇推进动态协作 → 只读 MCP → 手册、可信身份与经验 → 人工介入/规划 → 多步骤处置与回流 → 复杂场景和工作台 → CI 与完整发布。
 
-之后顺序保持：工作摘要 → 动态专业调查/协调/审查 → 只读遥测 MCP → 手册、可信身份与经验 → 人工介入/规划 → 多步骤处置与验证回流 → 复杂场景与协作工作台 → CI 与完整版本发布。细节以第 64/65 篇为准。
+## 9. 验证与环境
 
-## 9. 可复现验证与环境提示
-
-所有命令在仓库根目录执行。Windows PowerShell 使用仓库 `.venv/Scripts/`，不要依赖全局 Python。完整第 77 步命令及 448 passed / 234.30 秒记录在其验收文档；交接切片只重新做文档、静态和差异检查，不重新声明业务测试通过。
+使用仓库 `.venv/Scripts/`；完整第 79 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，异步子进程继续参考现有线程桥接。
 
 ```powershell
 git status --short
-git diff --stat
 git log -5 --oneline
 .venv/Scripts/python.exe -m alembic heads
 .venv/Scripts/ruff.exe check .
@@ -132,12 +101,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动 Testcontainers PostgreSQL 17.6，并创建独立 checkpoint 数据库，Docker 必须运行；不使用 SQLite 代替。Windows 已用 Selector 事件循环兼容 Psycopg；新增异步子进程测试可参考仓库现有线程桥接做法，不直接假设 Selector 支持异步子进程。
+新测试入口为 [loop_helpers.py](../tests/loop_helpers.py)、[循环 SDK 回归](../tests/integration/test_evidence_loop.py)、[图与恢复](../tests/integration/test_loop_graph.py)、[事务账本](../tests/integration/test_loop_ledger.py)、[迁移](../tests/integration/test_loop_migration.py)、[API](../tests/api/test_loop_api.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
-可复用的测试材料见 [context_helpers.py](../tests/context_helpers.py)、[model_budget_helpers.py](../tests/model_budget_helpers.py)、[task_evidence_helpers.py](../tests/task_evidence_helpers.py)、[task_facts_helpers.py](../tests/task_facts_helpers.py)。已有模型预算仓储测试会刻意清空上下文策略来覆盖历史契约，不要把它们改成新策略后误删旧路径回归。
+## 10. 可直接用于继续开发的任务
 
-运行日志、`.pytest_cache` 内临时检查器和工具会话 ID 均不是交接依赖。正式环境配置见 README、Compose 和变量示例，不读取、复制或提交真实 .env、密钥和个人本地配置。
-
-## 10. 可直接发送给新会话的开场任务
-
-> 请先阅读 AGENTS.md、docs/PROJECT_STATE.md、docs/progress/README.md 和最新交接/实现记录，核对 Git 状态、代码及第 64/65 篇计划。最新业务实现为第 77 步，交接为第 78 步；从下一功能切片推进专业 Agent 有界按需证据读取。先确认状态、接口、持久化与失败路径，再按单一职责实现、使用假模型和真实 PostgreSQL 验证、更新文档并提交。不要把证据目录 API、重复调用槽位或历史业务审批当成已经完成的模型工具循环和图内人工恢复；按任务难度合理委派子智能体，统一验收后再提交。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 79 步设计/验收，核对 Git 与实际代码。专业有界按需读取已接入独立策略；从第 80 步结构化工作摘要推进，先设计来源引用、版本、必要材料、配对与失败规则，再完成小切片实现、假模型与真实 PostgreSQL 验证、文档和中文独立提交。不得把摘要、动态协调、MCP 或图内人工恢复提前描述为已交付。

@@ -10,7 +10,7 @@ from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.policy import operation_role
 from opsswarm.investigation.context.contracts import (
-    CONTEXT_POLICY_VERSION,
+    ContextPolicyVersion,
     ContextSources,
     ContextTaskMaterial,
 )
@@ -32,7 +32,10 @@ async def load_sources(
     operation: CallOperation,
     task_id: UUID | None,
 ) -> ContextSources:
-    if run.context_policy_version != CONTEXT_POLICY_VERSION or run.evidence_policy_version not in (
+    if run.context_policy_version not in (
+        "task-context-v1",
+        "evidence-read-v1",
+    ) or run.evidence_policy_version not in (
         "task-evidence-v1",
         "task-evidence-live-v1",
     ):
@@ -78,4 +81,5 @@ async def load_sources(
         ),
         evidence_policy_version=cast(EvidencePolicyVersion, run.evidence_policy_version),
         tasks=tuple(tasks),
+        context_policy_version=cast(ContextPolicyVersion, run.context_policy_version),
     )

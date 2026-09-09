@@ -23,6 +23,18 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
+            "((operation IN ('read_log_evidence','read_metric_evidence','read_change_evidence')) "
+            "= (tool_request IS NOT NULL)) AND "
+            "(tool_request IS NULL OR (jsonb_typeof(tool_request) = 'object' AND "
+            "octet_length(tool_request::text) <= 8192)) AND "
+            "(call_result IS NULL OR (status <> 'reserved' AND "
+            "jsonb_typeof(call_result) = 'object' AND octet_length(call_result::text) <= 65536 AND "
+            "COALESCE(call_result ->> 'kind', '') = kind AND "
+            "((kind = 'model' AND COALESCE(model_input ->> 'version', '') = "
+            "'evidence-loop-input-v1') OR (kind = 'tool' AND tool_request IS NOT NULL))))",
+            name="ck_call_reservations_loop_payload",
+        ),
+        CheckConstraint(
             "invocation_index BETWEEN 0 AND 99",
             name="ck_call_reservations_invocation_index",
         ),
@@ -90,7 +102,8 @@ class CallReservationRow(Base):
             name="ck_call_reservations_error",
         ),
         CheckConstraint(
-            "(operation IN ('query_logs', 'query_metrics', 'list_changes') AND kind = 'tool') OR "
+            "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence', "
+            "'read_metric_evidence', 'read_change_evidence') AND kind = 'tool') OR "
             "(operation IN ('analyze_log', 'analyze_metric', 'analyze_change', 'synthesize') "
             "AND kind = 'model')",
             name="ck_call_reservations_operation",
@@ -122,3 +135,5 @@ class CallReservationRow(Base):
     model_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_allocation: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    tool_request: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    call_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

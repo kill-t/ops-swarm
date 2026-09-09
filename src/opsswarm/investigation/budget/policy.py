@@ -20,6 +20,9 @@ def operation_kind(operation: CallOperation) -> Literal["model", "tool"]:
             CallOperation.QUERY_LOGS,
             CallOperation.QUERY_METRICS,
             CallOperation.LIST_CHANGES,
+            CallOperation.READ_LOG_EVIDENCE,
+            CallOperation.READ_METRIC_EVIDENCE,
+            CallOperation.READ_CHANGE_EVIDENCE,
         )
         else "model"
     )
@@ -34,6 +37,9 @@ def operation_role(operation: CallOperation) -> str | None:
         CallOperation.LIST_CHANGES: "change",
         CallOperation.ANALYZE_CHANGE: "change",
         CallOperation.SYNTHESIZE: None,
+        CallOperation.READ_LOG_EVIDENCE: "log",
+        CallOperation.READ_METRIC_EVIDENCE: "metric",
+        CallOperation.READ_CHANGE_EVIDENCE: "change",
     }[operation]
 
 

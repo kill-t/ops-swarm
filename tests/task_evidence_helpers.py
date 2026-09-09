@@ -34,9 +34,15 @@ def professional_result(assignment, evidence=None):
     )
 
 
-async def evidence_attempt(db, *, call_status="succeeded", model_budget=None):
+async def evidence_attempt(
+    db, *, call_status="succeeded", model_budget=None, context_policy_version=None, call_budget=None
+):
     parent, claim = await claimed_run(
-        db, workflow_version=WorkflowVersion.V2, model_budget=model_budget
+        db,
+        workflow_version=WorkflowVersion.V2,
+        model_budget=model_budget,
+        context_policy_version=context_policy_version,
+        call_budget=call_budget,
     )
     clock = TaskClock()
     tasks, queries = InvestigationTaskStore(db, clock=clock), CollaborationQueries(db)

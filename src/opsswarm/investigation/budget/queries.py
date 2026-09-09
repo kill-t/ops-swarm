@@ -15,13 +15,17 @@ from opsswarm.investigation.budget.contracts import (
 from opsswarm.investigation.budget.model_contracts import (
     ModelAllocation,
     ModelBudgetPolicy,
-    ModelInput,
     ReportedModelUsage,
 )
 from opsswarm.investigation.budget.model_policy import summarize_model_usage
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.errors import InvestigationRunNotFound
+from opsswarm.investigation.loop.contracts import (
+    MODEL_INPUT_ADAPTER,
+    AnyModelInput,
+    CallInteraction,
+)
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
@@ -83,7 +87,7 @@ class CallBudgetQueries:
                 else None,
             )
 
-    async def get_model_input(self, run_id: UUID, call_id: UUID) -> ModelInput | None:
+    async def get_model_input(self, run_id: UUID, call_id: UUID) -> AnyModelInput | None:
         async with self._factory() as session:
             if await session.get(InvestigationRunRow, run_id) is None:
                 raise InvestigationRunNotFound(run_id)
@@ -96,7 +100,30 @@ class CallBudgetQueries:
             if row is None:
                 raise TaskFactConflict("model_input_not_found", "该运行不存在指定调用")
             return (
-                ModelInput.model_validate(row.model_input) if row.model_input is not None else None
+                MODEL_INPUT_ADAPTER.validate_python(row.model_input)
+                if row.model_input is not None
+                else None
+            )
+
+    async def get_interaction(self, run_id: UUID, call_id: UUID) -> CallInteraction:
+        async with self._factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            row = await session.scalar(
+                select(CallReservationRow).where(
+                    CallReservationRow.investigation_run_id == run_id,
+                    CallReservationRow.id == call_id,
+                )
+            )
+            if row is None:
+                raise TaskFactConflict("call_interaction_not_found", "该运行不存在指定调用")
+            return CallInteraction.model_validate(
+                {
+                    "investigation_run_id": run_id,
+                    "call_id": call_id,
+                    "tool_request": row.tool_request,
+                    "result": row.call_result,
+                }
             )
 
     async def get_context_manifest(self, run_id: UUID, call_id: UUID) -> ContextManifest | None:

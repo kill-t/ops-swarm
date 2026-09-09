@@ -577,6 +577,7 @@ def create_router(clock: Clock) -> APIRouter:
             workflow_version=request.workflow_version,
             call_budget=request.call_budget,
             model_budget=request.model_budget,
+            context_policy_version=request.context_policy_version,
             data_source_mode=request.data_source_mode,
             trace_context=capture_current_trace_context(),
         )

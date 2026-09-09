@@ -16,6 +16,8 @@ from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.context.service import TaskContextService
 from opsswarm.investigation.live import LiveInvestigationDataSource
 from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
+from opsswarm.investigation.loop.agent import EvidenceLoopAnalyst
+from opsswarm.investigation.loop.service import EvidenceLoopService
 from opsswarm.investigation.models import InvestigationDataSourceMode
 from opsswarm.investigation.parallel_graph import (
     ConclusionSynthesizer,
@@ -128,6 +130,17 @@ class TaskGraphFactory:
                 structured_output_method=profile.structured_output_method,
                 model_caller=caller,
             )
+            if context.context_policy_version == "evidence-read-v1":
+                if profile.structured_output_method != "function_calling":
+                    raise CallBudgetExceeded("model_budget_profile_mismatch")
+                analyst = EvidenceLoopAnalyst(
+                    model,
+                    policy=context.model_budget,
+                    runner=runner,
+                    service=EvidenceLoopService(
+                        self._session_factory, context.investigation_run_id
+                    ),
+                )
             synthesizer = LangChainConclusionSynthesizer(
                 model,
                 structured_output_method=profile.structured_output_method,

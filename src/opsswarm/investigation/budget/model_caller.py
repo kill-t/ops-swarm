@@ -71,6 +71,8 @@ class BudgetedModelCaller:
                 self._runner.current_task_id,
                 self._policy,
             )
+            if not isinstance(packet.model_input, ModelInput):
+                raise CallBudgetExceeded("model_input_type_unsupported")
             model_input, manifest = packet.model_input, packet.manifest
             prompt_version = manifest.prompt_version
             messages = [
