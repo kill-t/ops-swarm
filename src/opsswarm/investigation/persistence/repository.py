@@ -5,7 +5,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import and_, or_, select
@@ -172,6 +172,9 @@ class InvestigationStore:
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
                 context_policy_version=context_policy_version,
+                working_summary_policy_version="task-working-summary-v1"
+                if context_policy_version == "evidence-read-v1"
+                else None,
                 observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
                 evidence_policy_version="task-evidence-live-v1"
                 if live_v2
@@ -940,6 +943,9 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         workflow_version=WorkflowVersion(row.workflow_version),
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
         context_policy_version=cast(ContextPolicyVersion | None, row.context_policy_version),
+        working_summary_policy_version=cast(
+            Literal["task-working-summary-v1"] | None, row.working_summary_policy_version
+        ),
         evidence_policy_version=cast(EvidencePolicyVersion | None, row.evidence_policy_version),
         observation_cutoff_at=row.observation_cutoff_at,
         model_budget=ModelBudgetPolicy.model_validate(row.model_budget)

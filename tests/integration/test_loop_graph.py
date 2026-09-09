@@ -198,6 +198,12 @@ async def test_two_incidents_complete_separate_loop_contexts(
         budget = await reply.calls.get_snapshot(run.id)
         assert budget.reserved_model_calls == 7 and budget.reserved_tool_calls == 6
         assert budget.model_usage.unknown_model_calls == 0
+        facts = CollaborationQueries(database_session_factory)
+        for task in (await facts.get_snapshot(run.id)).rounds[0].tasks:
+            summary = await facts.get_working_summary(run.id, task.id)
+            assert summary.investigation_run_id == run.id
+            assert summary.task_id == task.id
+            assert all(c.attempt_id == summary.attempt_id for c in summary.summary.calls)
 
 
 @pytest.mark.parametrize(

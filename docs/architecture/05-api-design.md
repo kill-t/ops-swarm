@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+新增 GET /api/v1/investigations/{run_id}/collaboration/tasks/{task_id}/working-summary，返回不可变摘要或 null，跨运行任务返回 404。启动响应增加只读 working_summary_policy_version，由新建 evidence-read-v1 运行固定，不接受客户端写入。详见 [第 80 篇设计](80-task-working-summary.md)。
+
 第 79 步 [专业按需证据读取](79-bounded-evidence-reading.md) 扩展启动与只读查询，以下规则替代第 75 步“启动请求不能指定上下文策略”的当前限制，历史请求行为保留：
 
 - 启动调查可显式提供 `context_policy_version=task-context-v1` 或 `evidence-read-v1`，均要求 v2 和 model_budget；新策略另要求 profile.structured_output_method=function_calling。省略字段仍沿用现有选择，显式 null 或不兼容配置返回 422。

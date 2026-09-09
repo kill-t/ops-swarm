@@ -14,6 +14,7 @@ from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.records import CollaborationSnapshot
 from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.stream import stream_task_events
+from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
 
 
 def get_collaboration_queries(request: Request) -> CollaborationQueries:
@@ -62,6 +63,30 @@ def create_collaboration_router() -> APIRouter:
                     error_code=error.code,
                     message=str(error),
                 ).model_dump(mode="json"),
+            )
+
+    @router.get(
+        "/investigations/{run_id}/collaboration/tasks/{task_id}/working-summary",
+        response_model=WorkingSummaryRecord | None,
+        responses={
+            404: {"model": ApiErrorResponse},
+            409: {"model": ApiErrorResponse},
+            422: {"model": ApiErrorResponse},
+        },
+    )
+    async def read_working_summary(
+        run_id: UUID,
+        task_id: UUID,
+        queries: Annotated[CollaborationQueries, Depends(get_collaboration_queries)],
+    ) -> WorkingSummaryRecord | None | JSONResponse:
+        try:
+            return await queries.get_working_summary(run_id, task_id)
+        except TaskFactConflict as error:
+            return JSONResponse(
+                status_code=404 if error.code == "task_not_found" else 409,
+                content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
+                    mode="json"
+                ),
             )
 
     @router.get(

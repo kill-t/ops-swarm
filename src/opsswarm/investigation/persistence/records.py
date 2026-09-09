@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -51,6 +52,7 @@ class StoredInvestigationRun(StrictModel):
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     context_policy_version: ContextPolicyVersion | None = None
+    working_summary_policy_version: Literal["task-working-summary-v1"] | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
     observation_cutoff_at: datetime | None = None
     graph_thread_id: str | None

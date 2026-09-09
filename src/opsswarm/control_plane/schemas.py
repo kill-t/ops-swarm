@@ -1,7 +1,7 @@
 """控制面 API 的请求与响应模型。"""
 
 from datetime import datetime
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
@@ -238,6 +238,7 @@ class InvestigationRunResponse(StrictApiModel):
     model_budget: ModelBudgetPolicy | None = None
     graph_thread_id: str | None
     context_policy_version: ContextPolicyVersion | None = None
+    working_summary_policy_version: Literal["task-working-summary-v1"] | None = None
     evidence_policy_version: EvidencePolicyVersion | None = None
     observation_cutoff_at: datetime | None = None
     model_name: str | None

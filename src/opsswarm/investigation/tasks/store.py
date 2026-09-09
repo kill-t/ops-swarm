@@ -15,6 +15,7 @@ from opsswarm.investigation.models import InvestigationArtifacts
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
 from opsswarm.investigation.persistence.tables import (
     InvestigationAttemptRow,
+    InvestigationRunRow,
 )
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskResultRow
 from opsswarm.investigation.tasks.contracts import (
@@ -27,13 +28,15 @@ from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.evidence_store import require_result_evidence
 from opsswarm.investigation.tasks.policy import task_status_after_outcome
 from opsswarm.investigation.tasks.records import AttemptStart, TaskAttemptRecord
-from opsswarm.investigation.tasks.results import SpecialistTaskResult
+from opsswarm.investigation.tasks.results import SpecialistTaskResult, TaskResultRecord
 from opsswarm.investigation.tasks.settlement import require_complete_results, settle_round
 from opsswarm.investigation.tasks.tables import (
     AgentTaskAttemptRow,
     AgentTaskRow,
     InvestigationRoundRow,
 )
+from opsswarm.investigation.working_summary.persistence import save_summary, validated_summary
+from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
 
 
 def utc_now() -> datetime:
@@ -260,6 +263,20 @@ class InvestigationTaskStore:
                     and (stored_result.result if stored_result is not None else None)
                     == result_payload
                 ):
+                    run = await session.get(InvestigationRunRow, run_id)
+                    assert run is not None
+                    if run.working_summary_policy_version is not None and stored_result is not None:
+                        summary = await session.get(AgentTaskWorkingSummaryRow, task_id)
+                        if summary is None:
+                            raise TaskFactConflict(
+                                "working_summary_missing", "成功结果缺少工作摘要"
+                            )
+                        await validated_summary(
+                            session,
+                            task,
+                            TaskResultRecord.model_validate(stored_result, from_attributes=True),
+                            summary,
+                        )
                     return _attempt_record(attempt)
                 raise TaskFactConflict("task_outcome_conflict", "尝试已经保存不同的终态")
             if task.status != "running" or task.attempt_count != attempt.attempt_number:
@@ -274,6 +291,18 @@ class InvestigationTaskStore:
             task.updated_at = now
             task.completed_at = now if task.status in ("succeeded", "failed") else None
             if result_payload is not None:
+                assert result is not None
+                await save_summary(
+                    session,
+                    task,
+                    TaskResultRecord(
+                        task_id=task_id,
+                        investigation_run_id=run_id,
+                        attempt_id=attempt_id,
+                        result=result,
+                        created_at=now,
+                    ),
+                )
                 session.add(
                     AgentTaskResultRow(
                         task_id=task_id,

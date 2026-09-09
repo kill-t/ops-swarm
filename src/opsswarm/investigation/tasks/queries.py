@@ -26,6 +26,9 @@ from opsswarm.investigation.tasks.tables import (
     AgentTaskRow,
     InvestigationRoundRow,
 )
+from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
+from opsswarm.investigation.working_summary.persistence import validated_summary
+from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
 
 
 class CollaborationQueries:
@@ -36,7 +39,8 @@ class CollaborationQueries:
 
     async def get_result(self, run_id: UUID, task_id: UUID) -> TaskResultRecord | None:
         async with self._session_factory() as session:
-            if await session.get(InvestigationRunRow, run_id) is None:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
                 raise InvestigationRunNotFound(run_id)
             task = await session.scalar(
                 select(AgentTaskRow).where(
@@ -47,7 +51,41 @@ class CollaborationQueries:
             if task is None:
                 raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
             row = await session.get(AgentTaskResultRow, task_id)
-            return TaskResultRecord.model_validate(row, from_attributes=True) if row else None
+            if row is None:
+                return None
+            record = TaskResultRecord.model_validate(row, from_attributes=True)
+            if run.working_summary_policy_version is not None:
+                summary = await session.get(AgentTaskWorkingSummaryRow, task_id)
+                if summary is None:
+                    raise TaskFactConflict("working_summary_missing", "成功结果缺少工作摘要")
+                await validated_summary(session, task, record, summary)
+            return record
+
+    async def get_working_summary(self, run_id: UUID, task_id: UUID) -> WorkingSummaryRecord | None:
+        async with self._session_factory() as session:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
+                raise InvestigationRunNotFound(run_id)
+            task = await session.get(AgentTaskRow, task_id)
+            if task is None or task.investigation_run_id != run_id:
+                raise TaskFactConflict("task_not_found", "专业任务不存在或不属于该运行")
+            row = await session.get(AgentTaskWorkingSummaryRow, task_id)
+            if row is None:
+                if run.working_summary_policy_version is not None and task.status == "succeeded":
+                    raise TaskFactConflict("working_summary_missing", "已成功任务缺少工作摘要")
+                return None
+            result = await session.get(AgentTaskResultRow, task_id)
+            if (
+                result is None
+                or task.status != "succeeded"
+                or run.working_summary_policy_version != row.version
+            ):
+                raise TaskFactConflict(
+                    "working_summary_source_invalid", "摘要缺少对应成功结果或策略"
+                )
+            return await validated_summary(
+                session, task, TaskResultRecord.model_validate(result, from_attributes=True), row
+            )
 
     async def get_evidence(self, run_id: UUID, task_id: UUID) -> TaskEvidenceRecord | None:
         async with self._session_factory() as session:

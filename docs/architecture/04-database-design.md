@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+新增设计见 [第 80 篇工作摘要](80-task-working-summary.md)：运行增加可空 working_summary_policy_version；agent_task_working_summaries 以 task_id 为主键，保存运行/成功尝试、版本、JSONB 摘要、SHA-256 和 UTC 生成时间。摘要与结果同事务保存，禁止覆盖，有已启用策略或摘要时拒绝降级。
+
 第 79 步 [专业按需证据读取](79-bounded-evidence-reading.md)：迁移 `0038_evidence_read_loop` 扩展运行上下文策略并在 `investigation_call_reservations` 新增 `tool_request`、`call_result` 两个可空 JSONB 列。历史行保持 null，不重写旧模型输入或散列。
 
 | 新增或扩展项 | 约束与事务边界 |

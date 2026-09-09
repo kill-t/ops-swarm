@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from opsswarm.investigation.models import EvidenceKind, InvestigationArtifacts
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskResultRow
 from opsswarm.investigation.tasks.contracts import (
     RoundStatus,
@@ -18,12 +19,14 @@ from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.evidence_store import require_result_evidence
 from opsswarm.investigation.tasks.policy import round_status_for_tasks
-from opsswarm.investigation.tasks.results import SpecialistTaskResult
+from opsswarm.investigation.tasks.results import SpecialistTaskResult, TaskResultRecord
 from opsswarm.investigation.tasks.tables import (
     AgentTaskAttemptRow,
     AgentTaskRow,
     InvestigationRoundRow,
 )
+from opsswarm.investigation.working_summary.persistence import validated_summary
+from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
 
 
 async def settle_round(session: AsyncSession, round_id: UUID, now: datetime) -> None:
@@ -132,6 +135,19 @@ async def require_complete_results(
     results = [SpecialistTaskResult.model_validate(result.result) for _, result in rows]
     for (task, _), result in zip(rows, results, strict=True):
         await require_result_evidence(session, run_id, task, result)
+    run = await session.get(InvestigationRunRow, run_id)
+    assert run is not None
+    if run.working_summary_policy_version is not None:
+        for task, result_row in rows:
+            summary = await session.get(AgentTaskWorkingSummaryRow, task.id)
+            if summary is None:
+                raise TaskFactConflict("working_summary_missing", "运行完成前必须有三份工作摘要")
+            await validated_summary(
+                session,
+                task,
+                TaskResultRecord.model_validate(result_row, from_attributes=True),
+                summary,
+            )
     assignments = [TaskAssignment.model_validate(task.assignment) for task, _ in rows]
     if (
         {item.report.specialist for item in results} != set(EvidenceKind)

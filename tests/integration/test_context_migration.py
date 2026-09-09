@@ -54,5 +54,5 @@ async def test_downgrade_cannot_erase_context_audit(database_session_factory, au
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0038_evidence_read_loop"
+            == "0039_task_working_summary"
         )
