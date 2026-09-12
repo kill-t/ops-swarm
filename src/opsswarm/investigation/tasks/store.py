@@ -1,7 +1,5 @@
 """在父调查租约保护下原子推进专业任务事实。"""
 
-import hashlib
-import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -26,6 +24,11 @@ from opsswarm.investigation.tasks.contracts import (
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.evidence_store import require_result_evidence
+from opsswarm.investigation.tasks.identity import (
+    normalized_round,
+    round_content_hash,
+    round_specification,
+)
 from opsswarm.investigation.tasks.policy import task_status_after_outcome
 from opsswarm.investigation.tasks.records import AttemptStart, TaskAttemptRecord
 from opsswarm.investigation.tasks.results import SpecialistTaskResult, TaskResultRecord
@@ -41,6 +44,78 @@ from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummar
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+async def create_round_in_transaction(
+    session: AsyncSession,
+    *,
+    run_id: UUID,
+    incident: IncidentRow,
+    assignment: RoundAssignment,
+    now: datetime,
+) -> tuple[UUID, bool]:
+    """复用调用方已持有的父租约事务，原子创建或核对整个轮次。"""
+
+    normalized = normalized_round(assignment)
+    specification = round_specification(normalized)
+    digest = round_content_hash(normalized)
+    previous = list(
+        await session.scalars(
+            select(InvestigationRoundRow)
+            .where(InvestigationRoundRow.investigation_run_id == run_id)
+            .order_by(InvestigationRoundRow.round_number)
+        )
+    )
+    existing = next((row for row in previous if row.round_number == assignment.round_number), None)
+    if existing is not None:
+        if existing.content_hash != digest or existing.specification != specification:
+            raise TaskFactConflict("round_content_conflict", "该轮次已绑定另一份分派")
+        tasks = await session.scalars(
+            select(AgentTaskRow).where(AgentTaskRow.round_id == existing.id)
+        )
+        if {task.task_key: TaskAssignment.model_validate(task.assignment) for task in tasks} != {
+            task.task_key: task for task in normalized.tasks
+        }:
+            raise TaskFactConflict("round_task_conflict", "任务事实与已保存分派不一致")
+        return existing.id, False
+    if assignment.round_number != len(previous) + 1 or (
+        previous and previous[-1].status == "running"
+    ):
+        raise TaskFactConflict("round_sequence_conflict", "上一轮结束后才能顺序创建下一轮")
+    if any(task.service_name != incident.service_name for task in assignment.tasks):
+        raise TaskFactConflict("task_scope_conflict", "当前切片只允许事故所属服务")
+    round_row = InvestigationRoundRow(
+        id=uuid4(),
+        investigation_run_id=run_id,
+        round_number=assignment.round_number,
+        goal=assignment.goal,
+        specification=specification,
+        content_hash=digest,
+        status="running",
+        created_at=now,
+        completed_at=None,
+    )
+    session.add(round_row)
+    await session.flush()
+    for task in normalized.tasks:
+        session.add(
+            AgentTaskRow(
+                id=uuid4(),
+                investigation_run_id=run_id,
+                round_id=round_row.id,
+                task_key=task.task_key,
+                assignment=task.model_dump(mode="json"),
+                status="pending",
+                version=1,
+                attempt_count=0,
+                max_attempts=task.max_attempts,
+                created_at=now,
+                updated_at=now,
+                completed_at=None,
+            )
+        )
+    await append_task_event(session, run_id, event_type="round.created", occurred_at=now)
+    return round_row.id, True
 
 
 class InvestigationTaskStore:
@@ -78,73 +153,14 @@ class InvestigationTaskStore:
     ) -> tuple[UUID, bool]:
         """整个分派原子创建，重放同一轮不得改变任务范围。"""
 
-        normalized = assignment.model_copy(
-            update={"tasks": tuple(sorted(assignment.tasks, key=lambda item: item.task_key))}
-        )
-        specification = normalized.model_dump(mode="json", exclude_none=True)
-        digest = hashlib.sha256(
-            json.dumps(specification, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
         async with self._transaction(run_id, lease_token) as (session, _, incident, now):
-            previous = list(
-                await session.scalars(
-                    select(InvestigationRoundRow)
-                    .where(InvestigationRoundRow.investigation_run_id == run_id)
-                    .order_by(InvestigationRoundRow.round_number)
-                )
+            return await create_round_in_transaction(
+                session,
+                run_id=run_id,
+                incident=incident,
+                assignment=assignment,
+                now=now,
             )
-            existing = next(
-                (row for row in previous if row.round_number == assignment.round_number), None
-            )
-            if existing is not None:
-                if existing.content_hash != digest or existing.specification != specification:
-                    raise TaskFactConflict("round_content_conflict", "该轮次已绑定另一份分派")
-                tasks = await session.scalars(
-                    select(AgentTaskRow).where(AgentTaskRow.round_id == existing.id)
-                )
-                if {
-                    task.task_key: TaskAssignment.model_validate(task.assignment) for task in tasks
-                } != {task.task_key: task for task in normalized.tasks}:
-                    raise TaskFactConflict("round_task_conflict", "任务事实与已保存分派不一致")
-                return existing.id, False
-            if assignment.round_number != len(previous) + 1 or (
-                previous and previous[-1].status == "running"
-            ):
-                raise TaskFactConflict("round_sequence_conflict", "上一轮结束后才能顺序创建下一轮")
-            if any(task.service_name != incident.service_name for task in assignment.tasks):
-                raise TaskFactConflict("task_scope_conflict", "当前切片只允许事故所属服务")
-            round_row = InvestigationRoundRow(
-                id=uuid4(),
-                investigation_run_id=run_id,
-                round_number=assignment.round_number,
-                goal=assignment.goal,
-                specification=specification,
-                content_hash=digest,
-                status="running",
-                created_at=now,
-                completed_at=None,
-            )
-            session.add(round_row)
-            await session.flush()
-            for task in normalized.tasks:
-                session.add(
-                    AgentTaskRow(
-                        id=uuid4(),
-                        investigation_run_id=run_id,
-                        round_id=round_row.id,
-                        task_key=task.task_key,
-                        assignment=task.model_dump(mode="json"),
-                        status="pending",
-                        version=1,
-                        attempt_count=0,
-                        max_attempts=task.max_attempts,
-                        created_at=now,
-                        updated_at=now,
-                        completed_at=None,
-                    )
-                )
-            await append_task_event(session, run_id, event_type="round.created", occurred_at=now)
-            return round_row.id, True
 
     async def begin_attempt(
         self,

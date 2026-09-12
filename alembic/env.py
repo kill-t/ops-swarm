@@ -18,6 +18,7 @@ from opsswarm.execution.persistence import tables as execution_tables  # noqa: F
 from opsswarm.follow_up.persistence import tables as follow_up_tables  # noqa: F401
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.budget import tables as investigation_budget_tables  # noqa: F401
+from opsswarm.investigation.coordination import tables as coordination_tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.investigation.tasks import artifact_tables as task_artifact_tables  # noqa: F401
 from opsswarm.investigation.tasks import evidence_tables as task_evidence_tables  # noqa: F401

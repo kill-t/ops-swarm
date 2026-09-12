@@ -461,6 +461,17 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 
 所有写入在父工作项锁与有效租约内完成，终态内容不可被冲突重试覆盖；重试保留任务身份并增加尝试。此片不持久专业证据或新增 SSE 事件，固定图接入时再扩展阶段结果与事件的事务边界。
 
+### 4.29 动态协调策略与轮次计划
+
+第 83 步增加两张不可变业务事实表，详细事务与读取复核见 [动态协调计划持久化](83-dynamic-coordination-persistence.md)：
+
+| 表 | 字段与约束 |
+| --- | --- |
+| `investigation_coordination_policies` | `investigation_run_id` 主键、策略版本、完整策略 JSONB、SHA-256 和创建时间；运行与散列组成候选键，JSON 类型、大小和版本受数据库约束 |
+| `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略与父尝试 |
+
+计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。当前策略在首次动态计划写入时固定，尚未通过新工作流的运行创建入口冻结。
+
 ## 5. Incident 状态机
 
 ```mermaid

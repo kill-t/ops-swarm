@@ -1,9 +1,11 @@
 """协调 Agent 只能提出有限任务意图，系统范围由确定性代码注入。"""
 
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 
+from opsswarm.investigation.coordination.hashing import coordination_hash
 from opsswarm.investigation.models import EvidenceKind
 from opsswarm.investigation.tasks.contracts import RoundAssignment, TaskModel
 
@@ -12,7 +14,7 @@ COORDINATION_POLICY_VERSION: CoordinationPolicyVersion = "dynamic-coordination-v
 
 
 class CoordinationPolicy(TaskModel):
-    """运行创建时固定的轮次与任务资源上限。"""
+    """首次动态计划写入时固定的轮次与任务资源上限。"""
 
     version: CoordinationPolicyVersion = COORDINATION_POLICY_VERSION
     max_rounds: int = Field(default=3, ge=1, le=3, strict=True)
@@ -54,3 +56,41 @@ class CompiledCoordinationPlan(TaskModel):
     policy_version: CoordinationPolicyVersion
     proposal: CoordinationProposal
     assignment: RoundAssignment
+
+
+class CoordinationPolicyRecord(TaskModel):
+    """一次运行固定且不可变的完整协调策略。"""
+
+    investigation_run_id: UUID
+    version: CoordinationPolicyVersion
+    policy: CoordinationPolicy
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_record(self) -> Self:
+        if (
+            self.version != self.policy.version
+            or coordination_hash(self.policy) != self.content_sha256
+        ):
+            raise ValueError("协调策略记录的版本或散列不一致")
+        return self
+
+
+class CoordinationPlanRecord(TaskModel):
+    """协调计划与实际业务轮次的不可变绑定。"""
+
+    round_id: UUID
+    investigation_run_id: UUID
+    investigation_attempt_id: UUID
+    version: Literal["compiled-coordination-plan-v1"]
+    policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    plan: CompiledCoordinationPlan
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_record(self) -> Self:
+        if self.version != self.plan.version or coordination_hash(self.plan) != self.content_sha256:
+            raise ValueError("协调计划记录的版本或散列不一致")
+        return self
