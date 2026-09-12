@@ -173,7 +173,7 @@ class InvestigationStore:
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
                 context_policy_version=context_policy_version,
                 working_summary_policy_version="task-working-summary-v1"
-                if context_policy_version == "evidence-read-v1"
+                if context_policy_version in ("evidence-read-v1", "summary-context-v1")
                 else None,
                 observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
                 evidence_policy_version="task-evidence-live-v1"

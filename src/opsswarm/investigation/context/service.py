@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy, ModelInput
-from opsswarm.investigation.context.builder import ContextBuilder
 from opsswarm.investigation.context.contracts import ContextPacket
+from opsswarm.investigation.context.dispatch import build_context
 from opsswarm.investigation.context.loading import load_sources
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
@@ -30,4 +30,4 @@ class TaskContextService:
             if run is None:
                 raise InvestigationRunNotFound(self._run_id)
             sources = await load_sources(session, run, operation, task_id)
-        return ContextBuilder().build(supplied, sources, operation, policy)
+        return build_context(supplied, sources, operation, policy)

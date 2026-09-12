@@ -43,7 +43,10 @@ async def validate_tool_request(
         if request is not None:
             raise conflict("该操作不接受证据读取参数")
         return
-    if request is None or run.context_policy_version != "evidence-read-v1":
+    if request is None or run.context_policy_version not in (
+        "evidence-read-v1",
+        "summary-context-v1",
+    ):
         raise conflict("证据读取缺少受支持策略或参数")
     source = await session.get(CallReservationRow, request.source_call_id)
     if (

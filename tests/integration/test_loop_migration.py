@@ -270,5 +270,5 @@ async def test_downgrade_refuses_any_loop_audit(database_session_factory, audit)
         await asyncio.to_thread(command.downgrade, config(), "0037_call_invocation_index")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0039_task_working_summary"
+            "0040_summary_context"
         )

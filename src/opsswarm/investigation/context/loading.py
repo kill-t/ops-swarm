@@ -24,6 +24,9 @@ from opsswarm.investigation.tasks.evidence_store import validated_record
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import AgentTaskRow
+from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
+from opsswarm.investigation.working_summary.persistence import validated_summary
+from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
 
 
 async def load_sources(
@@ -35,11 +38,17 @@ async def load_sources(
     if run.context_policy_version not in (
         "task-context-v1",
         "evidence-read-v1",
+        "summary-context-v1",
     ) or run.evidence_policy_version not in (
         "task-evidence-v1",
         "task-evidence-live-v1",
     ):
         raise TaskFactConflict("context_policy_mismatch", "运行没有受支持的上下文策略")
+    if (
+        run.context_policy_version == "summary-context-v1"
+        and run.working_summary_policy_version != SUMMARY_VERSION
+    ):
+        raise TaskFactConflict("context_policy_mismatch", "摘要上下文缺少固定的摘要策略")
     incident = await session.get(IncidentRow, run.incident_id)
     assert incident is not None
     role = operation_role(operation)
@@ -60,14 +69,22 @@ async def load_sources(
         if evidence is None:
             raise TaskFactConflict("context_evidence_required", "模型调用前需要已提交取证材料")
         result = await session.get(AgentTaskResultRow, row.id) if role is None else None
+        result_record = (
+            TaskResultRecord.model_validate(result, from_attributes=True) if result else None
+        )
+        summary = None
+        if run.context_policy_version == "summary-context-v1" and role is None:
+            summary_row = await session.get(AgentTaskWorkingSummaryRow, row.id)
+            if summary_row is None or result_record is None:
+                raise TaskFactConflict("context_summary_required", "综合需要三份已提交工作摘要")
+            summary = await validated_summary(session, row, result_record, summary_row)
         tasks.append(
             ContextTaskMaterial(
                 task_id=row.id,
                 assignment=assignment,
                 evidence=validated_record(evidence, assignment, run),
-                result=TaskResultRecord.model_validate(result, from_attributes=True)
-                if result
-                else None,
+                result=result_record,
+                working_summary=summary,
             )
         )
     return ContextSources(

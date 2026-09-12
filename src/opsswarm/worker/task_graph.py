@@ -130,7 +130,7 @@ class TaskGraphFactory:
                 structured_output_method=profile.structured_output_method,
                 model_caller=caller,
             )
-            if context.context_policy_version == "evidence-read-v1":
+            if context.context_policy_version in ("evidence-read-v1", "summary-context-v1"):
                 if profile.structured_output_method != "function_calling":
                     raise CallBudgetExceeded("model_budget_profile_mismatch")
                 analyst = EvidenceLoopAnalyst(

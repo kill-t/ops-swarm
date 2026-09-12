@@ -28,9 +28,11 @@ from tests.model_budget_helpers import model_policy
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+@pytest.mark.parametrize("context_policy", ["evidence-read-v1", "summary-context-v1"])
 async def test_start_loop_policy_requires_function_calling_profile(
     migrated_database_url,
     database_session_factory,
+    context_policy,
 ):
     incident = await IncidentStore(database_session_factory).ingest_alert(
         make_submission("evidence-loop-start-api")
@@ -43,7 +45,7 @@ async def test_start_loop_policy_requires_function_calling_profile(
         "reason": "开启有界证据读取",
         "mode": "multi_agent",
         "workflow_version": "v2",
-        "context_policy_version": "evidence-read-v1",
+        "context_policy_version": context_policy,
         "model_budget": policy,
     }
     url = f"/api/v1/incidents/{incident.incident.id}/actions/start-investigation"
@@ -65,8 +67,9 @@ async def test_start_loop_policy_requires_function_calling_profile(
         assert response.status_code == 200
         run = response.json()["investigation"]
         assert run["workflow_version"] == "v2"
-        assert run["context_policy_version"] == "evidence-read-v1"
-        assert run["prompt_version"] == "evidence-read-v1"
+        assert run["context_policy_version"] == context_policy
+        assert run["prompt_version"] == context_policy
+        assert run["working_summary_policy_version"] == "task-working-summary-v1"
         assert run["model_budget"] == policy
 
 

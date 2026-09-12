@@ -1,7 +1,9 @@
 """上下文输入、材料引用与每次调用的不可变清单。"""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Literal, Self
+from typing import TYPE_CHECKING, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -18,7 +20,10 @@ from opsswarm.investigation.tasks.contracts import TaskAssignment, TaskModel
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion, TaskEvidenceRecord
 from opsswarm.investigation.tasks.results import TaskResultRecord
 
-ContextPolicyVersion = Literal["task-context-v1", "evidence-read-v1"]
+if TYPE_CHECKING:
+    from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
+
+ContextPolicyVersion = Literal["task-context-v1", "evidence-read-v1", "summary-context-v1"]
 CONTEXT_POLICY_VERSION: ContextPolicyVersion = "task-context-v1"
 CONTEXT_PROMPT_VERSION: Literal["fixed-task-context-v1"] = "fixed-task-context-v1"
 
@@ -33,7 +38,9 @@ class TaskContextInput(TaskModel):
 
 
 class ContextMaterial(TaskModel):
-    kind: Literal["incident_input", "task_assignment", "task_evidence", "task_result"]
+    kind: Literal[
+        "incident_input", "task_assignment", "task_evidence", "task_result", "task_working_summary"
+    ]
     material_id: UUID
     version: str = Field(min_length=1, max_length=100)
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -47,7 +54,9 @@ class ContextManifest(TaskModel):
     role: Literal["log", "metric", "change", "synthesis"]
     role_version: Literal["fixed-roles-v1"] = "fixed-roles-v1"
     workflow_version: Literal["v2"] = "v2"
-    prompt_version: Literal["fixed-task-context-v1", "evidence-read-v1"] = CONTEXT_PROMPT_VERSION
+    prompt_version: Literal["fixed-task-context-v1", "evidence-read-v1", "summary-context-v1"] = (
+        CONTEXT_PROMPT_VERSION
+    )
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=3, max_length=10)
     tool_names: tuple[str, ...] = Field(default=(), max_length=1)
@@ -56,10 +65,19 @@ class ContextManifest(TaskModel):
 
     @model_validator(mode="after")
     def validate_strategy(self) -> Self:
-        loop = self.version == "evidence-read-v1" and self.role != "synthesis"
-        if self.tool_names != (("read_evidence",) if loop else ()) or self.prompt_version != (
-            "evidence-read-v1" if loop else "fixed-task-context-v1"
-        ):
+        loop = (
+            self.version in ("evidence-read-v1", "summary-context-v1") and self.role != "synthesis"
+        )
+        prompt = (
+            "evidence-read-v1"
+            if loop
+            else (
+                "summary-context-v1"
+                if self.version == "summary-context-v1"
+                else "fixed-task-context-v1"
+            )
+        )
+        if self.tool_names != (("read_evidence",) if loop else ()) or self.prompt_version != prompt:
             raise ValueError("上下文策略与提示、工具集合不匹配")
         return self
 
@@ -75,6 +93,7 @@ class ContextTaskMaterial:
     assignment: TaskAssignment
     evidence: TaskEvidenceRecord
     result: TaskResultRecord | None
+    working_summary: WorkingSummaryRecord | None = None
 
 
 @dataclass(frozen=True)

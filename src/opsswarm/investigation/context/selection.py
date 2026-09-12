@@ -29,10 +29,10 @@ def resolve_context_policy(
     if model_budget is None:
         raise ValueError("显式上下文策略必须配置模型预算")
     if (
-        requested == LOOP_POLICY_VERSION
+        requested in (LOOP_POLICY_VERSION, "summary-context-v1")
         and model_budget.profile.structured_output_method != "function_calling"
     ):
-        raise ValueError("evidence-read-v1 必须使用 function_calling 模型 profile")
+        raise ValueError(f"{requested} 必须使用 function_calling 模型 profile")
     return requested
 
 
@@ -42,6 +42,8 @@ def select_context_prompt(
 ) -> str:
     """让运行固定的提示版本与最终选中的策略一致。"""
 
+    if context_policy_version == "summary-context-v1":
+        return "summary-context-v1"
     if context_policy_version == LOOP_POLICY_VERSION:
         return LOOP_PROMPT_VERSION
     if context_policy_version == CONTEXT_POLICY_VERSION:

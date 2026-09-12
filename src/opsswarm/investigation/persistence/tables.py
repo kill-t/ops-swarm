@@ -37,14 +37,16 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
-            "working_summary_policy_version IS NULL OR "
-            "(working_summary_policy_version = 'task-working-summary-v1' AND "
-            "context_policy_version IS NOT NULL AND context_policy_version = 'evidence-read-v1')",
+            "(working_summary_policy_version IS NULL AND "
+            "context_policy_version IS DISTINCT FROM 'summary-context-v1') OR "
+            "(COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
+            "COALESCE(context_policy_version, '') IN "
+            "('evidence-read-v1', 'summary-context-v1'))",
             name="ck_investigation_runs_working_summary_policy",
         ),
         CheckConstraint(
             "context_policy_version IS NULL OR (context_policy_version IN "
-            "('task-context-v1', 'evidence-read-v1') AND "
+            "('task-context-v1', 'evidence-read-v1', 'summary-context-v1') AND "
             "workflow_version = 'v2' AND model_budget IS NOT NULL AND "
             "evidence_policy_version IS NOT NULL AND "
             "(context_policy_version = 'task-context-v1' OR "

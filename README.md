@@ -8,7 +8,7 @@
 
 MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 系统最终设计](docs/architecture/65-agent-system-design.md)，并同步 [完整工程版开发顺序](docs/architecture/64-full-multi-agent-roadmap.md)。多 Agent 是既定架构方向，采用 LangGraph、LangChain 与内部轻量 Harness，逐步建设动态调查、分层记忆、上下文管理、只读遥测 MCP 和人工介入，当前不引入 A2A。
 
-第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、摘要上下文消费、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
+第 66～68 步已交付冻结 v2 的任务事实、专业结果、恢复核对与次数/时限预算。第 69 步增加显式启用的 [模型输入与费用预算](docs/architecture/69-model-input-budget.md)：在完整应用输入形成后原子预留 Token 和估算费用，保存输入快照及报告用量；各专业、综合与重试共享额度，未知用量不补零。动态协作、完整 Harness、历史裁剪、经验与 MCP 继续按计划建设。验证结果见 [当前推进位置](docs/progress/README.md) 和 [第 69 步记录](docs/progress/69-model-input-budget.md)。
 
 第 70 步加入 [受限异步取证](docs/architecture/70-bounded-async-evidence.md)：多 Agent Worker 用最多 3 个未完成查询桥接现有同步适配器，取证不再阻塞事件循环。取消或等待超时后，运行中的请求继续占用槽位直至真正结束，迟到材料不能进入专业报告，验证结果见 [第 70 步记录](docs/progress/70-bounded-async-evidence.md)。
 
@@ -20,7 +20,7 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
 
-第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；该步尚未接入的专业按需读取由第 79 步独立策略交付，工作摘要材料由第 80 步交付，模型消费仍待接入。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。
+第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；该步尚未接入的专业按需读取由第 79 步独立策略交付，工作摘要材料由第 80 步交付，第 81 步通过独立策略接入综合消费。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。
 
 第 76 步增加 [证据目录与受控详情读取](docs/architecture/76-context-evidence-reader.md)：按调用查询完整摘要目录，通过任务、证据 ID 和快照散列读取详情；越界和过期引用明确失败。此为只读应用服务与控制面 API，第 79 步专业工具复用该证据读取服务；本步原始验收详见 [第 76 步记录](docs/progress/76-context-evidence-reader.md)。
 
@@ -29,6 +29,8 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 第 79 步交付 [专业 Agent 有界按需证据读取](docs/architecture/79-bounded-evidence-reading.md)：显式选择 `context_policy_version=evidence-read-v1`、v2 和 function_calling 模型预算 profile 后，专业模型先看本任务目录，通过唯一 read_evidence 工具读取详情并提交报告。每次模型/工具调用前预留，完整配对交互与结算同事务保存；技术重试从原快照重新开始且保留累计预算，综合保持原结构化调用。未指定新策略的请求行为保持兼容。验收和下一步工作摘要见 [第 79 步记录](docs/progress/79-bounded-evidence-reading.md)。
 
 第 80 步增加 [已完成任务的工作摘要](docs/architecture/80-task-working-summary.md)：新建 evidence-read-v1 运行固定摘要策略，专业结果成功结算时，同事务保存完整报告、快照引用、实际已读范围和历次调用引用。只读 working-summary 接口提供不可变版本；旧运行不回填，摘要尚未进入模型上下文，不宣称压缩或节省 Token。验证见 [第 80 步记录](docs/progress/80-task-working-summary.md)。
+
+第 81 步增加 [版本化摘要上下文](docs/architecture/81-summary-context.md)：显式选择 `summary-context-v1` 后，综合实际接收三份不可变工作摘要及完整有界证据，材料清单和预算预留绑定实际输入；组装和预留事务都核对来源。专业继续保留完整配对历史，旧策略不换输入，不宣称 Token 下降。验证见 [第 81 步记录](docs/progress/81-summary-context.md)。
 
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 

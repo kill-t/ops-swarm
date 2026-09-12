@@ -31,7 +31,7 @@ def build_loop_context(
     history: tuple[AssistantMessage | ToolMessage, ...] = (),
 ) -> ContextPacket:
     if (
-        sources.context_policy_version != "evidence-read-v1"
+        sources.context_policy_version not in ("evidence-read-v1", "summary-context-v1")
         or sources.task_id is None
         or len(sources.tasks) != 1
         or sources.tasks[0].task_id != sources.task_id
@@ -77,7 +77,7 @@ def build_loop_context(
     return ContextPacket(
         model_input=inputs,
         manifest=ContextManifest(
-            version="evidence-read-v1",
+            version=sources.context_policy_version,
             prompt_version=LOOP_PROMPT_VERSION,
             investigation_run_id=sources.run_id,
             task_id=task.task_id,

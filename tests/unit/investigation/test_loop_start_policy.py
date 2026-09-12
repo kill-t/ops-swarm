@@ -57,16 +57,17 @@ def test_explicit_fixed_policy_requires_v2_and_model_budget():
         )
 
 
-def test_loop_policy_requires_function_calling_profile():
+@pytest.mark.parametrize("context_policy", ["evidence-read-v1", "summary-context-v1"])
+def test_loop_policy_requires_function_calling_profile(context_policy):
     assert (
         request(
-            model_budget=budget("function_calling"), context_policy_version="evidence-read-v1"
+            model_budget=budget("function_calling"), context_policy_version=context_policy
         ).context_policy_version
-        == "evidence-read-v1"
+        == context_policy
     )
-    assert select_context_prompt("evidence-read-v1", "unused") == "evidence-read-v1"
+    assert select_context_prompt(context_policy, "unused") == context_policy
     with pytest.raises(ValidationError, match="function_calling"):
-        request(model_budget=model_policy(), context_policy_version="evidence-read-v1")
+        request(model_budget=model_policy(), context_policy_version=context_policy)
 
 
 def test_explicit_null_is_rejected_but_omission_remains_compatible():
