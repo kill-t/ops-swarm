@@ -115,6 +115,10 @@ class CallBudgetStore:
         invocation_index: int = 0,
         tool_request: EvidenceToolRequest | None = None,
     ) -> CallGrant:
+        if operation == CallOperation.COORDINATE and invocation_index != 0:
+            raise TaskFactConflict(
+                "coordination_invocation_invalid", "首轮协调调用的调用序号必须为零"
+            )
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock
         ) as (session, parent, _, run, now):
@@ -137,7 +141,7 @@ class CallBudgetStore:
             role = operation_role(operation)
             if role is None:
                 if task_id is not None or task_attempt_id is not None:
-                    raise TaskFactConflict("call_scope_invalid", "综合调用不能绑定专业尝试")
+                    raise TaskFactConflict("call_scope_invalid", "根级模型调用不能绑定专业尝试")
             else:
                 task = await session.get(AgentTaskRow, task_id) if task_id is not None else None
                 attempt = (

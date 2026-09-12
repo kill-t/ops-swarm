@@ -39,7 +39,12 @@ class TaskContextInput(TaskModel):
 
 class ContextMaterial(TaskModel):
     kind: Literal[
-        "incident_input", "task_assignment", "task_evidence", "task_result", "task_working_summary"
+        "incident_input",
+        "coordination_policy",
+        "task_assignment",
+        "task_evidence",
+        "task_result",
+        "task_working_summary",
     ]
     material_id: UUID
     version: str = Field(min_length=1, max_length=100)
@@ -48,23 +53,46 @@ class ContextMaterial(TaskModel):
 
 
 class ContextManifest(TaskModel):
-    version: ContextPolicyVersion = CONTEXT_POLICY_VERSION
+    version: ContextPolicyVersion | Literal["coordination-context-v1"] = CONTEXT_POLICY_VERSION
     investigation_run_id: UUID
     task_id: UUID | None
-    role: Literal["log", "metric", "change", "synthesis"]
-    role_version: Literal["fixed-roles-v1"] = "fixed-roles-v1"
+    role: Literal["log", "metric", "change", "synthesis", "coordinator"]
+    role_version: Literal["fixed-roles-v1", "dynamic-coordinator-v1"] = "fixed-roles-v1"
     workflow_version: Literal["v2"] = "v2"
-    prompt_version: Literal["fixed-task-context-v1", "evidence-read-v1", "summary-context-v1"] = (
-        CONTEXT_PROMPT_VERSION
-    )
+    prompt_version: Literal[
+        "fixed-task-context-v1",
+        "evidence-read-v1",
+        "summary-context-v1",
+        "coordination-plan-v1",
+    ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
-    materials: tuple[ContextMaterial, ...] = Field(min_length=3, max_length=10)
+    materials: tuple[ContextMaterial, ...] = Field(min_length=2, max_length=10)
     tool_names: tuple[str, ...] = Field(default=(), max_length=1)
     trimming: tuple[str, ...] = Field(default=(), max_length=0)
     allocation: ModelAllocation
 
     @model_validator(mode="after")
     def validate_strategy(self) -> Self:
+        if self.role == "coordinator":
+            if (
+                self.version != "coordination-context-v1"
+                or self.task_id is not None
+                or self.role_version != "dynamic-coordinator-v1"
+                or self.prompt_version != "coordination-plan-v1"
+                or self.evidence_policy_version != "task-evidence-v1"
+                or self.tool_names
+                or self.trimming
+                or tuple(item.kind for item in self.materials)
+                != ("incident_input", "coordination_policy")
+            ):
+                raise ValueError("协调上下文策略、材料或权限不匹配")
+            return self
+        if (
+            self.version == "coordination-context-v1"
+            or self.role_version != "fixed-roles-v1"
+            or len(self.materials) < 3
+        ):
+            raise ValueError("任务上下文策略、角色版本或材料不匹配")
         loop = (
             self.version in ("evidence-read-v1", "summary-context-v1") and self.role != "synthesis"
         )

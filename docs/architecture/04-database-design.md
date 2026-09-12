@@ -468,9 +468,9 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 | 表 | 字段与约束 |
 | --- | --- |
 | `investigation_coordination_policies` | `investigation_run_id` 主键、策略版本、完整策略 JSONB、SHA-256 和创建时间；运行与散列组成候选键，JSON 类型、大小和版本受数据库约束 |
-| `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略与父尝试 |
+| `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、可空协调调用来源、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略、父尝试及调用来源 |
 
-计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。当前策略在首次动态计划写入时固定，尚未通过新工作流的运行创建入口冻结。
+计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md)。当前策略仍尚未通过新工作流的运行创建入口冻结。
 
 ## 5. Incident 状态机
 

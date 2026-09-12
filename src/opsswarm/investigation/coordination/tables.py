@@ -77,6 +77,15 @@ class InvestigationCoordinationPlanRow(Base):
             ondelete="RESTRICT",
             name="fk_coordination_plans_parent_attempt",
         ),
+        ForeignKeyConstraint(
+            ["source_call_id", "investigation_run_id"],
+            [
+                "investigation_call_reservations.id",
+                "investigation_call_reservations.investigation_run_id",
+            ],
+            ondelete="RESTRICT",
+            name="fk_coordination_plans_source_call",
+        ),
         CheckConstraint(
             "version = 'compiled-coordination-plan-v1' AND "
             "COALESCE(plan ->> 'version', '') = version AND "
@@ -100,6 +109,7 @@ class InvestigationCoordinationPlanRow(Base):
     investigation_attempt_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True), nullable=False
     )
+    source_call_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     version: Mapped[str] = mapped_column(String(40), nullable=False)
     policy_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

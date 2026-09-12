@@ -5,13 +5,14 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.model_contracts import TextModelMessage
 from opsswarm.investigation.budget.model_policy import allocate_input
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.context.builder import ContextBuilder, content_hash
-from opsswarm.investigation.context.contracts import CONTEXT_PROMPT_VERSION
+from opsswarm.investigation.context.contracts import CONTEXT_PROMPT_VERSION, ContextManifest
 from opsswarm.investigation.context.prompts import SPECIALIST_PROMPT
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from tests.context_helpers import sources, supplied_input, with_evidence
@@ -103,6 +104,19 @@ def test_untrusted_text_stays_in_data_without_changing_instructions_or_authority
     assert packet.model_input.messages[0].content == SPECIALIST_PROMPT
     assert attack in packet.model_input.messages[1].content
     assert packet.manifest.tool_names == ()
+
+
+def test_task_manifest_rejects_coordinator_version_or_role_identity():
+    material = sources()
+    packet = ContextBuilder().build(
+        supplied_input(material), material, CallOperation.ANALYZE_LOG, model_policy()
+    )
+    for changes in (
+        {"version": "coordination-context-v1"},
+        {"role_version": "dynamic-coordinator-v1"},
+    ):
+        with pytest.raises(ValidationError):
+            ContextManifest.model_validate({**packet.manifest.model_dump(mode="json"), **changes})
 
 
 def test_necessary_evidence_over_budget_stops_without_silent_truncation():

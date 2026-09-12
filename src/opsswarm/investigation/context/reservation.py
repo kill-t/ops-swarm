@@ -10,6 +10,8 @@ from opsswarm.investigation.budget.policy import operation_kind
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.dispatch import build_context
 from opsswarm.investigation.context.loading import load_sources
+from opsswarm.investigation.coordination.context import validate_coordination_context
+from opsswarm.investigation.coordination.contracts import CoordinationModelInput
 from opsswarm.investigation.loop.context import build_loop_context
 from opsswarm.investigation.loop.contracts import AnyModelInput, LoopModelInput
 from opsswarm.investigation.loop.ledger import saved_history
@@ -28,6 +30,20 @@ async def validate_context_reservation(
     task_attempt_id: UUID | None = None,
     invocation_index: int = 0,
 ) -> None:
+    if operation == CallOperation.COORDINATE:
+        if (
+            task_id is not None
+            or task_attempt_id is not None
+            or not isinstance(model_input, CoordinationModelInput)
+            or manifest is None
+            or manifest.role != "coordinator"
+            or prompt_version != manifest.prompt_version
+        ):
+            raise TaskFactConflict(
+                "coordination_context_required", "协调模型调用必须提供根级协调上下文"
+            )
+        await validate_coordination_context(session, run, model_input, manifest)
+        return
     if isinstance(model_input, LoopModelInput) and (
         run.context_policy_version not in ("evidence-read-v1", "summary-context-v1")
         or task_id is None

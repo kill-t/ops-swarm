@@ -1,10 +1,13 @@
 """协调 Agent 只能提出有限任务意图，系统范围由确定性代码注入。"""
 
-from typing import Annotated, Literal, Self
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, Field, field_validator, model_validator
 
+from opsswarm.investigation.budget.model_contracts import TextModelMessage
 from opsswarm.investigation.coordination.hashing import coordination_hash
 from opsswarm.investigation.models import EvidenceKind
 from opsswarm.investigation.tasks.contracts import RoundAssignment, TaskModel
@@ -83,6 +86,7 @@ class CoordinationPlanRecord(TaskModel):
     round_id: UUID
     investigation_run_id: UUID
     investigation_attempt_id: UUID
+    source_call_id: UUID | None = None
     version: Literal["compiled-coordination-plan-v1"]
     policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     plan: CompiledCoordinationPlan
@@ -94,3 +98,37 @@ class CoordinationPlanRecord(TaskModel):
         if self.version != self.plan.version or coordination_hash(self.plan) != self.content_sha256:
             raise ValueError("协调计划记录的版本或散列不一致")
         return self
+
+
+class CoordinationModelInput(TaskModel):
+    """协调调用的完整版本化输入，不包含任意工具或执行权限。"""
+
+    version: Literal["coordination-model-input-v1"] = "coordination-model-input-v1"
+    round_number: int = Field(ge=1, le=3, strict=True)
+    existing_task_count: int = Field(ge=0, le=9, strict=True)
+    observation_cutoff_at: AwareDatetime
+    evidence_snapshot_id: str = Field(min_length=1, max_length=100)
+    messages: tuple[TextModelMessage, ...] = Field(min_length=2, max_length=2)
+    output_schema: dict[str, Any]
+    tool_schema: dict[str, Any]
+    structured_output_method: Literal["function_calling"] = "function_calling"
+
+    @field_validator("observation_cutoff_at")
+    @classmethod
+    def normalize_time(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+
+class CoordinationModelResult(TaskModel):
+    """调用账本保存的模型提案，供崩溃恢复与计划来源核对。"""
+
+    kind: Literal["model"] = "model"
+    version: Literal["coordination-model-result-v1"] = "coordination-model-result-v1"
+    proposal: CoordinationProposal
+
+
+@dataclass(frozen=True, slots=True)
+class CoordinationProposalCall:
+    call_id: UUID
+    proposal: CoordinationProposal
+    reused: bool

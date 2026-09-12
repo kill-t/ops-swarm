@@ -1,11 +1,15 @@
 """独立版本的完整工具消息与持久交互契约，不改变旧输入序列化。"""
 
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, JsonValue, TypeAdapter
 
 from opsswarm.investigation.budget.model_contracts import ModelInput, TextModelMessage
+from opsswarm.investigation.coordination.contracts import (
+    CoordinationModelInput,
+    CoordinationModelResult,
+)
 from opsswarm.investigation.tasks.contracts import TaskModel
 
 LOOP_POLICY_VERSION: Literal["evidence-read-v1"] = "evidence-read-v1"
@@ -51,7 +55,7 @@ class LoopModelInput(TaskModel):
     structured_output_method: Literal["function_calling"] = "function_calling"
 
 
-AnyModelInput = ModelInput | LoopModelInput
+AnyModelInput = ModelInput | LoopModelInput | CoordinationModelInput
 MODEL_INPUT_ADAPTER: TypeAdapter[AnyModelInput] = TypeAdapter(AnyModelInput)
 
 
@@ -71,7 +75,7 @@ class EvidenceToolResult(TaskModel):
     message: ToolMessage
 
 
-CallResult = Annotated[LoopModelResult | EvidenceToolResult, Field(discriminator="kind")]
+CallResult = LoopModelResult | EvidenceToolResult | CoordinationModelResult
 CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 
 

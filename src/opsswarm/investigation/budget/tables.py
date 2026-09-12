@@ -30,12 +30,16 @@ class CallReservationRow(Base):
             "(call_result IS NULL OR (status <> 'reserved' AND "
             "jsonb_typeof(call_result) = 'object' AND octet_length(call_result::text) <= 65536 AND "
             "COALESCE(call_result ->> 'kind', '') = kind AND "
-            "((kind = 'model' AND COALESCE(model_input ->> 'version', '') = "
-            "'evidence-loop-input-v1') OR (kind = 'tool' AND tool_request IS NOT NULL))))",
+            "((kind = 'model' AND ((operation = 'coordinate' AND "
+            "COALESCE(model_input ->> 'version', '') = 'coordination-model-input-v1' AND "
+            "COALESCE(call_result ->> 'version', '') = 'coordination-model-result-v1') OR "
+            "(operation <> 'coordinate' AND COALESCE(model_input ->> 'version', '') = "
+            "'evidence-loop-input-v1'))) OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),
         CheckConstraint(
-            "invocation_index BETWEEN 0 AND 99",
+            "invocation_index BETWEEN 0 AND 99 AND "
+            "(operation <> 'coordinate' OR invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
@@ -57,6 +61,7 @@ class CallReservationRow(Base):
             "investigation_run_id",
             name="uq_call_reservations_evidence_scope",
         ),
+        UniqueConstraint("id", "investigation_run_id", name="uq_call_reservations_id_run"),
         CheckConstraint(
             "(model_input IS NULL) = (model_allocation IS NULL) AND "
             "(model_allocation IS NULL OR (kind = 'model' AND "
@@ -104,13 +109,15 @@ class CallReservationRow(Base):
         CheckConstraint(
             "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence', "
             "'read_metric_evidence', 'read_change_evidence') AND kind = 'tool') OR "
-            "(operation IN ('analyze_log', 'analyze_metric', 'analyze_change', 'synthesize') "
+            "(operation IN ('coordinate', 'analyze_log', 'analyze_metric', 'analyze_change', "
+            "'synthesize') "
             "AND kind = 'model')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
-            "(operation = 'synthesize' AND task_id IS NULL AND task_attempt_id IS NULL) OR "
-            "(operation <> 'synthesize' AND task_id IS NOT NULL AND task_attempt_id IS NOT NULL)",
+            "(operation IN ('coordinate', 'synthesize') AND task_id IS NULL AND "
+            "task_attempt_id IS NULL) OR (operation NOT IN ('coordinate', 'synthesize') AND "
+            "task_id IS NOT NULL AND task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
         ),
     )

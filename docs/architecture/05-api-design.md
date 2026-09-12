@@ -160,6 +160,10 @@ Evidence Board 接口只读取业务数据库，不读取 LangGraph checkpoint�
 
 查询只读取业务库，不读取 checkpoint、不推断历史、不启动任务。已有 v1 调查没有新记录时返回 `rounds=[]`；运行不存在返回现有 `investigation_run_not_found`（404），非法 UUID 返回 `request_validation_error`（422）。不返回内部租约令牌，不提供任务状态写 API。尝试的 `running` 是持久记录状态，须结合租约到期时间判断时效，GET 不改变过期状态。详见 [调查任务持久化](66-investigation-task-persistence.md)。
 
+### 2.10 协调模型内部入口
+
+第 84 步的首轮协调规划是 Worker 内部应用服务，没有新增公开 HTTP 请求字段或路由。调用方只能提供已由系统确定的观察截止时间、证据快照身份和固定协调策略；运行、父租约、事故范围、模型预算与调用身份由系统注入。公开的 v1/v2 调查创建和查询契约保持不变，动态工作流启动参数留给独立版本切片。
+
 ## 3. 告警幂等 HTTP 语义
 
 `POST /api/v1/alerts` 的状态码描述“外部告警是否首次接收”，不描述“是否创建新 Incident”：

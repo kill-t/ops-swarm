@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-12。最新完成切片为第 83 步动态协调计划持久化，基线为 main 的 `d524db9`（第 82 步）。本文随第 83 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 83 步进度记录为准。
+核对日期：2026-09-12。最新完成切片为第 84 步协调模型结构化调用与共享预算账本，基线为 main 的 `5d3d702`（第 83 步）。本文随第 84 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 84 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 83 步设计](architecture/83-dynamic-coordination-persistence.md) 与 [验收记录](progress/83-dynamic-coordination-persistence.md)，再读 [第 82 步设计](architecture/82-dynamic-coordination-policy.md) 与 [验收记录](progress/82-dynamic-coordination-policy.md)，需要上下文前置时再读第 79～81 步。
+2. 先读 [第 84 步设计](architecture/84-coordination-model-ledger.md) 与 [验收记录](progress/84-coordination-model-ledger.md)，再读第 82～83 步设计与记录，需要上下文前置时再读第 79～81 步。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -22,7 +22,7 @@
 - 当前仍固定日志、指标、变更三个专业任务和综合节点。新策略只读取已保存证据，不动态查询遥测或创建补查任务。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0041_dynamic_coordination_plans`；第 83 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0042_coordination_model_call`；第 84 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`。第 83 步策略与计划持久化详见 [当前验收记录](progress/83-dynamic-coordination-persistence.md)，对应本片独立提交。
+第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`。第 84 步协调模型调用与来源恢复详见 [当前验收记录](progress/84-coordination-model-ledger.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -62,9 +62,11 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 82 步新增 `dynamic-coordination-v1` 策略、结构化提案及编译结果。模型可选范围仅为本轮目标、日志/指标/变更角色、任务目标和回看时长；编译器注入事故服务、UTC 截止时间、证据快照身份和尝试上限，拒绝轮次、角色、窗口或总任务额度越界。该能力目前是纯领域闸门，尚未接入模型、业务数据库或工作流。
 
-第 83 步把首次固定的完整协调策略、编译计划、父 Worker 尝试、实际轮次和任务原子持久化。查询从事故、策略、父尝试、轮次和任务重建核对；冲突重放、固定/动态历史混用、来源篡改与租约失效均拒绝。当前尚无协调模型、HTTP 查询、v3 启动或动态图。
+第 83 步把首次固定的完整协调策略、编译计划、父 Worker 尝试、实际轮次和任务原子持久化。查询从事故、策略、父尝试、轮次和任务重建核对；冲突重放、固定/动态历史混用、来源篡改与租约失效均拒绝。截至该步尚无协调模型、HTTP 查询、v3 启动或动态图。
 
-尚未完成：专业交互历史裁剪；动态分派/跨专业补查/独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
+第 84 步新增根级 `coordinate` 结构化模型调用，使用原运行共享次数、时限、Token 与估算费用预算；上下文只含事故与固定协调策略，没有工具或执行权限。提案通过 Pydantic 与确定性编译后才结算成功，并作为计划来源保存。模型成功后、计划提交前崩溃会复用调用；计划提交后崩溃会直接复核并返回原计划。该入口只支持 v2 冻结运行的第一轮，旧 Worker 路由不会调用，尚无 v3 启动、动态图或第二轮上下文。
+
+尚未完成：专业交互历史裁剪；动态图分派/跨专业补查/独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -79,8 +81,9 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [budget/store.py](../src/opsswarm/investigation/budget/store.py)、[budget/runtime.py](../src/opsswarm/investigation/budget/runtime.py) | 有效父租约、原子预留、共享额度、结算幂等与迟到阻断；相同预留不能重发外部请求 |
 | [working_summary/builder.py](../src/opsswarm/investigation/working_summary/builder.py)、[working_summary/persistence.py](../src/opsswarm/investigation/working_summary/persistence.py) | 摘要确定性投影、同事务保存与查询来源核对；不调用模型 |
 | [tasks/runtime.py](../src/opsswarm/investigation/tasks/runtime.py) | 稳定任务、新尝试、快照复用及专业结果恢复，不把技术重试当成补查 |
-| [coordination/contracts.py](../src/opsswarm/investigation/coordination/contracts.py)、[coordination/policy.py](../src/opsswarm/investigation/coordination/policy.py) | 有限协调提案、运行策略及系统范围注入；当前未接入协调模型 |
-| [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次和父尝试的原子写入及来源重建；当前为内部应用入口 |
+| [coordination/contracts.py](../src/opsswarm/investigation/coordination/contracts.py)、[coordination/policy.py](../src/opsswarm/investigation/coordination/policy.py) | 有限协调输入/输出、运行策略及系统范围注入；业务无效提案不能结算为成功 |
+| [coordination/context.py](../src/opsswarm/investigation/coordination/context.py)、[coordination/planner.py](../src/opsswarm/investigation/coordination/planner.py) | 首轮最小上下文、根级共享预算调用、成功结果复用与计划提交恢复 |
+| [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次、父尝试和模型调用来源的原子写入及重建核对 |
 
 第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
 
@@ -92,7 +95,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 84 步：**协调模型结构化调用与共享预算账本**。新增根级协调操作和版本化输入/输出，在外部请求前预留运行共享预算，把可恢复模型返回与计划来源关联；继续保持 v1/v2 固定图和 checkpoint 不变。
+第 85 步：**独立动态工作流版本与运行策略冻结**。为新协作图增加与 v1/v2 隔离的工作流版本，在运行创建时固定协调、上下文、证据、预算与图恢复版本；先形成可查询的启动契约，再接入动态 LangGraph 节点。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -112,8 +115,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 83 步测试入口为 [计划事务](../tests/integration/test_coordination_plan_store.py)、[计划迁移](../tests/integration/test_coordination_plan_migration.py) 和 [遗留轮次散列](../tests/unit/investigation/test_task_round_identity.py)。第 82 步测试入口为 [协调策略单元测试](../tests/unit/investigation/test_coordination_policy.py)。第 81 步测试入口为 [综合与恢复](../tests/integration/test_summary_context_graph.py)、[预留复核](../tests/integration/test_summary_context_reservations.py)、[策略迁移](../tests/integration/test_summary_context_migration.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 84 步测试入口为 [协调规划与恢复](../tests/integration/test_coordination_planner.py) 和 [协调调用迁移](../tests/integration/test_coordination_model_call_migration.py)。第 83 步测试入口为 [计划事务](../tests/integration/test_coordination_plan_store.py)、[计划迁移](../tests/integration/test_coordination_plan_migration.py) 和 [遗留轮次散列](../tests/unit/investigation/test_task_round_identity.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 83 步设计/验收，核对 Git 与实际代码。动态协调策略和计划已与轮次、任务、父尝试原子持久化；从第 84 步协调模型结构化调用与共享预算推进，扩展根级调用账本、保存可恢复返回并绑定计划来源，完成假模型、真实 PostgreSQL、文档和中文独立提交。不要把当前固定图描述成已有动态协调，也不提前交付 MCP 或图内人工恢复。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 84 步设计/验收，核对 Git 与实际代码。首轮协调模型已接入共享预算账本并与计划来源绑定，但旧 Worker 尚未调用；从第 85 步独立动态工作流版本与运行策略冻结推进，先定义 v3 启动、版本与恢复边界，再接入新 LangGraph 图，完成真实 PostgreSQL、兼容回归、文档和中文独立提交。不要把内部首轮服务描述成已运行的动态工作流，也不提前交付 MCP 或图内人工恢复。

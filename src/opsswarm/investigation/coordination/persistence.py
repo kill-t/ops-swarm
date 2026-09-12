@@ -8,7 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents.persistence.tables import IncidentRow
+from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
+from opsswarm.investigation.budget.tables import CallReservationRow
+from opsswarm.investigation.context.contracts import ContextManifest
+from opsswarm.investigation.coordination.context import validate_coordination_context
 from opsswarm.investigation.coordination.contracts import (
+    CoordinationModelInput,
+    CoordinationModelResult,
     CoordinationPlanRecord,
     CoordinationPolicy,
     CoordinationPolicyRecord,
@@ -86,14 +92,12 @@ async def validated_plan(
             for task in task_rows
         ):
             raise ValueError("任务执行上限与计划不一致")
-        incident = await session.scalar(
-            select(IncidentRow)
-            .join(InvestigationRunRow, InvestigationRunRow.incident_id == IncidentRow.id)
-            .where(InvestigationRunRow.id == record.investigation_run_id)
-        )
+        run = await session.get(InvestigationRunRow, record.investigation_run_id)
+        incident = await session.get(IncidentRow, run.incident_id) if run is not None else None
         parent = await session.get(InvestigationAttemptRow, record.investigation_attempt_id)
         if (
-            incident is None
+            run is None
+            or incident is None
             or parent is None
             or parent.investigation_run_id != record.investigation_run_id
             or not parent.started_at <= record.created_at <= parent.lease_expires_at
@@ -121,6 +125,19 @@ async def validated_plan(
         )
         if rebuilt != record.plan:
             raise ValueError("计划不能由持久来源重建")
+        if record.source_call_id is not None:
+            model_input, model_result, source = await validated_coordination_call(
+                session, run, record.source_call_id
+            )
+            if (
+                model_result.proposal != record.plan.proposal
+                or model_input.round_number != record.plan.assignment.round_number
+                or model_input.observation_cutoff_at != cutoff
+                or model_input.evidence_snapshot_id != snapshot_id
+                or source.finished_at is None
+                or source.finished_at > record.created_at
+            ):
+                raise ValueError("计划与协调模型调用来源不一致")
         return record
     except (TaskFactConflict, ValueError) as error:
         if isinstance(error, TaskFactConflict) and error.code.startswith("coordination_policy_"):
@@ -154,6 +171,98 @@ async def _prior_task_count(session: AsyncSession, run_id: UUID, round_number: i
     )
 
 
+async def validated_coordination_call(
+    session: AsyncSession,
+    run: InvestigationRunRow,
+    source_call_id: UUID,
+) -> tuple[CoordinationModelInput, CoordinationModelResult, CallReservationRow]:
+    """复核成功协调调用的范围、上下文、分配和结构化结果。"""
+
+    try:
+        row = await session.get(CallReservationRow, source_call_id)
+        parent = (
+            await session.get(InvestigationAttemptRow, row.investigation_attempt_id)
+            if row is not None
+            else None
+        )
+        if (
+            row is None
+            or parent is None
+            or row.investigation_run_id != run.id
+            or parent.investigation_run_id != run.id
+            or row.operation != "coordinate"
+            or row.kind != "model"
+            or row.status != "succeeded"
+            or row.task_id is not None
+            or row.task_attempt_id is not None
+            or row.model_input is None
+            or row.model_allocation is None
+            or row.context_manifest is None
+            or row.call_result is None
+            or row.finished_at is None
+            or not parent.started_at
+            <= row.reserved_at
+            <= row.finished_at
+            <= parent.lease_expires_at
+        ):
+            raise ValueError("协调调用范围或状态不合法")
+        model_input = CoordinationModelInput.model_validate(row.model_input)
+        result = CoordinationModelResult.model_validate(row.call_result)
+        manifest = ContextManifest.model_validate(row.context_manifest)
+        if (
+            row.model_input != model_input.model_dump(mode="json")
+            or row.call_result != result.model_dump(mode="json")
+            or row.context_manifest != manifest.model_dump(mode="json")
+            or row.model_allocation != manifest.allocation.model_dump(mode="json")
+        ):
+            raise ValueError("协调调用内容未经规范化保存或与分配不一致")
+        await validate_coordination_context(session, run, model_input, manifest)
+        return model_input, result, row
+    except (TaskFactConflict, ValueError) as error:
+        raise TaskFactConflict(
+            "coordination_call_integrity_violation", "协调模型调用来源无法通过完整性校验"
+        ) from error
+
+
+async def _fix_policy(
+    session: AsyncSession,
+    run_id: UUID,
+    policy: CoordinationPolicy,
+    now: datetime,
+    rounds: list[InvestigationRoundRow],
+) -> tuple[CoordinationPolicyRecord, bool]:
+    policy_sha256 = coordination_hash(policy)
+    policy_row = await session.get(InvestigationCoordinationPolicyRow, run_id)
+    if policy_row is None:
+        if rounds:
+            raise TaskFactConflict(
+                "coordination_history_conflict", "已有固定轮次的运行不能改为动态协调历史"
+            )
+        policy_row = InvestigationCoordinationPolicyRow(
+            investigation_run_id=run_id,
+            version=policy.version,
+            policy=policy.model_dump(mode="json"),
+            content_sha256=policy_sha256,
+            created_at=now,
+        )
+        session.add(policy_row)
+        await session.flush()
+        return validated_policy(policy_row), True
+    saved_policy = validated_policy(policy_row)
+    if saved_policy.policy != policy or saved_policy.content_sha256 != policy_sha256:
+        raise TaskFactConflict("coordination_policy_conflict", "该运行已固定另一份协调策略")
+    planned_round_ids = set(
+        await session.scalars(
+            select(InvestigationCoordinationPlanRow.round_id).where(
+                InvestigationCoordinationPlanRow.investigation_run_id == run_id
+            )
+        )
+    )
+    if planned_round_ids != {item.id for item in rounds}:
+        raise TaskFactConflict("coordination_history_conflict", "动态协调历史缺少轮次计划来源")
+    return saved_policy, False
+
+
 class CoordinationPlanStore:
     """模型和网络在此边界外运行；本服务只提交已校验业务事实。"""
 
@@ -166,6 +275,70 @@ class CoordinationPlanStore:
         self._session_factory = session_factory
         self._clock = clock
 
+    async def fix_policy(
+        self,
+        run_id: UUID,
+        *,
+        lease_token: UUID,
+        policy: CoordinationPolicy,
+    ) -> tuple[CoordinationPolicyRecord, bool]:
+        """在任何外部协调调用前固定运行策略。"""
+
+        async with active_investigation_transaction(
+            self._session_factory, run_id, lease_token, self._clock
+        ) as (session, _, _, _, now):
+            rounds = list(
+                await session.scalars(
+                    select(InvestigationRoundRow)
+                    .where(InvestigationRoundRow.investigation_run_id == run_id)
+                    .order_by(InvestigationRoundRow.round_number)
+                )
+            )
+            return await _fix_policy(session, run_id, policy, now, rounds)
+
+    async def fix_model_policy(
+        self,
+        run_id: UUID,
+        *,
+        lease_token: UUID,
+        policy: CoordinationPolicy,
+    ) -> tuple[CoordinationPolicyRecord, bool]:
+        """验证协调模型前置条件，并在同一租约事务内固定策略。"""
+
+        async with active_investigation_transaction(
+            self._session_factory, run_id, lease_token, self._clock
+        ) as (session, _, _, run, now):
+            try:
+                model_policy = (
+                    ModelBudgetPolicy.model_validate(run.model_budget)
+                    if run.model_budget is not None
+                    else None
+                )
+            except ValueError as error:
+                raise TaskFactConflict(
+                    "coordination_context_integrity_violation", "协调模型预算无法通过校验"
+                ) from error
+            if (
+                run.workflow_version != "v2"
+                or run.data_source_mode != "frozen"
+                or run.evidence_policy_version != "task-evidence-v1"
+                or run.call_budget is None
+                or model_policy is None
+                or model_policy.profile.structured_output_method != "function_calling"
+            ):
+                raise TaskFactConflict(
+                    "coordination_context_not_supported",
+                    "协调模型只支持已配置共享预算的 v2 冻结运行",
+                )
+            rounds = list(
+                await session.scalars(
+                    select(InvestigationRoundRow)
+                    .where(InvestigationRoundRow.investigation_run_id == run_id)
+                    .order_by(InvestigationRoundRow.round_number)
+                )
+            )
+            return await _fix_policy(session, run_id, policy, now, rounds)
+
     async def create_plan(
         self,
         run_id: UUID,
@@ -175,12 +348,13 @@ class CoordinationPlanStore:
         proposal: CoordinationProposal,
         observation_cutoff_at: datetime,
         evidence_snapshot_id: str,
+        source_call_id: UUID | None = None,
     ) -> tuple[CoordinationPlanRecord, bool]:
         """首次保存固定运行策略；同轮相同内容重放返回原计划。"""
 
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock
-        ) as (session, parent, incident, _, now):
+        ) as (session, parent, incident, run, now):
             rounds = list(
                 await session.scalars(
                     select(InvestigationRoundRow)
@@ -203,40 +377,20 @@ class CoordinationPlanStore:
                 observation_cutoff_at=observation_cutoff_at,
                 evidence_snapshot_id=evidence_snapshot_id,
             )
-            policy_sha256 = coordination_hash(policy)
-            policy_row = await session.get(InvestigationCoordinationPolicyRow, run_id)
-            if policy_row is None:
-                if rounds:
-                    raise TaskFactConflict(
-                        "coordination_history_conflict",
-                        "已有固定轮次的运行不能改为动态协调历史",
-                    )
-                session.add(
-                    InvestigationCoordinationPolicyRow(
-                        investigation_run_id=run_id,
-                        version=policy.version,
-                        policy=policy.model_dump(mode="json"),
-                        content_sha256=policy_sha256,
-                        created_at=now,
-                    )
+            policy_record, _ = await _fix_policy(session, run_id, policy, now, rounds)
+            policy_sha256 = policy_record.content_sha256
+            if source_call_id is not None:
+                model_input, model_result, _ = await validated_coordination_call(
+                    session, run, source_call_id
                 )
-                await session.flush()
-            else:
-                saved_policy = validated_policy(policy_row)
-                if saved_policy.policy != policy or saved_policy.content_sha256 != policy_sha256:
+                if (
+                    model_result.proposal != proposal
+                    or model_input.round_number != proposal.round_number
+                    or model_input.observation_cutoff_at != observation_cutoff_at
+                    or model_input.evidence_snapshot_id != evidence_snapshot_id
+                ):
                     raise TaskFactConflict(
-                        "coordination_policy_conflict", "该运行已固定另一份协调策略"
-                    )
-                planned_round_ids = set(
-                    await session.scalars(
-                        select(InvestigationCoordinationPlanRow.round_id).where(
-                            InvestigationCoordinationPlanRow.investigation_run_id == run_id
-                        )
-                    )
-                )
-                if planned_round_ids != {item.id for item in rounds}:
-                    raise TaskFactConflict(
-                        "coordination_history_conflict", "动态协调历史缺少轮次计划来源"
+                        "coordination_call_mismatch", "协调调用与待提交计划参数不一致"
                     )
             if existing_round is not None:
                 existing_plan = await session.get(
@@ -247,7 +401,11 @@ class CoordinationPlanStore:
                         "coordination_plan_missing", "该轮次不是由动态协调计划创建"
                     )
                 record = await validated_plan(session, existing_plan)
-                if record.plan != plan or record.policy_sha256 != policy_sha256:
+                if (
+                    record.plan != plan
+                    or record.policy_sha256 != policy_sha256
+                    or record.source_call_id != source_call_id
+                ):
                     raise TaskFactConflict(
                         "coordination_plan_conflict", "该轮次已绑定另一份协调计划"
                     )
@@ -267,6 +425,7 @@ class CoordinationPlanStore:
                 round_id=round_id,
                 investigation_run_id=run_id,
                 investigation_attempt_id=parent.id,
+                source_call_id=source_call_id,
                 version=plan.version,
                 policy_sha256=policy_sha256,
                 plan=plan.model_dump(mode="json"),

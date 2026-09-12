@@ -36,6 +36,8 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 83 步增加 [动态协调计划持久化](docs/architecture/83-dynamic-coordination-persistence.md)：首次动态计划写入时固定运行策略，计划与父 Worker 尝试、实际轮次和任务原子提交，并在查询时从业务来源重建复核；固定轮次历史不能中途切换为动态语义。当前仍无协调模型、v3 启动或动态图路由。验证见 [第 83 步记录](docs/progress/83-dynamic-coordination-persistence.md)。
 
+第 84 步增加 [协调模型结构化调用与共享预算账本](docs/architecture/84-coordination-model-ledger.md)：根级协调调用在请求前固定策略并预留运行共享预算，结构化提案通过确定性编译后才结算成功，成功调用与首轮计划建立可复核来源关系；模型返回后或计划提交后崩溃均可恢复复用。当前仍未新增 v3 启动、动态图或公开接口。验证见 [第 84 步记录](docs/progress/84-coordination-model-ledger.md)。
+
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。

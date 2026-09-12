@@ -30,6 +30,7 @@ def operation_kind(operation: CallOperation) -> Literal["model", "tool"]:
 
 def operation_role(operation: CallOperation) -> str | None:
     return {
+        CallOperation.COORDINATE: None,
         CallOperation.QUERY_LOGS: "log",
         CallOperation.ANALYZE_LOG: "log",
         CallOperation.QUERY_METRICS: "metric",

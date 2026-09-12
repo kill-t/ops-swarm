@@ -26,6 +26,7 @@ class CallBudgetPolicy(TaskModel):
 
 
 class CallOperation(StrEnum):
+    COORDINATE = "coordinate"
     QUERY_LOGS = "query_logs"
     QUERY_METRICS = "query_metrics"
     LIST_CHANGES = "list_changes"

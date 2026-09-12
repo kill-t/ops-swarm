@@ -60,7 +60,9 @@ def test_deadline_and_operation_contract():
     for operation in CallOperation:
         require_capacity(policy, operation, models=0, tools=0, task_tools=0)
         assert operation_kind(operation) in ("model", "tool")
-        assert (operation_role(operation) is None) == (operation is CallOperation.SYNTHESIZE)
+        assert (operation_role(operation) is None) == (
+            operation in (CallOperation.COORDINATE, CallOperation.SYNTHESIZE)
+        )
 
 
 def test_budget_model_disables_sdk_retries_without_network():

@@ -8,6 +8,10 @@ from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.evidence_contracts import ContextEvidenceDetail
 from opsswarm.investigation.context.loading import load_sources
+from opsswarm.investigation.coordination.contracts import (
+    CoordinationModelInput,
+    CoordinationModelResult,
+)
 from opsswarm.investigation.loop.contracts import (
     AssistantMessage,
     CallResult,
@@ -87,6 +91,27 @@ async def validate_call_result(
     status: str,
     result: CallResult | None,
 ) -> None:
+    if CallOperation(row.operation) == CallOperation.COORDINATE:
+        try:
+            model_input = CoordinationModelInput.model_validate(row.model_input)
+        except ValueError as error:
+            raise conflict("协调调用缺少有效模型输入") from error
+        if (
+            row.task_id is not None
+            or row.task_attempt_id is not None
+            or row.tool_request is not None
+        ):
+            raise conflict("协调调用必须属于运行根级")
+        if result is not None:
+            require_result_size(result)
+        if status == "succeeded":
+            if not isinstance(result, CoordinationModelResult):
+                raise conflict("协调模型成功结算必须保存提案")
+            if result.proposal.round_number != model_input.round_number:
+                raise conflict("协调模型提案轮次与输入不一致")
+        elif result is not None:
+            raise conflict("失败或未知协调调用不能保存成功提案")
+        return
     loop_model = (
         row.model_input is not None and row.model_input.get("version") == "evidence-loop-input-v1"
     )

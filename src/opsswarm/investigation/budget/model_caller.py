@@ -1,7 +1,8 @@
 """在完整应用输入边界组织 LangChain 结构化调用与报告用量。"""
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from uuid import UUID
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -18,7 +19,10 @@ from opsswarm.investigation.budget.model_contracts import (
 from opsswarm.investigation.budget.model_policy import allocate_input
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
+from opsswarm.investigation.context.contracts import ContextPacket
 from opsswarm.investigation.context.service import TaskContextService
+from opsswarm.investigation.coordination.contracts import CoordinationModelInput
+from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult
 from opsswarm.investigation.prompt_versions import MULTI_AGENT_PROMPT_VERSION
 
 
@@ -41,6 +45,10 @@ class BudgetedModelCaller:
         schema: type[T],
         messages: Sequence[BaseMessage],
         operation: CallOperation,
+        *,
+        prepared_packet: ContextPacket | None = None,
+        result_factory: Callable[[T], CallResult] | None = None,
+        reservation_observer: Callable[[UUID], None] = lambda _: None,
     ) -> T:
         if any(
             not isinstance(m, (SystemMessage, HumanMessage)) or not isinstance(m.content, str)
@@ -49,7 +57,7 @@ class BudgetedModelCaller:
             raise CallBudgetExceeded("model_input_type_unsupported")
         if any(len(str(m.content)) > 262144 for m in messages):
             raise CallBudgetExceeded("model_input_too_large")
-        model_input = ModelInput(
+        model_input: AnyModelInput = ModelInput(
             messages=tuple(
                 TextModelMessage(
                     role="system" if isinstance(m, SystemMessage) else "user",
@@ -63,7 +71,29 @@ class BudgetedModelCaller:
         )
         prompt_version = MULTI_AGENT_PROMPT_VERSION
         manifest = None
-        if self._context_service is not None:
+        if prepared_packet is not None:
+            if self._context_service is not None:
+                raise CallBudgetExceeded("model_context_source_conflict")
+            if (
+                not isinstance(prepared_packet.model_input, CoordinationModelInput)
+                or prepared_packet.model_input.output_schema != schema.model_json_schema()
+                or prepared_packet.model_input.tool_schema != convert_to_openai_tool(schema)
+                or prepared_packet.model_input.structured_output_method
+                != self._policy.profile.structured_output_method
+            ):
+                raise CallBudgetExceeded("model_input_schema_mismatch")
+            model_input = prepared_packet.model_input
+            manifest = prepared_packet.manifest
+            prompt_version = manifest.prompt_version
+            messages = [
+                SystemMessage(content=m.content)
+                if m.role == "system"
+                else HumanMessage(content=m.content)
+                for m in model_input.messages
+            ]
+        elif self._context_service is not None:
+            if not isinstance(model_input, ModelInput):
+                raise CallBudgetExceeded("model_input_type_unsupported")
             await self._runner.check()
             packet = await self._context_service.prepare(
                 model_input,
@@ -83,6 +113,7 @@ class BudgetedModelCaller:
             ]
         allocate_input(self._policy, model_input, prompt_version=prompt_version)
         usage: ReportedModelUsage | None = None
+        call_result: CallResult | None = None
         # 固定配置不允许兼容层静默替换输出方式；装配本身不发起请求。
         try:
             with warnings.catch_warnings():
@@ -98,7 +129,7 @@ class BudgetedModelCaller:
             raise CallBudgetExceeded("model_budget_profile_mismatch") from None
 
         async def invoke() -> T:
-            nonlocal usage
+            nonlocal call_result, usage
             response = await structured.ainvoke(list(messages))
             if not isinstance(response, dict):
                 raise ValueError("模型没有返回包含原始消息的结构化结果")
@@ -123,7 +154,10 @@ class BudgetedModelCaller:
                     raise CallBudgetExceeded("model_usage_invalid") from None
             if response.get("parsing_error") is not None:
                 raise ValueError("模型结构化输出解析失败")
-            return schema.model_validate(response.get("parsed"))
+            parsed = schema.model_validate(response.get("parsed"))
+            if result_factory is not None:
+                call_result = result_factory(parsed)
+            return parsed
 
         return await self._runner.execute(
             operation,
@@ -131,5 +165,7 @@ class BudgetedModelCaller:
             model_input=model_input,
             prompt_version=prompt_version,
             context_manifest=manifest,
+            result_reader=lambda: call_result,
+            reservation_observer=reservation_observer,
             usage_reader=lambda: usage,
         )

@@ -4,7 +4,10 @@ from uuid import UUID
 
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.context.catalog import catalog_group
-from opsswarm.investigation.context.contracts import ContextManifest, ContextMaterial
+from opsswarm.investigation.context.contracts import (
+    ContextManifest,
+    ContextMaterial,
+)
 from opsswarm.investigation.context.evidence_contracts import (
     ContextEvidenceDetail,
     EvidenceCatalog,
@@ -74,7 +77,7 @@ class ContextEvidenceReader:
 
     async def catalog(self) -> EvidenceCatalog | None:
         manifest = await self._manifest()
-        if manifest is None:
+        if manifest is None or manifest.version == "coordination-context-v1":
             return None
         groups = []
         for ref in self._references(manifest):
