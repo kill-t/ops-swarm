@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-12。最新完成切片为第 81 步工作摘要进入版本化上下文，基线为 main 的 `bb58588`（第 80 步）。本文随第 81 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 81 步进度记录为准。
+核对日期：2026-09-12。最新完成切片为第 82 步动态调查计划与确定性分派校验，基线为 main 的 `e744dd2`（第 81 步）。本文随第 82 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 82 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 81 步设计](architecture/81-summary-context.md) 与 [验收记录](progress/81-summary-context.md)，再读 [第 80 步设计](architecture/80-task-working-summary.md) 与 [验收记录](progress/80-task-working-summary.md)，再按需阅读 [第 79 步设计](architecture/79-bounded-evidence-reading.md) 与 [验收记录](progress/79-bounded-evidence-reading.md)，需要历史边界时再读 [第 77 步](progress/77-repeated-call-identity.md)、[第 78 步](progress/78-development-handoff.md)。
+2. 先读 [第 82 步设计](architecture/82-dynamic-coordination-policy.md) 与 [验收记录](progress/82-dynamic-coordination-policy.md)，再读 [第 81 步设计](architecture/81-summary-context.md) 与 [验收记录](progress/81-summary-context.md)，需要上下文前置时再读第 79、80 步，需要历史边界时再读 [第 78 步](progress/78-development-handoff.md)。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 80 步材料、恢复核对和只读 API 提交为 `bb58588`。第 81 步综合消费与预留复核详见 [当前验收记录](progress/81-summary-context.md)，对应本片独立提交。
+第 80 步材料、恢复核对和只读 API 提交为 `bb58588`，第 81 步提交为 `e744dd2`。第 82 步确定性协调提案与分派闸门详见 [当前验收记录](progress/82-dynamic-coordination-policy.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -59,6 +59,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 - 工具失败可能被框架转换成本地错误消息，但不完整历史在下一请求前即被拒绝；既有 Worker 技术重试仍有界且消耗原预算。
 
 第 80 步新增摘要材料；第 81 步扩展为新建 evidence-read-v1 或 summary-context-v1 运行固定 `working_summary_policy_version=task-working-summary-v1`，任务成功时生成有界不可变摘要，与结果/状态/事件同事务提交。查询、成功结果恢复与父运行完成均复核摘要来源；失败调用按引用保留，不推断问题分类。摘要可通过只读 API 查询，并在 summary-context-v1 中进入综合输入；旧策略不消费摘要。
+
+第 82 步新增 `dynamic-coordination-v1` 策略、结构化提案及编译结果。模型可选范围仅为本轮目标、日志/指标/变更角色、任务目标和回看时长；编译器注入事故服务、UTC 截止时间、证据快照身份和尝试上限，拒绝轮次、角色、窗口或总任务额度越界。该能力目前是纯领域闸门，尚未接入模型、业务数据库或工作流。
 
 尚未完成：专业交互历史裁剪；动态分派/跨专业补查/独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
@@ -75,6 +77,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [budget/store.py](../src/opsswarm/investigation/budget/store.py)、[budget/runtime.py](../src/opsswarm/investigation/budget/runtime.py) | 有效父租约、原子预留、共享额度、结算幂等与迟到阻断；相同预留不能重发外部请求 |
 | [working_summary/builder.py](../src/opsswarm/investigation/working_summary/builder.py)、[working_summary/persistence.py](../src/opsswarm/investigation/working_summary/persistence.py) | 摘要确定性投影、同事务保存与查询来源核对；不调用模型 |
 | [tasks/runtime.py](../src/opsswarm/investigation/tasks/runtime.py) | 稳定任务、新尝试、快照复用及专业结果恢复，不把技术重试当成补查 |
+| [coordination/contracts.py](../src/opsswarm/investigation/coordination/contracts.py)、[coordination/policy.py](../src/opsswarm/investigation/coordination/policy.py) | 有限协调提案、运行策略及系统范围注入；当前未接入模型和持久化 |
 
 第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
 
@@ -86,7 +89,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 82 步：**动态调查任务计划与确定性分派校验**。先按第 64/65 篇明确协调器提出的计划契约、角色权限、任务与预算上限及持久化边界，再完成最小可测试切片；不要一次引入全部补查循环、递归创建 Agent 或 MCP。
+第 83 步：**动态协调计划持久化**。保存运行固定策略、不可变模型提案和编译结果，复用现有轮次/任务事实并验证幂等重放、篡改拒绝及真实 PostgreSQL 迁移；不在该片提前改变 v1/v2 图路由。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -106,8 +109,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 81 步测试入口为 [综合与恢复](../tests/integration/test_summary_context_graph.py)、[预留复核](../tests/integration/test_summary_context_reservations.py)、[策略迁移](../tests/integration/test_summary_context_migration.py)。第 80 步测试入口为 [摘要事务](../tests/integration/test_working_summary.py)、[摘要恢复](../tests/integration/test_working_summary_graph.py)、[摘要迁移](../tests/integration/test_working_summary_migration.py) 和 [摘要 API](../tests/api/test_working_summary_api.py)。第 79 步测试入口为 [loop_helpers.py](../tests/loop_helpers.py)、[循环 SDK 回归](../tests/integration/test_evidence_loop.py)、[图与恢复](../tests/integration/test_loop_graph.py)、[事务账本](../tests/integration/test_loop_ledger.py)、[迁移](../tests/integration/test_loop_migration.py)、[API](../tests/api/test_loop_api.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 82 步测试入口为 [协调策略单元测试](../tests/unit/investigation/test_coordination_policy.py)。第 81 步测试入口为 [综合与恢复](../tests/integration/test_summary_context_graph.py)、[预留复核](../tests/integration/test_summary_context_reservations.py)、[策略迁移](../tests/integration/test_summary_context_migration.py)。第 80 步测试入口为 [摘要事务](../tests/integration/test_working_summary.py)、[摘要恢复](../tests/integration/test_working_summary_graph.py)、[摘要迁移](../tests/integration/test_working_summary_migration.py) 和 [摘要 API](../tests/api/test_working_summary_api.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 81 步设计/验收，核对 Git 与实际代码。摘要已通过独立策略进入综合实际输入；从第 82 步动态调查任务计划与确定性分派校验推进，先界定契约、角色权限、预算和持久化，再完成最小实现、假模型与真实 PostgreSQL 验证、文档和中文独立提交。不要把当前固定图描述成已有动态协调，也不提前交付 MCP 或图内人工恢复。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 82 步设计/验收，核对 Git 与实际代码。动态协调提案已有确定性分派闸门；从第 83 步计划持久化推进，固定运行策略并保存不可变提案和编译结果，复用轮次/任务事实，以真实 PostgreSQL 验证幂等与篡改拒绝，完成文档和中文独立提交。不要把当前固定图描述成已有动态协调，也不提前交付 MCP 或图内人工恢复。
