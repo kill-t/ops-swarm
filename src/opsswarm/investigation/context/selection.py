@@ -17,6 +17,15 @@ def resolve_context_policy(
 ) -> ContextPolicyVersion | None:
     """保留省略字段的旧行为，并校验显式策略所需能力。"""
 
+    if workflow_version is WorkflowVersion.V3:
+        if model_budget is None:
+            raise ValueError("v3 调查必须配置模型预算")
+        if model_budget.profile.structured_output_method != "function_calling":
+            raise ValueError("v3 调查必须使用 function_calling 模型 profile")
+        if requested not in (None, "summary-context-v1"):
+            raise ValueError("v3 调查必须固定 summary-context-v1 上下文策略")
+        return "summary-context-v1"
+
     if requested is None:
         if model_budget is None:
             return None

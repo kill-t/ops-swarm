@@ -73,6 +73,7 @@ from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.context.contracts import ContextPolicyVersion
 from opsswarm.investigation.context.selection import resolve_context_policy
+from opsswarm.investigation.coordination.contracts import CoordinationPolicy
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -99,7 +100,11 @@ from opsswarm.investigation.persistence import (
     StoredSpecialistReport,
 )
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
-from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
+from opsswarm.investigation.workflow_versions import (
+    InvestigationGraphVersion,
+    WorkflowVersion,
+    validate_workflow_route,
+)
 from opsswarm.planning.models import (
     ActionParameters,
     ActionPlanCapability,
@@ -195,6 +200,7 @@ class StartInvestigationRequest(StrictApiModel):
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     context_policy_version: ContextPolicyVersion | None = None
+    coordination_policy: CoordinationPolicy | None = None
 
     @model_validator(mode="after")
     def validate_workflow(self) -> Self:
@@ -204,10 +210,12 @@ class StartInvestigationRequest(StrictApiModel):
             and self.context_policy_version is None
         ):
             raise ValueError("context_policy_version 省略时使用默认策略，不能显式设为 null")
-        if (
-            self.call_budget is not None or self.model_budget is not None
-        ) and self.workflow_version is not WorkflowVersion.V2:
-            raise ValueError("只有 v2 调查允许配置调用预算")
+        if (self.call_budget is not None or self.model_budget is not None) and (
+            self.workflow_version not in (WorkflowVersion.V2, WorkflowVersion.V3)
+        ):
+            raise ValueError("只有 v2 或 v3 调查允许配置调用预算")
+        if self.coordination_policy is not None and self.workflow_version is not WorkflowVersion.V3:
+            raise ValueError("显式协调策略只支持 v3 调查")
         resolve_context_policy(
             self.workflow_version,
             self.model_budget,
@@ -234,6 +242,9 @@ class InvestigationRunResponse(StrictApiModel):
     status: InvestigationRunStatus
     prompt_version: str
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    graph_version: InvestigationGraphVersion | None = None
+    coordination_policy_version: Literal["dynamic-coordination-v1"] | None = None
+    coordination_policy: CoordinationPolicy | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     graph_thread_id: str | None

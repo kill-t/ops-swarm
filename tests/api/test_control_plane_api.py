@@ -47,6 +47,7 @@ from opsswarm.observability import TracingSettings, create_tracing_runtime
 from opsswarm.planning import ActionType, RollbackConfigurationParameters
 from opsswarm.planning.persistence import StoredActionStep
 from opsswarm.verification import VerificationObservation
+from tests.loop_helpers import loop_policy
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -1070,6 +1071,87 @@ async def test_start_multi_agent_investigation_persists_graph_thread(
     assert investigation["mode"] == "multi_agent"
     assert investigation["prompt_version"] == "multi-agent-parallel-v3"
     assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
+
+
+async def test_start_v3_investigation_returns_frozen_dynamic_contract(
+    control_client: httpx2.AsyncClient,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload("alert-v3-start"),
+    )
+    incident_id = created.json()["incident"]["id"]
+    model_budget = loop_policy().model_dump(mode="json")
+
+    started = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json={
+            "expected_version": 1,
+            "actor_id": "engineer-001",
+            "reason": "创建隔离的动态协作运行",
+            "mode": "multi_agent",
+            "workflow_version": "v3",
+            "model_budget": model_budget,
+            "coordination_policy": {"max_rounds": 2, "max_total_tasks": 5},
+        },
+    )
+
+    assert started.status_code == 200
+    investigation = started.json()["investigation"]
+    assert investigation["workflow_version"] == "v3"
+    assert investigation["graph_version"] == "dynamic-investigation-graph-v1"
+    assert investigation["coordination_policy_version"] == "dynamic-coordination-v1"
+    assert investigation["coordination_policy"]["max_rounds"] == 2
+    assert investigation["coordination_policy"]["max_total_tasks"] == 5
+    assert investigation["context_policy_version"] == "summary-context-v1"
+    assert investigation["working_summary_policy_version"] == "task-working-summary-v1"
+    assert investigation["evidence_policy_version"] == "task-evidence-v1"
+    assert investigation["call_budget"] is not None
+    assert investigation["model_budget"] == model_budget
+
+    persisted = await control_client.get(f"/api/v1/investigations/{investigation['id']}")
+    assert persisted.status_code == 200
+    assert persisted.json() == investigation
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"mode": "single_agent"}, "v3 当前只支持多 Agent 调查"),
+        ({"data_source_mode": "live"}, "v3 启动契约当前只支持冻结数据源"),
+        ({"model_budget": None}, "v3 调查必须配置模型预算"),
+    ],
+)
+async def test_start_v3_rejects_incomplete_routes_before_writes(
+    control_client: httpx2.AsyncClient,
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    created = await control_client.post(
+        "/api/v1/alerts",
+        json=alert_payload(f"alert-v3-invalid-{message}"),
+    )
+    incident_id = created.json()["incident"]["id"]
+    payload = {
+        "expected_version": 1,
+        "actor_id": "engineer-001",
+        "reason": "验证动态运行启动闸门",
+        "mode": "multi_agent",
+        "workflow_version": "v3",
+        "model_budget": loop_policy().model_dump(mode="json"),
+        **overrides,
+    }
+
+    rejected = await control_client.post(
+        f"/api/v1/incidents/{incident_id}/actions/start-investigation",
+        json=payload,
+    )
+    incident = await control_client.get(f"/api/v1/incidents/{incident_id}")
+
+    assert rejected.status_code == 422
+    assert message in rejected.text
+    assert incident.json()["status"] == "open"
+    assert incident.json()["version"] == 1
 
 
 async def test_start_live_investigation_persists_explicit_data_source_mode(

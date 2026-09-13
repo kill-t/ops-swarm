@@ -47,7 +47,7 @@ class InvestigationRunRow(Base):
         CheckConstraint(
             "context_policy_version IS NULL OR (context_policy_version IN "
             "('task-context-v1', 'evidence-read-v1', 'summary-context-v1') AND "
-            "workflow_version = 'v2' AND model_budget IS NOT NULL AND "
+            "workflow_version IN ('v2', 'v3') AND model_budget IS NOT NULL AND "
             "evidence_policy_version IS NOT NULL AND "
             "(context_policy_version = 'task-context-v1' OR "
             "COALESCE(model_budget #>> '{profile,structured_output_method}', '') = "
@@ -66,7 +66,7 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_observation_cutoff",
         ),
         CheckConstraint(
-            "evidence_policy_version IS NULL OR (workflow_version = 'v2' "
+            "evidence_policy_version IS NULL OR (workflow_version IN ('v2', 'v3') "
             "AND call_budget IS NOT NULL AND ((evidence_policy_version = 'task-evidence-v1' "
             "AND data_source_mode = 'frozen') OR "
             "(evidence_policy_version = 'task-evidence-live-v1' "
@@ -74,19 +74,35 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_evidence_policy",
         ),
         CheckConstraint(
-            "model_budget IS NULL OR (workflow_version = 'v2' AND call_budget IS NOT NULL AND "
+            "model_budget IS NULL OR (workflow_version IN ('v2', 'v3') AND "
+            "call_budget IS NOT NULL AND "
             "jsonb_typeof(model_budget) = 'object' AND octet_length(model_budget::text) <= 8192)",
             name="ck_investigation_runs_model_budget",
         ),
         CheckConstraint(
-            "call_budget IS NULL OR (workflow_version = 'v2' AND "
+            "call_budget IS NULL OR (workflow_version IN ('v2', 'v3') AND "
             "jsonb_typeof(call_budget) = 'object' AND octet_length(call_budget::text) <= 8192)",
             name="ck_investigation_runs_call_budget",
         ),
         CheckConstraint(
-            "workflow_version IN ('v1', 'v2') AND "
+            "workflow_version IN ('v1', 'v2', 'v3') AND "
             "(workflow_version = 'v1' OR mode = 'multi_agent')",
             name="ck_investigation_runs_workflow_version",
+        ),
+        CheckConstraint(
+            "(workflow_version <> 'v3' AND graph_version IS NULL AND "
+            "coordination_policy_version IS NULL) OR "
+            "(workflow_version = 'v3' AND data_source_mode = 'frozen' AND "
+            "COALESCE(graph_version, '') = 'dynamic-investigation-graph-v1' AND "
+            "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
+            "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
+            "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
+            "COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-v1' AND "
+            "prompt_version = 'summary-context-v1' AND "
+            "COALESCE(model_budget #>> '{profile,structured_output_method}', '') = "
+            "'function_calling')",
+            name="ck_investigation_runs_dynamic_policy",
         ),
         CheckConstraint(
             "mode IN ('single_agent', 'multi_agent')",
@@ -172,6 +188,8 @@ class InvestigationRunRow(Base):
     call_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     workflow_version: Mapped[str] = mapped_column(String(16), nullable=False, server_default="v1")
+    graph_version: Mapped[str | None] = mapped_column(String(64))
+    coordination_policy_version: Mapped[str | None] = mapped_column(String(32))
     graph_thread_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     model_name: Mapped[str | None] = mapped_column(String(200))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

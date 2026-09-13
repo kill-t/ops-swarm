@@ -18,6 +18,7 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
 from opsswarm.worker import ProcessorContext
 from opsswarm.worker.processor import LangGraphMultiAgentProcessor
+from opsswarm.worker.task_graph import TaskGraphFactory
 
 pytestmark = pytest.mark.asyncio
 
@@ -146,6 +147,37 @@ async def test_live_processor_rejects_frozen_task_before_checkpoint_access() -> 
 
     with pytest.raises(RuntimeError, match="调查运行模式与持久任务类型不匹配"):
         await processor.process(context)
+
+
+async def test_legacy_processor_rejects_v3_before_checkpoint_access() -> None:
+    processor = LangGraphMultiAgentProcessor(
+        investigator=UnusedParallelInvestigator(),
+        model_name="unused-model",
+    )
+    context = ProcessorContext(
+        request=RELEASE_500_SCENARIO.request,
+        mode=InvestigationMode.MULTI_AGENT,
+        work_item_kind=WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION,
+        graph_thread_id="investigation-run:00000000-0000-0000-0000-000000000001",
+        workflow_version="v3",
+    )
+
+    with pytest.raises(RuntimeError, match="当前 Worker 不支持 v3 调查工作流"):
+        await processor.process(context)
+
+
+async def test_fixed_task_graph_factory_rejects_v3_before_dependency_access() -> None:
+    factory = object.__new__(TaskGraphFactory)
+    context = ProcessorContext(
+        request=RELEASE_500_SCENARIO.request,
+        mode=InvestigationMode.MULTI_AGENT,
+        work_item_kind=WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION,
+        graph_thread_id="investigation-run:00000000-0000-0000-0000-000000000001",
+        workflow_version="v3",
+    )
+
+    with pytest.raises(ValueError, match="固定任务图只能装配 v2 调查"):
+        factory(context)
 
 
 async def test_live_processor_persists_runtime_statistics_without_frozen_accuracy() -> None:

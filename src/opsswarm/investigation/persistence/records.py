@@ -16,6 +16,7 @@ from opsswarm.investigation.attempts import (
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.context.contracts import ContextPolicyVersion
+from opsswarm.investigation.coordination.contracts import CoordinationPolicy
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceRelation,
@@ -35,7 +36,7 @@ from opsswarm.investigation.models import (
     WorkItemStatus,
 )
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
-from opsswarm.investigation.workflow_versions import WorkflowVersion
+from opsswarm.investigation.workflow_versions import InvestigationGraphVersion, WorkflowVersion
 from opsswarm.observability import TraceContextCarrier
 
 
@@ -49,6 +50,9 @@ class StoredInvestigationRun(StrictModel):
     status: InvestigationRunStatus
     prompt_version: str
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    graph_version: InvestigationGraphVersion | None = None
+    coordination_policy_version: Literal["dynamic-coordination-v1"] | None = None
+    coordination_policy: CoordinationPolicy | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None
     context_policy_version: ContextPolicyVersion | None = None

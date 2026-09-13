@@ -175,6 +175,10 @@ class LangGraphMultiAgentProcessor:
                     if self._task_investigator_factory is None:
                         raise RuntimeError("Worker 未装配 v2 任务调查图")
                     investigator = self._task_investigator_factory(context)
+                elif context.workflow_version is not WorkflowVersion.V1:
+                    raise RuntimeError(
+                        f"当前 Worker 不支持 {context.workflow_version.value} 调查工作流"
+                    )
                 if await investigator.has_checkpoint(thread_id=thread_id):
                     outcome = await investigator.resume(thread_id=thread_id)
                 else:

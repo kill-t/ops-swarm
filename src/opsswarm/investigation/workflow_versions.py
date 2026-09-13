@@ -1,6 +1,7 @@
 """调查运行的版本选择与兼容范围。"""
 
 from enum import StrEnum
+from typing import Literal
 
 from opsswarm.investigation.models import InvestigationDataSourceMode, InvestigationMode
 
@@ -8,6 +9,11 @@ from opsswarm.investigation.models import InvestigationDataSourceMode, Investiga
 class WorkflowVersion(StrEnum):
     V1 = "v1"
     V2 = "v2"
+    V3 = "v3"
+
+
+InvestigationGraphVersion = Literal["dynamic-investigation-graph-v1"]
+DYNAMIC_INVESTIGATION_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v1"
 
 
 def validate_workflow_route(
@@ -17,3 +23,8 @@ def validate_workflow_route(
 ) -> None:
     if version is WorkflowVersion.V2 and mode is not InvestigationMode.MULTI_AGENT:
         raise ValueError("v2 当前只支持多 Agent 调查")
+    if version is WorkflowVersion.V3:
+        if mode is not InvestigationMode.MULTI_AGENT:
+            raise ValueError("v3 当前只支持多 Agent 调查")
+        if data_source_mode is not InvestigationDataSourceMode.FROZEN:
+            raise ValueError("v3 启动契约当前只支持冻结数据源")

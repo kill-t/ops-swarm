@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-12。最新完成切片为第 84 步协调模型结构化调用与共享预算账本，基线为 main 的 `5d3d702`（第 83 步）。本文随第 84 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 84 步进度记录为准。
+核对日期：2026-09-13。最新完成切片为第 85 步独立动态工作流版本与运行策略冻结，基线为 main 的 `e4922d3`（第 84 步）。本文随第 85 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 85 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 84 步设计](architecture/84-coordination-model-ledger.md) 与 [验收记录](progress/84-coordination-model-ledger.md)，再读第 82～83 步设计与记录，需要上下文前置时再读第 79～81 步。
+2. 先读 [第 85 步设计](architecture/85-dynamic-workflow-start.md) 与 [验收记录](progress/85-dynamic-workflow-start.md)，再读第 82～84 步设计与记录，需要上下文前置时再读第 79～81 步。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -18,11 +18,11 @@
 ## 3. 当前架构与技术栈
 
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
-- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
+- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 已有隔离启动契约但尚无动态图。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
 - 当前仍固定日志、指标、变更三个专业任务和综合节点。新策略只读取已保存证据，不动态查询遥测或创建补查任务。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0042_coordination_model_call`；第 84 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0043_dynamic_workflow_start`；第 85 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`。第 84 步协调模型调用与来源恢复详见 [当前验收记录](progress/84-coordination-model-ledger.md)，对应本片独立提交。
+第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`。第 85 步 v3 启动策略冻结详见 [当前验收记录](progress/85-dynamic-workflow-start.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -66,6 +66,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 84 步新增根级 `coordinate` 结构化模型调用，使用原运行共享次数、时限、Token 与估算费用预算；上下文只含事故与固定协调策略，没有工具或执行权限。提案通过 Pydantic 与确定性编译后才结算成功，并作为计划来源保存。模型成功后、计划提交前崩溃会复用调用；计划提交后崩溃会直接复核并返回原计划。该入口只支持 v2 冻结运行的第一轮，旧 Worker 路由不会调用，尚无 v3 启动、动态图或第二轮上下文。
 
+第 85 步新增隔离的 `workflow_version=v3` 和 `graph_version=dynamic-investigation-graph-v1`。v3 只接受冻结多 Agent 与 function_calling 模型预算，创建时固定完整协调策略、summary-context-v1、工作摘要、task-evidence-v1、调用预算和模型预算；原运行查询返回全部启动契约。现有 Worker 的领取 SQL 只声明 v1/v2，能够越过队首 v3 继续领取兼容任务；旧处理器和固定图在 checkpoint 访问前再次拒绝 v3。因此 v3 当前保持 queued，尚未创建或恢复动态图 checkpoint。
+
 尚未完成：专业交互历史裁剪；动态图分派/跨专业补查/独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
@@ -84,6 +86,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [coordination/contracts.py](../src/opsswarm/investigation/coordination/contracts.py)、[coordination/policy.py](../src/opsswarm/investigation/coordination/policy.py) | 有限协调输入/输出、运行策略及系统范围注入；业务无效提案不能结算为成功 |
 | [coordination/context.py](../src/opsswarm/investigation/coordination/context.py)、[coordination/planner.py](../src/opsswarm/investigation/coordination/planner.py) | 首轮最小上下文、根级共享预算调用、成功结果复用与计划提交恢复 |
 | [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次、父尝试和模型调用来源的原子写入及重建核对 |
+| [workflow_versions.py](../src/opsswarm/investigation/workflow_versions.py)、[persistence/repository.py](../src/opsswarm/investigation/persistence/repository.py) | v3 路由、启动策略原子冻结、运行查询及 Worker 支持版本领取过滤 |
+| [worker/processor.py](../src/opsswarm/worker/processor.py)、[worker/task_graph.py](../src/opsswarm/worker/task_graph.py) | 现有 v1/v2 Worker 的显式版本分派与固定图二次拒绝；尚无 v3 图工厂 |
 
 第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
 
@@ -95,7 +99,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 85 步：**独立动态工作流版本与运行策略冻结**。为新协作图增加与 v1/v2 隔离的工作流版本，在运行创建时固定协调、上下文、证据、预算与图恢复版本；先形成可查询的启动契约，再接入动态 LangGraph 节点。
+第 86 步：**v3 动态图首轮协调节点与 checkpoint 恢复**。新增只接受 v3 和 `dynamic-investigation-graph-v1` 的图装配，接入第 84 步首轮规划服务；验证首次执行、模型成功后/计划提交后恢复、checkpoint 版本冲突拒绝，再让对应 Worker 显式领取 v3。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -115,8 +119,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 84 步测试入口为 [协调规划与恢复](../tests/integration/test_coordination_planner.py) 和 [协调调用迁移](../tests/integration/test_coordination_model_call_migration.py)。第 83 步测试入口为 [计划事务](../tests/integration/test_coordination_plan_store.py)、[计划迁移](../tests/integration/test_coordination_plan_migration.py) 和 [遗留轮次散列](../tests/unit/investigation/test_task_round_identity.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 85 步测试入口为 [v3 启动与领取隔离](../tests/integration/test_dynamic_workflow_start.py)、[v3 迁移](../tests/integration/test_dynamic_workflow_migration.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。第 84 步测试入口为 [协调规划与恢复](../tests/integration/test_coordination_planner.py) 和 [协调调用迁移](../tests/integration/test_coordination_model_call_migration.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 84 步设计/验收，核对 Git 与实际代码。首轮协调模型已接入共享预算账本并与计划来源绑定，但旧 Worker 尚未调用；从第 85 步独立动态工作流版本与运行策略冻结推进，先定义 v3 启动、版本与恢复边界，再接入新 LangGraph 图，完成真实 PostgreSQL、兼容回归、文档和中文独立提交。不要把内部首轮服务描述成已运行的动态工作流，也不提前交付 MCP 或图内人工恢复。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 85 步设计/验收，核对 Git 与实际代码。v3 已能原子创建并查询冻结策略，现有 Worker 会跳过它；从第 86 步动态首轮图推进，新增严格核对 workflow_version 与 graph_version 的图装配，接入已有协调规划服务并验证 checkpoint 恢复后，才开放 v3 Worker 领取。完成真实 PostgreSQL、checkpoint、兼容回归、文档和中文独立提交。不要把 queued v3 描述为已执行，也不提前加入第二轮补查、MCP 或图内人工恢复。

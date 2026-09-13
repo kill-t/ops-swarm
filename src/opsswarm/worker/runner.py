@@ -18,6 +18,7 @@ from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.context.contracts import ContextPolicyVersion
+from opsswarm.investigation.coordination.contracts import CoordinationPolicy
 from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
 from opsswarm.investigation.models import (
     EvidenceObservation,
@@ -35,7 +36,7 @@ from opsswarm.investigation.models import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
-from opsswarm.investigation.workflow_versions import WorkflowVersion
+from opsswarm.investigation.workflow_versions import InvestigationGraphVersion, WorkflowVersion
 from opsswarm.observability import extract_trace_context, mark_span_error
 from opsswarm.worker.usage import ModelUsageTracker
 
@@ -74,6 +75,8 @@ class ProcessorContext(StrictModel):
     work_item_kind: WorkItemKind
     graph_thread_id: str | None
     workflow_version: WorkflowVersion = WorkflowVersion.V1
+    graph_version: InvestigationGraphVersion | None = None
+    coordination_policy: CoordinationPolicy | None = None
     investigation_run_id: UUID | None = None
     lease_token: UUID | None = None
     call_budget: CallBudgetPolicy | None = None
@@ -138,6 +141,7 @@ class InvestigationWorker:
             occurred_at=self._clock(),
             lease_duration=self._lease_duration,
             data_source_mode=self._data_source_mode,
+            supported_workflow_versions=(WorkflowVersion.V1, WorkflowVersion.V2),
             model_name=self._model_name,
             model_pricing=(
                 self._usage_tracker.pricing if self._usage_tracker is not None else None
@@ -186,6 +190,8 @@ class InvestigationWorker:
                             work_item_kind=claimed.work_item.kind,
                             graph_thread_id=claimed.run.graph_thread_id,
                             workflow_version=claimed.run.workflow_version,
+                            graph_version=claimed.run.graph_version,
+                            coordination_policy=claimed.run.coordination_policy,
                             investigation_run_id=claimed.run.id,
                             lease_token=lease_token,
                             call_budget=claimed.run.call_budget,

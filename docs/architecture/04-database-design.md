@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 85 步增量见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)：迁移 `0043_dynamic_workflow_start` 增加可空 `graph_version` 与 `coordination_policy_version`。v3 只接受冻结多 Agent，并强制动态协调、摘要上下文、工作摘要、冻结证据、调用/模型预算、function_calling 和独立图恢复版本同时固定；旧 v1/v2 两列保持空。协调策略完整 JSON 与散列继续保存于不可变策略表，并在运行创建事务中写入；存在 v3 事实时拒绝降级。
+
 第 81 步增量见 [摘要上下文](81-summary-context.md)：迁移 0040 扩展上下文约束；`summary-context-v1` 强制非空 `task-working-summary-v1` 摘要策略，仍要求 v2、模型预算与 function_calling。旧行不回填，新策略或新清单审计存在时拒绝降级。
 
 新增设计见 [第 80 篇工作摘要](80-task-working-summary.md)：运行增加可空 working_summary_policy_version；agent_task_working_summaries 以 task_id 为主键，保存运行/成功尝试、版本、JSONB 摘要、SHA-256 和 UTC 生成时间。摘要与结果同事务保存，禁止覆盖，有已启用策略或摘要时拒绝降级。
@@ -217,7 +219,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，旧 v1/v2 保持空 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |
@@ -236,7 +238,7 @@ erDiagram
 | 追踪 | 可空 `trace_context` JSONB，只允许应用生成的 `traceparent` 与可选 `tracestate` |
 | 时间 | 创建、更新和终态完成时间 |
 
-领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，连接 `investigation_runs` 并只领取与 Worker 数据源模式一致的行，再使用 `FOR UPDATE SKIP LOCKED`。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
+领取查询同时选择已经可执行的 `pending` 任务和租约到期的 `running` 任务，连接 `investigation_runs` 并只领取与 Worker 数据源模式及显式支持工作流版本集合一致的行，再使用 `FOR UPDATE SKIP LOCKED`。不兼容的早期任务不会阻塞后续兼容任务。完成和失败写入必须匹配当前租约令牌且未超过到期时间。最后一次租约到期由后续领取操作收敛为终态失败，不能永久留在 `running`。
 
 任务类型当前支持 `run_single_agent_investigation` 和 `run_multi_agent_investigation`。应用在创建任务时由 `mode` 确定类型，Worker 处理前再次校验两者一致，不能让模型或提示词选择执行路径。
 
@@ -469,6 +471,8 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 | --- | --- |
 | `investigation_coordination_policies` | `investigation_run_id` 主键、策略版本、完整策略 JSONB、SHA-256 和创建时间；运行与散列组成候选键，JSON 类型、大小和版本受数据库约束 |
 | `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、可空协调调用来源、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略、父尝试及调用来源 |
+
+第 85 步起，v3 在运行创建事务内即写入一条 `investigation_coordination_policies`，并把其版本固定到运行；查询先检查运行版本字段，再复核策略内容和散列。第 83～84 步产生的 v2 内部策略保留原事实，但不回填为 v2 启动契约。
 
 计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md)。当前策略仍尚未通过新工作流的运行创建入口冻结。
 

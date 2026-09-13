@@ -30,6 +30,10 @@ from opsswarm.investigation.context.selection import (
     resolve_context_policy,
     select_context_prompt,
 )
+from opsswarm.investigation.coordination.contracts import CoordinationPolicy
+from opsswarm.investigation.coordination.hashing import coordination_hash
+from opsswarm.investigation.coordination.persistence import validated_policy
+from opsswarm.investigation.coordination.tables import InvestigationCoordinationPolicyRow
 from opsswarm.investigation.errors import (
     GraphThreadIdMismatch,
     InvestigationRunNotFound,
@@ -86,7 +90,12 @@ from opsswarm.investigation.prompt_versions import (
 )
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tasks.settlement import interrupt_tasks, require_complete_results
-from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    InvestigationGraphVersion,
+    WorkflowVersion,
+    validate_workflow_route,
+)
 from opsswarm.observability import TraceContextCarrier
 
 DEFAULT_PROMPT_VERSION = CURRENT_SINGLE_AGENT_PROMPT_VERSION
@@ -122,6 +131,7 @@ class InvestigationStore:
         call_budget: CallBudgetPolicy | None = None,
         model_budget: ModelBudgetPolicy | None = None,
         context_policy_version: ContextPolicyVersion | None = None,
+        coordination_policy: CoordinationPolicy | None = None,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
@@ -129,17 +139,22 @@ class InvestigationStore:
 
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         validate_workflow_route(workflow_version, mode, data_source_mode)
-        if (
-            call_budget is not None or model_budget is not None
-        ) and workflow_version is not WorkflowVersion.V2:
-            raise ValueError("只有 v2 调查允许配置调用预算")
+        if (call_budget is not None or model_budget is not None) and workflow_version not in (
+            WorkflowVersion.V2,
+            WorkflowVersion.V3,
+        ):
+            raise ValueError("只有 v2 或 v3 调查允许配置调用预算")
+        if coordination_policy is not None and workflow_version is not WorkflowVersion.V3:
+            raise ValueError("显式协调策略只支持 v3 调查")
         context_policy_version = resolve_context_policy(
             workflow_version,
             model_budget,
             context_policy_version,
         )
-        if workflow_version is WorkflowVersion.V2:
+        if workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
             call_budget = call_budget or CallBudgetPolicy()
+        if workflow_version is WorkflowVersion.V3:
+            coordination_policy = coordination_policy or CoordinationPolicy()
         if not 1 <= max_attempts <= 10:
             raise ValueError("max_attempts 必须在 1 到 10 之间")
 
@@ -169,6 +184,14 @@ class InvestigationStore:
                     _PROMPT_VERSION_BY_MODE[mode],
                 ),
                 workflow_version=workflow_version.value,
+                graph_version=(
+                    DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                    if workflow_version is WorkflowVersion.V3
+                    else None
+                ),
+                coordination_policy_version=(
+                    coordination_policy.version if coordination_policy is not None else None
+                ),
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
                 context_policy_version=context_policy_version,
@@ -179,7 +202,7 @@ class InvestigationStore:
                 evidence_policy_version="task-evidence-live-v1"
                 if live_v2
                 else "task-evidence-v1"
-                if workflow_version is WorkflowVersion.V2
+                if workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3)
                 else None,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
@@ -217,9 +240,20 @@ class InvestigationStore:
             )
             session.add_all([run_row, work_row])
             await session.flush()
+            if coordination_policy is not None:
+                session.add(
+                    InvestigationCoordinationPolicyRow(
+                        investigation_run_id=run_id,
+                        version=coordination_policy.version,
+                        policy=coordination_policy.model_dump(mode="json"),
+                        content_sha256=coordination_hash(coordination_policy),
+                        created_at=occurred_at,
+                    )
+                )
+                await session.flush()
             return StartedInvestigation(
                 incident=incident,
-                run=_stored_run(run_row),
+                run=_stored_run(run_row, coordination_policy=coordination_policy),
                 work_item=_stored_work_item(work_row),
             )
 
@@ -230,7 +264,10 @@ class InvestigationStore:
             row = await session.get(InvestigationRunRow, run_id)
             if row is None:
                 raise InvestigationRunNotFound(run_id)
-            return _stored_run(row)
+            return _stored_run(
+                row,
+                coordination_policy=await _load_start_coordination_policy(session, row),
+            )
 
     async def get_evidence_board(self, run_id: UUID) -> StoredEvidenceBoard:
         """读取按稳定顺序组装的证据、专业报告及其引用。"""
@@ -370,7 +407,10 @@ class InvestigationStore:
                 await session.flush()
             elif row.graph_thread_id != expected_thread_id:
                 raise GraphThreadIdMismatch(f"调查运行 {run_id} 已关联到不匹配的 graph_thread_id")
-            return _stored_run(row)
+            return _stored_run(
+                row,
+                coordination_policy=await _load_start_coordination_policy(session, row),
+            )
 
     async def claim_next(
         self,
@@ -379,6 +419,10 @@ class InvestigationStore:
         occurred_at: datetime,
         lease_duration: timedelta,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
+        supported_workflow_versions: tuple[WorkflowVersion, ...] = (
+            WorkflowVersion.V1,
+            WorkflowVersion.V2,
+        ),
         model_name: str | None = None,
         model_pricing: ModelPricing | None = None,
     ) -> ClaimedInvestigation | None:
@@ -389,6 +433,9 @@ class InvestigationStore:
         occurred_at = _normalize_time(occurred_at, field_name="occurred_at")
         if not timedelta(seconds=1) <= lease_duration <= timedelta(minutes=30):
             raise ValueError("lease_duration 必须在 1 秒到 30 分钟之间")
+        if not supported_workflow_versions:
+            raise ValueError("supported_workflow_versions 不能为空")
+        supported_values = tuple(dict.fromkeys(item.value for item in supported_workflow_versions))
 
         async with self._session_factory() as session, session.begin():
             for _ in range(100):
@@ -400,6 +447,7 @@ class InvestigationStore:
                     )
                     .where(
                         InvestigationRunRow.data_source_mode == data_source_mode.value,
+                        InvestigationRunRow.workflow_version.in_(supported_values),
                         or_(
                             and_(
                                 WorkItemRow.status == WorkItemStatus.PENDING.value,
@@ -494,7 +542,10 @@ class InvestigationStore:
                 session.add(attempt_row)
                 await session.flush()
                 return ClaimedInvestigation(
-                    run=_stored_run(run_row),
+                    run=_stored_run(
+                        run_row,
+                        coordination_policy=await _load_start_coordination_policy(session, run_row),
+                    ),
                     work_item=_stored_work_item(row),
                     attempt=_stored_attempt(attempt_row),
                     request=InvestigationRequest(
@@ -581,7 +632,10 @@ class InvestigationStore:
                 created_at=occurred_at,
             )
             await session.flush()
-            return _stored_run(run_row)
+            return _stored_run(
+                run_row,
+                coordination_policy=await _load_start_coordination_policy(session, run_row),
+            )
 
     async def fail(
         self,
@@ -932,7 +986,11 @@ def _mark_terminal_failure(
     run_row.updated_at = occurred_at
 
 
-def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
+def _stored_run(
+    row: InvestigationRunRow,
+    *,
+    coordination_policy: CoordinationPolicy | None = None,
+) -> StoredInvestigationRun:
     return StoredInvestigationRun(
         id=row.id,
         incident_id=row.incident_id,
@@ -941,6 +999,12 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         status=InvestigationRunStatus(row.status),
         prompt_version=row.prompt_version,
         workflow_version=WorkflowVersion(row.workflow_version),
+        graph_version=cast(InvestigationGraphVersion | None, row.graph_version),
+        coordination_policy_version=cast(
+            Literal["dynamic-coordination-v1"] | None,
+            row.coordination_policy_version,
+        ),
+        coordination_policy=coordination_policy,
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,
         context_policy_version=cast(ContextPolicyVersion | None, row.context_policy_version),
         working_summary_policy_version=cast(
@@ -967,6 +1031,21 @@ def _stored_run(row: InvestigationRunRow) -> StoredInvestigationRun:
         completed_at=row.completed_at,
         updated_at=row.updated_at,
     )
+
+
+async def _load_start_coordination_policy(
+    session: AsyncSession,
+    row: InvestigationRunRow,
+) -> CoordinationPolicy | None:
+    if row.coordination_policy_version is None:
+        return None
+    policy_row = await session.get(InvestigationCoordinationPolicyRow, row.id)
+    if policy_row is None:
+        raise ValueError("v3 调查缺少启动时固定的协调策略")
+    record = validated_policy(policy_row)
+    if record.version != row.coordination_policy_version:
+        raise ValueError("v3 调查的协调策略版本与运行快照不一致")
+    return record.policy
 
 
 def _stored_work_item(row: WorkItemRow) -> StoredWorkItem:

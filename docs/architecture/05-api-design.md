@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 85 步开放隔离的 v3 启动契约，详见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)。原启动端点接受 `workflow_version=v3`、`mode=multi_agent`、`data_source_mode=frozen`、必填 function_calling `model_budget` 和可选 `coordination_policy`；上下文固定为 `summary-context-v1`，调用预算和协调策略省略时使用受限默认值。运行响应新增只读 `graph_version`、`coordination_policy_version` 和复核后的完整 `coordination_policy`；旧 v1/v2 返回空。v3 当前只会创建 queued 运行，现有 Worker 不领取，不能据此宣称动态图已执行。
+
 第 81 步新增显式 `context_policy_version=summary-context-v1`，要求 v2 与 function_calling 模型预算；默认请求行为不变。综合实际输入以三份 `working_summaries` 替代独立 reports，完整证据保留；调用清单包含摘要 ID、版本与散列，新综合提示为 summary-context-v1。摘要缺失或来源冲突拒绝预留，无新增写接口。详见 [摘要上下文](81-summary-context.md)。
 
 新增 GET /api/v1/investigations/{run_id}/collaboration/tasks/{task_id}/working-summary，返回不可变摘要或 null，跨运行任务返回 404。启动响应增加只读 working_summary_policy_version，由新建 evidence-read-v1 运行固定，不接受客户端写入。详见 [第 80 篇设计](80-task-working-summary.md)。

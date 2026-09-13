@@ -11,6 +11,7 @@ from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.context.contracts import ContextPolicyVersion
+from opsswarm.investigation.coordination.contracts import CoordinationPolicy
 from opsswarm.investigation.models import (
     EvidenceKind,
     InvestigationDataSourceMode,
@@ -43,6 +44,11 @@ async def claimed_run(
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
     context_policy_version: ContextPolicyVersion | None = None,
+    coordination_policy: CoordinationPolicy | None = None,
+    supported_workflow_versions: tuple[WorkflowVersion, ...] = (
+        WorkflowVersion.V1,
+        WorkflowVersion.V2,
+    ),
 ) -> tuple[InvestigationStore, ClaimedInvestigation]:
     store, _ = await started_run(
         factory,
@@ -51,12 +57,14 @@ async def claimed_run(
         call_budget=call_budget,
         model_budget=model_budget,
         context_policy_version=context_policy_version,
+        coordination_policy=coordination_policy,
     )
     claim = await store.claim_next(
         worker_id=str(uuid4()),
         data_source_mode=data_source_mode,
         occurred_at=BASE_TIME + timedelta(seconds=2),
         lease_duration=timedelta(seconds=30),
+        supported_workflow_versions=supported_workflow_versions,
     )
     assert claim is not None
     return store, claim
@@ -71,6 +79,7 @@ async def started_run(
     call_budget: CallBudgetPolicy | None = None,
     model_budget: ModelBudgetPolicy | None = None,
     context_policy_version: ContextPolicyVersion | None = None,
+    coordination_policy: CoordinationPolicy | None = None,
 ) -> tuple[InvestigationStore, StartedInvestigation]:
     key = str(uuid4())
     incident = await IncidentStore(factory).ingest_alert(
@@ -100,6 +109,7 @@ async def started_run(
         call_budget=call_budget,
         model_budget=model_budget,
         context_policy_version=context_policy_version,
+        coordination_policy=coordination_policy,
     )
     return store, started
 

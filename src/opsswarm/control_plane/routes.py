@@ -578,6 +578,7 @@ def create_router(clock: Clock) -> APIRouter:
             call_budget=request.call_budget,
             model_budget=request.model_budget,
             context_policy_version=request.context_policy_version,
+            coordination_policy=request.coordination_policy,
             data_source_mode=request.data_source_mode,
             trace_context=capture_current_trace_context(),
         )

@@ -36,6 +36,7 @@ from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.runtime import FixedTaskRuntime
 from opsswarm.investigation.tasks.store import InvestigationTaskStore, utc_now
 from opsswarm.investigation.tools import InvestigationDataSource
+from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.worker.runner import ProcessorContext
 
 
@@ -69,6 +70,8 @@ class TaskGraphFactory:
         self._evidence_store = TaskEvidenceStore(session_factory, clock=clock)
 
     def __call__(self, context: ProcessorContext) -> LangGraphParallelInvestigator:
+        if context.workflow_version is not WorkflowVersion.V2:
+            raise ValueError("固定任务图只能装配 v2 调查")
         if context.investigation_run_id is None or context.lease_token is None:
             raise ValueError("v2 调查需要系统注入运行与租约身份")
         source: InvestigationDataSource = self._source
