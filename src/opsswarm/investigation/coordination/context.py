@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -32,6 +32,7 @@ from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
 
 COORDINATION_PROMPT_VERSION: Literal["coordination-plan-v1"] = "coordination-plan-v1"
 _SYSTEM_PROMPT = (
@@ -59,6 +60,7 @@ def build_coordination_context(
     observation_cutoff_at: datetime,
     evidence_snapshot_id: str,
     model_policy: ModelBudgetPolicy,
+    workflow_version: Literal["v2", "v3"] = "v2",
 ) -> ContextPacket:
     if observation_cutoff_at.tzinfo is None or observation_cutoff_at.utcoffset() is None:
         raise TaskFactConflict("coordination_window_invalid", "协调观察截止时间必须带时区")
@@ -109,7 +111,7 @@ def build_coordination_context(
             task_id=None,
             role="coordinator",
             role_version="dynamic-coordinator-v1",
-            workflow_version="v2",
+            workflow_version=workflow_version,
             prompt_version=COORDINATION_PROMPT_VERSION,
             evidence_policy_version="task-evidence-v1",
             materials=(
@@ -135,15 +137,28 @@ def build_coordination_context(
 
 async def _sources(
     session: AsyncSession, run: InvestigationRunRow
-) -> tuple[InvestigationRequest, CoordinationPolicyRecord, ModelBudgetPolicy]:
+) -> tuple[
+    InvestigationRequest,
+    CoordinationPolicyRecord,
+    ModelBudgetPolicy,
+    Literal["v2", "v3"],
+]:
     if (
-        run.workflow_version != "v2"
+        run.workflow_version not in ("v2", "v3")
         or run.data_source_mode != "frozen"
         or run.evidence_policy_version != "task-evidence-v1"
+        or (
+            run.workflow_version == "v3"
+            and (
+                run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                or run.coordination_policy_version != "dynamic-coordination-v1"
+                or run.context_policy_version != "summary-context-v1"
+            )
+        )
     ):
         raise TaskFactConflict(
             "coordination_context_not_supported",
-            "首版协调模型上下文只支持使用固定证据策略的 v2 冻结运行",
+            "首版协调模型上下文只支持契约完整的 v2 或 v3 冻结运行",
         )
     incident = await session.get(IncidentRow, run.incident_id)
     policy_row = await session.get(InvestigationCoordinationPolicyRow, run.id)
@@ -162,7 +177,12 @@ async def _sources(
         raise TaskFactConflict(
             "coordination_model_profile_invalid", "协调模型必须使用 function_calling"
         )
-    return _request(incident), policy_record, model_policy
+    return (
+        _request(incident),
+        policy_record,
+        model_policy,
+        cast(Literal["v2", "v3"], run.workflow_version),
+    )
 
 
 async def validate_coordination_context(
@@ -171,7 +191,7 @@ async def validate_coordination_context(
     model_input: CoordinationModelInput,
     manifest: ContextManifest,
 ) -> None:
-    request, policy_record, model_policy = await _sources(session, run)
+    request, policy_record, model_policy, workflow_version = await _sources(session, run)
     prior_task_count = int(
         await session.scalar(
             select(func.count())
@@ -192,6 +212,7 @@ async def validate_coordination_context(
         observation_cutoff_at=model_input.observation_cutoff_at,
         evidence_snapshot_id=model_input.evidence_snapshot_id,
         model_policy=model_policy,
+        workflow_version=workflow_version,
     )
     if expected.model_input != model_input or expected.manifest != manifest:
         raise TaskFactConflict(
@@ -226,7 +247,7 @@ class CoordinationContextService:
                     "coordination_context_not_supported",
                     "首版协调模型上下文只支持创建第一轮计划",
                 )
-            request, policy_record, model_policy = await _sources(session, run)
+            request, policy_record, model_policy, workflow_version = await _sources(session, run)
             return build_coordination_context(
                 request,
                 policy_record,
@@ -235,4 +256,5 @@ class CoordinationContextService:
                 observation_cutoff_at=observation_cutoff_at,
                 evidence_snapshot_id=evidence_snapshot_id,
                 model_policy=model_policy,
+                workflow_version=workflow_version,
             )

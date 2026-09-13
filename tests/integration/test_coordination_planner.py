@@ -115,6 +115,7 @@ async def test_model_proposal_uses_shared_budget_and_becomes_plan_source(
         claim.run.id, plan.source_call_id
     )
     assert manifest is not None and manifest.role == "coordinator"
+    assert manifest.workflow_version == "v2"
     assert tuple(item.kind for item in manifest.materials) == (
         "incident_input",
         "coordination_policy",

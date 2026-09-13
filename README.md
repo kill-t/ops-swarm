@@ -38,11 +38,13 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 84 步增加 [协调模型结构化调用与共享预算账本](docs/architecture/84-coordination-model-ledger.md)：根级协调调用在请求前固定策略并预留运行共享预算，结构化提案通过确定性编译后才结算成功，成功调用与首轮计划建立可复核来源关系；模型返回后或计划提交后崩溃均可恢复复用。当前仍未新增 v3 启动、动态图或公开接口。验证见 [第 84 步记录](docs/progress/84-coordination-model-ledger.md)。
 
-第 85 步增加 [独立动态工作流版本与运行策略冻结](docs/architecture/85-dynamic-workflow-start.md)：v3 创建时固定协调、摘要上下文、工作摘要、冻结证据、调用/模型预算和图恢复版本，并通过原运行接口查询完整启动契约。现有 Worker 只领取 v1/v2，处理器和固定图也显式拒绝 v3，因此 v3 当前保持 queued，尚未执行动态图。验证见 [第 85 步记录](docs/progress/85-dynamic-workflow-start.md)。
+第 85 步增加 [独立动态工作流版本与运行策略冻结](docs/architecture/85-dynamic-workflow-start.md)：v3 创建时固定协调、摘要上下文、工作摘要、冻结证据、调用/模型预算和图恢复版本，并通过原运行接口查询完整启动契约。该步验收时现有 Worker 只领取 v1/v2，处理器和固定图也显式拒绝 v3。验证见 [第 85 步记录](docs/progress/85-dynamic-workflow-start.md)。
+
+第 86 步增加 [v3 动态图首轮协调与 checkpoint 恢复](docs/architecture/86-dynamic-coordination-graph.md)：独立图在有效父租约内调用协调模型并提交首轮计划，checkpoint 的 metadata 和状态同时固定工作流/图版本；新 Worker 用新租约恢复时复用已成功调用或已提交计划。该图还没有专业调查与最终结论，通用 Worker 继续跳过 v3。验证见 [第 86 步记录](docs/progress/86-dynamic-coordination-graph.md)。
 
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
-v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和 `dynamic-investigation-graph-v1`。当前 Worker 不领取 v3，后续动态图完成并通过恢复验收后才开放执行。
+v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和 `dynamic-investigation-graph-v1`。内部首轮协调图已可恢复运行，但当前 Worker 仍不领取 v3；专业任务、综合、审查和终态校验完成后才开放执行。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 

@@ -58,7 +58,7 @@ class ContextManifest(TaskModel):
     task_id: UUID | None
     role: Literal["log", "metric", "change", "synthesis", "coordinator"]
     role_version: Literal["fixed-roles-v1", "dynamic-coordinator-v1"] = "fixed-roles-v1"
-    workflow_version: Literal["v2"] = "v2"
+    workflow_version: Literal["v2", "v3"] = "v2"
     prompt_version: Literal[
         "fixed-task-context-v1",
         "evidence-read-v1",

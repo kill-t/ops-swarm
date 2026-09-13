@@ -52,7 +52,11 @@ def utc_now() -> datetime:
 
 
 def _policy(run: InvestigationRunRow) -> CallBudgetPolicy:
-    if run.workflow_version != "v2" or run.call_budget is None or run.started_at is None:
+    if (
+        run.workflow_version not in ("v2", "v3")
+        or run.call_budget is None
+        or run.started_at is None
+    ):
         raise TaskFactConflict("call_budget_not_enabled", "运行没有固定的调用预算")
     return CallBudgetPolicy.model_validate(run.call_budget)
 

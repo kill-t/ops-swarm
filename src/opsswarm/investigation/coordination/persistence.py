@@ -34,6 +34,7 @@ from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.identity import round_content_hash, round_specification
 from opsswarm.investigation.tasks.store import create_round_in_transaction
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
 
 
 def utc_now() -> datetime:
@@ -319,16 +320,24 @@ class CoordinationPlanStore:
                     "coordination_context_integrity_violation", "协调模型预算无法通过校验"
                 ) from error
             if (
-                run.workflow_version != "v2"
+                run.workflow_version not in ("v2", "v3")
                 or run.data_source_mode != "frozen"
                 or run.evidence_policy_version != "task-evidence-v1"
                 or run.call_budget is None
                 or model_policy is None
                 or model_policy.profile.structured_output_method != "function_calling"
+                or (
+                    run.workflow_version == "v3"
+                    and (
+                        run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                        or run.coordination_policy_version != "dynamic-coordination-v1"
+                        or run.context_policy_version != "summary-context-v1"
+                    )
+                )
             ):
                 raise TaskFactConflict(
                     "coordination_context_not_supported",
-                    "协调模型只支持已配置共享预算的 v2 冻结运行",
+                    "协调模型只支持契约完整且已配置共享预算的 v2 或 v3 冻结运行",
                 )
             rounds = list(
                 await session.scalars(
