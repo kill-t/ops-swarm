@@ -24,12 +24,13 @@ from opsswarm.investigation.tasks.contracts import (
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.evidence_store import TaskEvidenceStore
 from opsswarm.investigation.tasks.queries import CollaborationQueries
+from opsswarm.investigation.tasks.records import TaskRecord
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.store import InvestigationTaskStore
 
 
-class FixedTaskRuntime:
-    """只组织任务开始、复用和结算；不包含 SQL、模型提示或网络适配。"""
+class _PersistentTaskRuntime:
+    """共享任务尝试、证据、预算和结果恢复，不决定任务如何产生。"""
 
     def __init__(
         self,
@@ -63,7 +64,7 @@ class FixedTaskRuntime:
             "task_evidence_scope", default=None
         )
 
-    async def prepare(self, request: InvestigationRequest) -> None:
+    async def _prepare_fixed(self, request: InvestigationRequest) -> None:
         await self.require_active()
         if self._legacy_snapshot_ids:
             existing = await self._queries.get_snapshot(self.run_id)
@@ -147,25 +148,23 @@ class FixedTaskRuntime:
             return await invoke()
         return await self._call_runner.execute(operation, invoke)
 
-    async def run(
+    async def _completed_result(self, task: TaskRecord) -> SpecialistTaskResult:
+        stored = await self._queries.get_result(self.run_id, task.id)
+        if stored is None or stored.result.evidence_snapshot_id != self.snapshot_id:
+            raise TaskFactConflict("task_result_missing", "已成功任务缺少匹配的专业快照")
+        if self._evidence_store is not None:
+            await self._evidence_store.validate_result(
+                self.run_id, task.id, stored.result, lease_token=self._lease_token
+            )
+        return stored.result
+
+    async def _execute_task(
         self,
-        role: EvidenceKind,
+        task: TaskRecord,
         operation: Callable[[], Awaitable[SpecialistTaskResult]],
     ) -> SpecialistTaskResult:
-        await self.require_active()
-        snapshot = await self._queries.get_snapshot(self.run_id)
-        if len(snapshot.rounds) != 1:
-            raise TaskFactConflict("task_round_mismatch", "固定图必须绑定唯一轮次")
-        task = next(item for item in snapshot.rounds[0].tasks if item.assignment.role is role)
         if task.status is TaskStatus.SUCCEEDED:
-            stored = await self._queries.get_result(self.run_id, task.id)
-            if stored is None or stored.result.evidence_snapshot_id != self.snapshot_id:
-                raise TaskFactConflict("task_result_missing", "已成功任务缺少匹配的专业快照")
-            if self._evidence_store is not None:
-                await self._evidence_store.validate_result(
-                    self.run_id, task.id, stored.result, lease_token=self._lease_token
-                )
-            return stored.result
+            return await self._completed_result(task)
         started = await self._store.begin_attempt(
             self.run_id,
             task.id,
@@ -205,6 +204,27 @@ class FixedTaskRuntime:
         )
         return result
 
+
+class FixedTaskRuntime(_PersistentTaskRuntime):
+    """固定图创建并执行日志、指标和变更三个任务。"""
+
+    async def prepare(self, request: InvestigationRequest) -> None:
+        await self._prepare_fixed(request)
+
+    async def run(
+        self,
+        role: EvidenceKind,
+        operation: Callable[[], Awaitable[SpecialistTaskResult]],
+    ) -> SpecialistTaskResult:
+        await self.require_active()
+        snapshot = await self._queries.get_snapshot(self.run_id)
+        if len(snapshot.rounds) != 1:
+            raise TaskFactConflict("task_round_mismatch", "固定图必须绑定唯一轮次")
+        matches = [item for item in snapshot.rounds[0].tasks if item.assignment.role is role]
+        if len(matches) != 1:
+            raise TaskFactConflict("task_assignment_mismatch", "固定图缺少唯一专业任务")
+        return await self._execute_task(matches[0], operation)
+
     async def validate_completed(self, artifacts: InvestigationArtifacts) -> None:
         await self.require_active()
         await self._store.validate_completed(
@@ -212,3 +232,43 @@ class FixedTaskRuntime:
             lease_token=self._lease_token,
             artifacts=artifacts,
         )
+
+
+class DynamicTaskRuntime(_PersistentTaskRuntime):
+    """只执行协调计划已创建的任务，不生成或扩大分派范围。"""
+
+    async def run(
+        self,
+        *,
+        round_id: UUID,
+        assignment: TaskAssignment,
+        operation: Callable[[], Awaitable[SpecialistTaskResult]],
+    ) -> SpecialistTaskResult:
+        await self.require_active()
+        task = await self._planned_task(round_id, assignment)
+        return await self._execute_task(task, operation)
+
+    async def get_completed(
+        self, *, round_id: UUID, assignment: TaskAssignment
+    ) -> SpecialistTaskResult:
+        """最终返回前从业务库复核已成功结果、证据与摘要。"""
+
+        await self.require_active()
+        task = await self._planned_task(round_id, assignment)
+        if task.status is not TaskStatus.SUCCEEDED:
+            raise TaskFactConflict("task_result_missing", "动态首轮任务尚未成功")
+        return await self._completed_result(task)
+
+    async def _planned_task(self, round_id: UUID, assignment: TaskAssignment) -> TaskRecord:
+        if assignment.evidence_snapshot_id != self.snapshot_id:
+            raise TaskFactConflict("task_assignment_mismatch", "动态任务不属于当前冻结快照")
+        snapshot = await self._queries.get_snapshot(self.run_id)
+        rounds = [item for item in snapshot.rounds if item.id == round_id]
+        if len(rounds) != 1 or rounds[0].round_number != 1:
+            raise TaskFactConflict("task_round_mismatch", "动态首轮缺少匹配的业务轮次")
+        tasks = [
+            item for item in rounds[0].tasks if item.assignment.task_key == assignment.task_key
+        ]
+        if len(tasks) != 1 or tasks[0].assignment != assignment:
+            raise TaskFactConflict("task_assignment_mismatch", "动态任务与持久计划不一致")
+        return tasks[0]

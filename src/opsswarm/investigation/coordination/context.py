@@ -32,7 +32,7 @@ from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
 
 COORDINATION_PROMPT_VERSION: Literal["coordination-plan-v1"] = "coordination-plan-v1"
 _SYSTEM_PROMPT = (
@@ -150,7 +150,7 @@ async def _sources(
         or (
             run.workflow_version == "v3"
             and (
-                run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                run.graph_version not in DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
                 or run.coordination_policy_version != "dynamic-coordination-v1"
                 or run.context_policy_version != "summary-context-v1"
             )

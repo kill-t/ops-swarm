@@ -164,6 +164,7 @@ class SummaryContextBuilder:
                 investigation_run_id=sources.run_id,
                 task_id=None,
                 role="synthesis",
+                workflow_version=sources.workflow_version,
                 prompt_version="summary-context-v1",
                 evidence_policy_version=sources.evidence_policy_version,
                 materials=materials,

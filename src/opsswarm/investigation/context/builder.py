@@ -75,6 +75,7 @@ class ContextBuilder:
                 investigation_run_id=sources.run_id,
                 task_id=sources.task_id,
                 role=role.value if role else "synthesis",
+                workflow_version=sources.workflow_version,
                 evidence_policy_version=sources.evidence_policy_version,
                 materials=tuple(materials),
                 allocation=allocation,

@@ -16,7 +16,7 @@ from opsswarm.investigation.coordination.contracts import (
 from opsswarm.investigation.graph_thread import build_graph_thread_id, normalize_graph_thread_id
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION,
     InvestigationGraphVersion,
     WorkflowVersion,
 )
@@ -58,9 +58,9 @@ class DynamicCoordinationGraph:
         observation_cutoff_at: datetime,
         evidence_snapshot_id: str,
         checkpointer: BaseCheckpointSaver[str],
-        graph_version: InvestigationGraphVersion = DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+        graph_version: InvestigationGraphVersion = LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION,
     ) -> None:
-        if graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if graph_version != LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION:
             raise ValueError("动态图版本不受支持")
         self._run_id = run_id
         self._planner = planner

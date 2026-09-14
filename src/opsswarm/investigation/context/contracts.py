@@ -131,4 +131,5 @@ class ContextSources:
     request: InvestigationRequest
     evidence_policy_version: EvidencePolicyVersion
     tasks: tuple[ContextTaskMaterial, ...]
+    workflow_version: Literal["v2", "v3"] = "v2"
     context_policy_version: ContextPolicyVersion = CONTEXT_POLICY_VERSION

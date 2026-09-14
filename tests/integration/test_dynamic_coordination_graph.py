@@ -7,6 +7,7 @@ from typing import TypedDict
 import httpx2
 import pytest
 from langgraph.graph import END, START, StateGraph
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
@@ -22,6 +23,7 @@ from opsswarm.investigation.coordination.queries import CoordinationPlanQueries
 from opsswarm.investigation.dynamic_graph import DynamicCoordinationGraph
 from opsswarm.investigation.models import InvestigationRunStatus, WorkItemError
 from opsswarm.investigation.parallel_graph import LangGraphParallelInvestigator
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.worker.dynamic_graph import DynamicCoordinationGraphFactory
@@ -29,7 +31,7 @@ from opsswarm.worker.runner import ProcessorContext
 from tests.checkpoint_fakes import ConclusionSynthesizerStub, SpecialistAnalystStub
 from tests.loop_helpers import loop_policy
 from tests.model_budget_helpers import sdk_model, sdk_response
-from tests.task_facts_helpers import BASE_TIME, TaskClock, claimed_run
+from tests.task_facts_helpers import BASE_TIME, TaskClock, started_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -89,12 +91,25 @@ def processor_context(claim) -> ProcessorContext:
 
 
 async def v3_claim(database_session_factory):
-    return await claimed_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
+    )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v1")
+        )
+    claim = await store.claim_next(
+        worker_id="legacy-v3-worker",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
         supported_workflow_versions=(WorkflowVersion.V3,),
     )
+    assert claim is not None
+    return store, claim
 
 
 async def test_v3_first_coordination_persists_plan_and_checkpoint(

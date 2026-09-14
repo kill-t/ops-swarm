@@ -34,7 +34,7 @@ from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.identity import round_content_hash, round_specification
 from opsswarm.investigation.tasks.store import create_round_in_transaction
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
 
 
 def utc_now() -> datetime:
@@ -329,7 +329,7 @@ class CoordinationPlanStore:
                 or (
                     run.workflow_version == "v3"
                     and (
-                        run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                        run.graph_version not in DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
                         or run.coordination_policy_version != "dynamic-coordination-v1"
                         or run.context_policy_version != "summary-context-v1"
                     )

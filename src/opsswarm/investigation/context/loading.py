@@ -1,6 +1,6 @@
 """只从当前运行的业务事实加载上下文材料，不读取 checkpoint。"""
 
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -98,5 +98,6 @@ async def load_sources(
         ),
         evidence_policy_version=cast(EvidencePolicyVersion, run.evidence_policy_version),
         tasks=tuple(tasks),
+        workflow_version=cast(Literal["v2", "v3"], run.workflow_version),
         context_policy_version=cast(ContextPolicyVersion, run.context_policy_version),
     )

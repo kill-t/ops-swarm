@@ -2,6 +2,8 @@
 
 第 85 步增量见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)：迁移 `0043_dynamic_workflow_start` 增加可空 `graph_version` 与 `coordination_policy_version`。v3 只接受冻结多 Agent，并强制动态协调、摘要上下文、工作摘要、冻结证据、调用/模型预算、function_calling 和独立图恢复版本同时固定；旧 v1/v2 两列保持空。协调策略完整 JSON 与散列继续保存于不可变策略表，并在运行创建事务中写入；存在 v3 事实时拒绝降级。
 
+第 87 步增量见 [动态首轮任务分派与专业结果恢复](87-dynamic-first-round-fanout.md)：迁移 `0044_dynamic_graph_fanout` 允许已有 `dynamic-investigation-graph-v1` 与新建默认 `dynamic-investigation-graph-v2` 并存，不增加表或业务状态。存在图 v2 运行时拒绝降级到只认识图 v1 的 0043。
+
 第 81 步增量见 [摘要上下文](81-summary-context.md)：迁移 0040 扩展上下文约束；`summary-context-v1` 强制非空 `task-working-summary-v1` 摘要策略，仍要求 v2、模型预算与 function_calling。旧行不回填，新策略或新清单审计存在时拒绝降级。
 
 新增设计见 [第 80 篇工作摘要](80-task-working-summary.md)：运行增加可空 working_summary_policy_version；agent_task_working_summaries 以 task_id 为主键，保存运行/成功尝试、版本、JSONB 摘要、SHA-256 和 UTC 生成时间。摘要与结果同事务保存，禁止覆盖，有已启用策略或摘要时拒绝降级。
@@ -219,7 +221,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，旧 v1/v2 保持空 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，图 v1 保留协调阶段恢复，图 v2 承载动态首轮专业分派，旧工作流 v1/v2 两列保持空 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |

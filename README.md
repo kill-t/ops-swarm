@@ -42,9 +42,11 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 86 步增加 [v3 动态图首轮协调与 checkpoint 恢复](docs/architecture/86-dynamic-coordination-graph.md)：独立图在有效父租约内调用协调模型并提交首轮计划，checkpoint 的 metadata 和状态同时固定工作流/图版本；新 Worker 用新租约恢复时复用已成功调用或已提交计划。该图还没有专业调查与最终结论，通用 Worker 继续跳过 v3。验证见 [第 86 步记录](docs/progress/86-dynamic-coordination-graph.md)。
 
+第 87 步增加 [v3 动态首轮任务分派与专业结果恢复](docs/architecture/87-dynamic-first-round-fanout.md)：新图 v2 按首轮计划实际选择的 1～3 个角色动态扇出，复用持久任务、冻结取证、专业循环、共享预算和工作摘要，并在部分失败及业务/checkpoint 提交窗口中只恢复必要节点。旧协调图 v1 保留；综合和终态完成前通用 Worker 继续跳过 v3。验证见 [第 87 步记录](docs/progress/87-dynamic-first-round-fanout.md)。
+
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
-v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和 `dynamic-investigation-graph-v1`。内部首轮协调图已可恢复运行，但当前 Worker 仍不领取 v3；专业任务、综合、审查和终态校验完成后才开放执行。
+v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和当前 `dynamic-investigation-graph-v2`。内部图已能按首轮计划动态执行并恢复 1～3 个专业任务，旧的仅协调图 v1 保持兼容；当前 Worker 仍不领取 v3，综合、审查和终态校验完成后才开放执行。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 

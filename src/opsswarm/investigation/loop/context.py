@@ -82,6 +82,7 @@ def build_loop_context(
             investigation_run_id=sources.run_id,
             task_id=task.task_id,
             role=task.assignment.role.value,
+            workflow_version=sources.workflow_version,
             evidence_policy_version=sources.evidence_policy_version,
             tool_names=("read_evidence",),
             materials=(
