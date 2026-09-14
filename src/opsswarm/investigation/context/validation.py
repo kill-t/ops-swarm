@@ -21,6 +21,7 @@ from opsswarm.investigation.models import (
     InvestigationConclusion,
     SpecialistReport,
 )
+from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.evidence import require_matching_assignment
 
@@ -60,7 +61,13 @@ def validate_context(
         inputs = TaskContextInput.model_validate(payload)
     except ValueError:
         raise TaskFactConflict("context_input_invalid", "无法解析受支持的任务输入") from None
-    schema = SpecialistReport if role else InvestigationConclusion
+    schema = (
+        SpecialistReport
+        if role
+        else OpenHypothesisProposal
+        if sources.workflow_version == "v3"
+        else InvestigationConclusion
+    )
     if supplied.output_schema != schema.model_json_schema():
         raise TaskFactConflict("context_contract_mismatch", "角色输出契约不匹配")
     if inputs.incident != sources.request or inputs.specialist != role:
@@ -77,8 +84,12 @@ def validate_context(
         role is None
         and (
             sources.task_id is not None
-            or {t.assignment.role for t in tasks} != set(EvidenceKind)
-            or len(tasks) != 3
+            or len({t.assignment.role for t in tasks}) != len(tasks)
+            or (
+                sources.workflow_version == "v2"
+                and ({t.assignment.role for t in tasks} != set(EvidenceKind) or len(tasks) != 3)
+            )
+            or (sources.workflow_version == "v3" and not 1 <= len(tasks) <= 3)
         )
     ):
         raise TaskFactConflict("context_scope_mismatch", "上下文任务范围不符合角色")

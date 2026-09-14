@@ -10,10 +10,10 @@
 | --- | --- |
 | 已有运行交付 | 第 63 步 MVP 发布已验收，见 [发布记录](63-mvp-compose-release.md)；历史测试结果不是本轮重新执行的结果 |
 | 最新文档切片 | 第 78 步开发交接已验收，见 [切片记录](78-development-handoff.md)；以 [项目状态](../PROJECT_STATE.md) 为新会话入口，原第 65 篇仍为架构事实来源 |
-| 最新实现切片 | 第 87 步 v3 动态首轮任务分派与专业结果恢复已验收，见 [切片记录](87-dynamic-first-round-fanout.md)；首轮所选专业任务可跨并行失败和提交窗口恢复，通用 Worker 仍跳过 v3 |
+| 最新实现切片 | 第 88 步 v3 首轮协调综合与开放假设持久化已验收，见 [切片记录](88-dynamic-first-round-synthesis.md)；图 v3 可恢复待审查开放假设，通用 Worker 仍跳过 v3 |
 | 当前架构来源 | [第 64 篇总路线](../architecture/64-full-multi-agent-roadmap.md) + [第 65 篇专项设计](../architecture/65-agent-system-design.md) |
 | 待开发能力 | 完整 Harness、专业交互历史裁剪、动态协作、MCP、经验、图内人工介入和多步骤处置 |
-| 下一切片 | 第 88 步：v3 首轮协调综合与开放假设持久化，只消费本轮已选任务材料 |
+| 下一切片 | 第 89 步：独立审查 Agent 与审查事实持久化，先保存审查意见，不提前实现补查路由 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。
 
@@ -143,3 +143,4 @@
 - [85 - 独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)
 - [86 - v3 动态图首轮协调与 checkpoint 恢复](86-dynamic-coordination-graph.md)
 - [87 - v3 动态首轮任务分派与专业结果恢复](87-dynamic-first-round-fanout.md)
+- [88 - v3 首轮协调综合与开放假设持久化](88-dynamic-first-round-synthesis.md)

@@ -14,6 +14,7 @@ from opsswarm.investigation.context.contracts import (
     ContextSources,
     ContextTaskMaterial,
 )
+from opsswarm.investigation.coordination.tables import InvestigationCoordinationPlanRow
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskResultRow
@@ -23,7 +24,7 @@ from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tasks.evidence_store import validated_record
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import TaskResultRecord
-from opsswarm.investigation.tasks.tables import AgentTaskRow
+from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
 from opsswarm.investigation.working_summary.persistence import validated_summary
 from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
@@ -57,9 +58,44 @@ async def load_sources(
     query = select(AgentTaskRow).where(AgentTaskRow.investigation_run_id == run.id)
     if task_id is not None:
         query = query.where(AgentTaskRow.id == task_id)
-    rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key).limit(4)))
-    if len(rows) != (1 if role else 3):
-        raise TaskFactConflict("context_scope_mismatch", "上下文缺少完整的固定任务范围")
+    expected_count = 1 if role else 3
+    if role is None and run.workflow_version == "v3":
+        # 协调持久层也依赖上下文契约，延迟导入可避免模块初始化环。
+        from opsswarm.investigation.coordination.persistence import validated_plan
+
+        round_row = await session.scalar(
+            select(InvestigationRoundRow).where(
+                InvestigationRoundRow.investigation_run_id == run.id,
+                InvestigationRoundRow.round_number == 1,
+            )
+        )
+        plan_row = (
+            await session.get(InvestigationCoordinationPlanRow, round_row.id)
+            if round_row is not None
+            else None
+        )
+        if plan_row is None:
+            raise TaskFactConflict("context_scope_mismatch", "动态综合缺少首轮协调计划")
+        plan = (await validated_plan(session, plan_row)).plan
+        expected_assignments = {item.task_key: item for item in plan.assignment.tasks}
+        query = query.where(AgentTaskRow.round_id == plan_row.round_id)
+        rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key)))
+        if (
+            plan.assignment.round_number != 1
+            or {row.task_key for row in rows} != set(expected_assignments)
+            or any(
+                row.round_id != plan_row.round_id
+                or TaskAssignment.model_validate(row.assignment)
+                != expected_assignments[row.task_key]
+                for row in rows
+            )
+        ):
+            raise TaskFactConflict("context_scope_mismatch", "动态综合任务范围与首轮计划不一致")
+        expected_count = len(expected_assignments)
+    else:
+        rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key)))
+    if len(rows) != expected_count:
+        raise TaskFactConflict("context_scope_mismatch", "上下文缺少完整的任务范围")
     tasks = []
     for row in rows:
         if row.status != ("running" if role else "succeeded"):
@@ -76,7 +112,7 @@ async def load_sources(
         if run.context_policy_version == "summary-context-v1" and role is None:
             summary_row = await session.get(AgentTaskWorkingSummaryRow, row.id)
             if summary_row is None or result_record is None:
-                raise TaskFactConflict("context_summary_required", "综合需要三份已提交工作摘要")
+                raise TaskFactConflict("context_summary_required", "综合需要全部已选任务的工作摘要")
             summary = await validated_summary(session, row, result_record, summary_row)
         tasks.append(
             ContextTaskMaterial(

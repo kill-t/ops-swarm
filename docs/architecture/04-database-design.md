@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 88 步增量见 [v3 首轮协调综合与开放假设持久化](88-dynamic-first-round-synthesis.md)：迁移 `0045_dynamic_synthesis` 新增不可变 `investigation_open_hypotheses`，把每轮待审查自由文本假设绑定到同运行的协调计划、父尝试和成功综合调用；调用账本保存版本化综合结果，并允许图 v1/v2/v3 共存。新表不替代旧 `hypotheses`，也不授予处置资格。
+
 第 85 步增量见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)：迁移 `0043_dynamic_workflow_start` 增加可空 `graph_version` 与 `coordination_policy_version`。v3 只接受冻结多 Agent，并强制动态协调、摘要上下文、工作摘要、冻结证据、调用/模型预算、function_calling 和独立图恢复版本同时固定；旧 v1/v2 两列保持空。协调策略完整 JSON 与散列继续保存于不可变策略表，并在运行创建事务中写入；存在 v3 事实时拒绝降级。
 
 第 87 步增量见 [动态首轮任务分派与专业结果恢复](87-dynamic-first-round-fanout.md)：迁移 `0044_dynamic_graph_fanout` 允许已有 `dynamic-investigation-graph-v1` 与新建默认 `dynamic-investigation-graph-v2` 并存，不增加表或业务状态。存在图 v2 运行时拒绝降级到只认识图 v1 的 0043。
@@ -221,7 +223,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，图 v1 保留协调阶段恢复，图 v2 承载动态首轮专业分派，旧工作流 v1/v2 两列保持空 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，图 v1 保留协调阶段恢复，图 v2 承载动态首轮专业分派，图 v3 增加首轮综合，旧工作流 v1/v2 两列保持空 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |
@@ -476,7 +478,19 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 
 第 85 步起，v3 在运行创建事务内即写入一条 `investigation_coordination_policies`，并把其版本固定到运行；查询先检查运行版本字段，再复核策略内容和散列。第 83～84 步产生的 v2 内部策略保留原事实，但不回填为 v2 启动契约。
 
-计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md)。当前策略仍尚未通过新工作流的运行创建入口冻结。
+计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md)。第 85 步已在 v3 运行创建事务内固定该策略。
+
+### 4.30 动态开放假设
+
+第 88 步增加 `investigation_open_hypotheses`：
+
+| 字段 | 语义与约束 |
+| --- | --- |
+| 标识与归属 | 稳定 UUID 主键、运行 ID、轮次 ID；每轮唯一，复合外键绑定同运行协调计划 |
+| 来源 | 提交假设的父调查尝试和成功根级 `synthesize` 调用；复合外键阻止跨运行引用 |
+| 内容 | `open-hypothesis-v1` JSONB、SHA-256、固定 `pending_review` 状态及 UTC 创建时间 |
+
+假设 JSON 保存自由文本陈述、模型置信度、支持证据 ID、反证 ID 和未解问题。应用层从首轮已选任务的证据快照重建允许引用集合，验证两类证据不重叠，并复核来源调用的模型输入、上下文清单和版本化输出。表拒绝更新和删除；旧 `hypotheses` 与 `hypothesis_evidence` 继续承载 v1/v2 最终 Evidence Board 的确定性质疑结果。
 
 ## 5. Incident 状态机
 

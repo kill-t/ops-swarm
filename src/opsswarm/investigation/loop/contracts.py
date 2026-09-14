@@ -10,6 +10,7 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationModelInput,
     CoordinationModelResult,
 )
+from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.tasks.contracts import TaskModel
 
 LOOP_POLICY_VERSION: Literal["evidence-read-v1"] = "evidence-read-v1"
@@ -75,7 +76,7 @@ class EvidenceToolResult(TaskModel):
     message: ToolMessage
 
 
-CallResult = LoopModelResult | EvidenceToolResult | CoordinationModelResult
+CallResult = LoopModelResult | EvidenceToolResult | CoordinationModelResult | SynthesisModelResult
 CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 
 

@@ -56,6 +56,9 @@ class InvestigationCoordinationPolicyRow(Base):
 class InvestigationCoordinationPlanRow(Base):
     __tablename__ = "investigation_coordination_plans"
     __table_args__ = (
+        UniqueConstraint(
+            "round_id", "investigation_run_id", name="uq_coordination_plans_round_run"
+        ),
         ForeignKeyConstraint(
             ["round_id", "investigation_run_id"],
             ["investigation_rounds.id", "investigation_rounds.investigation_run_id"],

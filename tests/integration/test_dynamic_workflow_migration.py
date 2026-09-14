@@ -90,7 +90,7 @@ async def test_migration_preserves_v2_when_downgraded_and_upgraded(
         await asyncio.to_thread(command.upgrade, config(), "head")
 
 
-async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
+async def test_synthesis_version_downgrade_refuses_persisted_v3_graph(
     database_session_factory,
 ) -> None:
     _, started = await started_run(
@@ -99,13 +99,45 @@ async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
         model_budget=loop_policy(),
     )
 
+    with pytest.raises(DBAPIError, match="不能删除已保存的动态综合图或开放假设"):
+        await asyncio.to_thread(command.downgrade, config(), "0044_dynamic_graph_fanout")
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0045_dynamic_synthesis"
+        )
+        assert (
+            await session.scalar(
+                text("SELECT graph_version FROM investigation_runs WHERE id=:run_id"),
+                {"run_id": started.run.id},
+            )
+            == "dynamic-investigation-graph-v3"
+        )
+
+
+async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
+    database_session_factory,
+) -> None:
+    _, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v2")
+        )
+
     with pytest.raises(DBAPIError, match="不能删除已保存的动态专业分派图版本"):
         await asyncio.to_thread(command.downgrade, config(), "0043_dynamic_workflow_start")
 
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0044_dynamic_graph_fanout"
+            == "0045_dynamic_synthesis"
         )
         assert (
             await session.scalar(

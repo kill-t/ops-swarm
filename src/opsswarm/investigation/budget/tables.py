@@ -33,7 +33,11 @@ class CallReservationRow(Base):
             "((kind = 'model' AND ((operation = 'coordinate' AND "
             "COALESCE(model_input ->> 'version', '') = 'coordination-model-input-v1' AND "
             "COALESCE(call_result ->> 'version', '') = 'coordination-model-result-v1') OR "
-            "(operation <> 'coordinate' AND COALESCE(model_input ->> 'version', '') = "
+            "(operation = 'synthesize' AND NOT (model_input ? 'version') AND "
+            "COALESCE(call_result ->> 'version', '') = "
+            "'open-hypothesis-synthesis-result-v1') OR "
+            "(operation NOT IN ('coordinate', 'synthesize') AND "
+            "COALESCE(model_input ->> 'version', '') = "
             "'evidence-loop-input-v1'))) OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),

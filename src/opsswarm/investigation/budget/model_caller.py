@@ -75,7 +75,7 @@ class BudgetedModelCaller:
             if self._context_service is not None:
                 raise CallBudgetExceeded("model_context_source_conflict")
             if (
-                not isinstance(prepared_packet.model_input, CoordinationModelInput)
+                not isinstance(prepared_packet.model_input, (CoordinationModelInput, ModelInput))
                 or prepared_packet.model_input.output_schema != schema.model_json_schema()
                 or prepared_packet.model_input.tool_schema != convert_to_openai_tool(schema)
                 or prepared_packet.model_input.structured_output_method

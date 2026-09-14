@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-14。最新完成切片为第 87 步 v3 动态首轮任务分派与专业结果恢复，基线为 main 的 `778e434`（第 86 步）。本文随第 87 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 87 步进度记录为准。
+核对日期：2026-09-14。最新完成切片为第 88 步 v3 首轮协调综合与开放假设持久化，基线为 main 的 `8eb4712`（第 87 步）。本文随第 88 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 88 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 87 步设计](architecture/87-dynamic-first-round-fanout.md) 与 [验收记录](progress/87-dynamic-first-round-fanout.md)，再读第 82～86 步设计与记录，需要上下文前置时再读第 79～81 步。
+2. 先读 [第 88 步设计](architecture/88-dynamic-first-round-synthesis.md) 与 [验收记录](progress/88-dynamic-first-round-synthesis.md)，再读第 82～87 步设计与记录，需要上下文前置时再读第 79～81 步。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -18,11 +18,11 @@
 ## 3. 当前架构与技术栈
 
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
-- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v2 已能按首轮计划动态执行 1～3 个专业任务并严格恢复，图 v1 保留仅协调语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
-- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 首轮角色已动态选择，但尚无动态综合、独立审查或补查。专业新策略只读取已保存证据，不动态查询现场遥测。
+- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v3 已能按首轮计划动态执行 1～3 个专业任务、形成待审查开放假设并严格恢复，图 v1/v2 分别保留仅协调和首轮专业语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
+- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 首轮角色与综合材料已动态选择，但尚无独立审查或补查。专业新策略只读取已保存证据，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0044_dynamic_graph_fanout`；第 87 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0045_dynamic_synthesis`；第 88 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`。第 87 步动态首轮专业分派详见 [当前验收记录](progress/87-dynamic-first-round-fanout.md)，对应本片独立提交。
+第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`，第 87 步提交为 `8eb4712`。第 88 步首轮协调综合详见 [当前验收记录](progress/88-dynamic-first-round-synthesis.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -72,7 +72,9 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 87 步保留上述仅协调图 v1，并将新 v3 运行固定到 `dynamic-investigation-graph-v2`。图 v2 从已持久化计划稳定排序并 `Send` 1～3 个专业分支，按每个任务的 UTC 窗口过滤冻结材料，复用已有任务尝试、取证、共享预算、专业循环和工作摘要。并行单节点失败后，新父租约只恢复必要任务；业务结果已提交但 checkpoint 未写时直接复用原结果。上下文清单记录真实 v2/v3 版本。首轮完成仍不结算父运行，通用 Worker 继续跳过 v3。
 
-尚未完成：专业交互历史裁剪；动态协调综合、开放假设、跨专业补查和独立审查；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
+第 88 步继续保留图 v1/v2，新运行固定到 `dynamic-investigation-graph-v3`。图 v3 在首轮实际选择的 1～3 个任务后，只用其已提交工作摘要和证据执行一次根级综合；输出为自由文本开放假设、支持证据、反证和未解问题，系统注入 `pending_review`。开放假设及成功综合调用来源不可变持久化，模型成功后落库前和落库后 checkpoint 前两个窗口均可跨父尝试恢复。它不含旧 `RootCause`、处置建议或执行资格，父运行仍保持 running，通用 Worker 继续跳过 v3。
+
+尚未完成：专业交互历史裁剪；独立审查、跨专业补查和有界多轮；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；规划 Agent、多步骤处置与验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -91,7 +93,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [coordination/context.py](../src/opsswarm/investigation/coordination/context.py)、[coordination/planner.py](../src/opsswarm/investigation/coordination/planner.py) | 首轮最小上下文、根级共享预算调用、成功结果复用与计划提交恢复 |
 | [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次、父尝试和模型调用来源的原子写入及重建核对 |
 | [workflow_versions.py](../src/opsswarm/investigation/workflow_versions.py)、[persistence/repository.py](../src/opsswarm/investigation/persistence/repository.py) | v3 路由、启动策略原子冻结、运行查询及 Worker 支持版本领取过滤 |
-| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1 保留仅协调恢复；图 v2 按计划动态分派首轮专业任务并复核结果；均不负责最终调查结算 |
+| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[dynamic_synthesis_graph.py](../src/opsswarm/investigation/dynamic_synthesis_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1/v2 保留原协调与专业恢复；图 v3 增加首轮开放假设综合；均不负责最终调查结算 |
+| [synthesis/contracts.py](../src/opsswarm/investigation/synthesis/contracts.py)、[synthesis/persistence.py](../src/opsswarm/investigation/synthesis/persistence.py)、[synthesis/service.py](../src/opsswarm/investigation/synthesis/service.py) | 开放假设契约、证据闭包、成功调用复用、不可变写入和业务来源重建；不映射旧根因或处置资格 |
 | [worker/processor.py](../src/opsswarm/worker/processor.py)、[worker/task_graph.py](../src/opsswarm/worker/task_graph.py) | 现有 v1/v2 Worker 的显式版本分派与固定图二次拒绝；通用 Worker 尚未接 v3 |
 
 第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
@@ -104,7 +107,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 88 步：**v3 首轮协调综合与开放假设持久化**。让综合只消费首轮实际选择任务的工作摘要和证据，形成并持久化有来源、支持证据、反证与未解问题的开放假设；结果保持“待审查”，不能映射既有根因枚举来取得执行资格。独立审查、补查路由和终态核对仍独立交付，在它们完成前通用 Worker 不领取 v3。
+第 89 步：**独立审查 Agent 与审查事实持久化**。让审查角色只读取本轮开放假设和同源首轮材料，结构化记录支持是否充分、反证、证据缺口、竞争性解释及建议方向；模型不能自行创建任务、进入处置或把“审查通过”描述为根因被客观证明。补查任务编译、路由循环和终态核对继续独立交付，在它们完成前通用 Worker 不领取 v3。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -124,8 +127,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 87 步测试入口为 [v3 动态首轮专业分派](../tests/integration/test_dynamic_first_round_graph.py)；第 86 步旧图回归为 [v3 首轮协调图恢复](../tests/integration/test_dynamic_coordination_graph.py)。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 88 步测试入口为 [v3 首轮开放假设综合](../tests/integration/test_dynamic_synthesis_graph.py) 和 [开放假设契约](../tests/unit/investigation/test_open_hypothesis.py)；图 v2/v1 回归分别见 [动态首轮专业分派](../tests/integration/test_dynamic_first_round_graph.py) 与 [首轮协调图恢复](../tests/integration/test_dynamic_coordination_graph.py)。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 87 步设计/验收，核对 Git 与实际代码。v3 图 v2 已能按首轮计划动态执行并恢复 1～3 个专业任务，旧图 v1 保留，仅协调/专业阶段均不结算父运行；从第 88 步首轮协调综合与开放假设持久化推进，只消费本轮实际选择任务的工作摘要和证据，保留支持、反证、未解问题及待审查状态。完成真实 PostgreSQL、checkpoint、兼容回归、文档和中文独立提交。不要在独立审查、补查路由和终态核对完成前开放 v3 Worker，也不提前加入第二轮补查、MCP 或图内人工恢复。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 88 步设计/验收，核对 Git 与实际代码。v3 图 v3 已能按首轮计划动态执行并恢复 1～3 个专业任务，再形成有调用来源的待审查开放假设；旧图 v1/v2 保留，父运行仍不结算。从第 89 步独立审查 Agent 与审查事实持久化推进，只读取当前开放假设和同源材料，保留反证、证据缺口与竞争性解释。完成真实 PostgreSQL、checkpoint、兼容回归、文档和中文独立提交。不要在补查路由和终态核对完成前开放 v3 Worker，也不提前加入第二轮任务、MCP 或图内人工恢复。

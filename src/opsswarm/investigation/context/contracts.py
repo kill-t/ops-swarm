@@ -57,13 +57,16 @@ class ContextManifest(TaskModel):
     investigation_run_id: UUID
     task_id: UUID | None
     role: Literal["log", "metric", "change", "synthesis", "coordinator"]
-    role_version: Literal["fixed-roles-v1", "dynamic-coordinator-v1"] = "fixed-roles-v1"
+    role_version: Literal["fixed-roles-v1", "dynamic-coordinator-v1", "dynamic-synthesis-v1"] = (
+        "fixed-roles-v1"
+    )
     workflow_version: Literal["v2", "v3"] = "v2"
     prompt_version: Literal[
         "fixed-task-context-v1",
         "evidence-read-v1",
         "summary-context-v1",
         "coordination-plan-v1",
+        "open-hypothesis-synthesis-v1",
     ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=2, max_length=10)
@@ -86,6 +89,18 @@ class ContextManifest(TaskModel):
                 != ("incident_input", "coordination_policy")
             ):
                 raise ValueError("协调上下文策略、材料或权限不匹配")
+            return self
+        if self.role == "synthesis" and self.workflow_version == "v3":
+            if (
+                self.version != "summary-context-v1"
+                or self.task_id is not None
+                or self.role_version != "dynamic-synthesis-v1"
+                or self.prompt_version != "open-hypothesis-synthesis-v1"
+                or self.tool_names
+                or self.trimming
+                or len(self.materials) < 4
+            ):
+                raise ValueError("动态综合上下文策略、材料或权限不匹配")
             return self
         if (
             self.version == "coordination-context-v1"

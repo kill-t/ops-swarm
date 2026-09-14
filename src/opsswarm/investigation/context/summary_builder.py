@@ -1,6 +1,7 @@
 """将已完成工作的不可变摘要送入综合节点，保留全部有界证据。"""
 
 import json
+from typing import Literal
 
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.model_contracts import (
@@ -18,12 +19,15 @@ from opsswarm.investigation.context.contracts import (
     ContextSources,
 )
 from opsswarm.investigation.context.hashing import content_hash
-from opsswarm.investigation.context.prompts import SUMMARY_PROMPT
+from opsswarm.investigation.context.prompts import OPEN_HYPOTHESIS_PROMPT, SUMMARY_PROMPT
 from opsswarm.investigation.context.validation import validate_context
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
 
-SUMMARY_PROMPT_VERSION = "summary-context-v1"
+SUMMARY_PROMPT_VERSION: Literal["summary-context-v1"] = "summary-context-v1"
+OPEN_HYPOTHESIS_PROMPT_VERSION: Literal["open-hypothesis-synthesis-v1"] = (
+    "open-hypothesis-synthesis-v1"
+)
 
 
 class SummaryContextBuilder:
@@ -121,7 +125,9 @@ class SummaryContextBuilder:
                 "completion_requirement": "综合工作摘要与完整证据，保留分歧和未确定判断",
             },
         }
-        prompt = SUMMARY_PROMPT
+        dynamic = sources.workflow_version == "v3"
+        prompt = OPEN_HYPOTHESIS_PROMPT if dynamic else SUMMARY_PROMPT
+        prompt_version = OPEN_HYPOTHESIS_PROMPT_VERSION if dynamic else SUMMARY_PROMPT_VERSION
         if supplied.structured_output_method == "json_mode":
             prompt += " 必须只输出符合下方 JSON Schema 的 JSON 对象。"
             assembled["output_json_schema"] = supplied.output_schema
@@ -156,7 +162,7 @@ class SummaryContextBuilder:
             for material in validated.materials
         )
         # 仅对实际发送的完整输入做一次预算检查；必要材料超限时整体拒绝，不裁剪。
-        allocation = allocate_input(policy, model_input, prompt_version=SUMMARY_PROMPT_VERSION)
+        allocation = allocate_input(policy, model_input, prompt_version=prompt_version)
         return ContextPacket(
             model_input=model_input,
             manifest=ContextManifest(
@@ -165,7 +171,8 @@ class SummaryContextBuilder:
                 task_id=None,
                 role="synthesis",
                 workflow_version=sources.workflow_version,
-                prompt_version="summary-context-v1",
+                role_version="dynamic-synthesis-v1" if dynamic else "fixed-roles-v1",
+                prompt_version=prompt_version,
                 evidence_policy_version=sources.evidence_policy_version,
                 materials=materials,
                 allocation=allocation,

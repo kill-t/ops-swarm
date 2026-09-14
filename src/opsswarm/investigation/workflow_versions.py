@@ -15,13 +15,21 @@ class WorkflowVersion(StrEnum):
 InvestigationGraphVersion = Literal[
     "dynamic-investigation-graph-v1",
     "dynamic-investigation-graph-v2",
+    "dynamic-investigation-graph-v3",
 ]
 LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION: InvestigationGraphVersion = (
     "dynamic-investigation-graph-v1"
 )
-DYNAMIC_INVESTIGATION_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v2"
+LEGACY_DYNAMIC_FIRST_ROUND_GRAPH_VERSION: InvestigationGraphVersion = (
+    "dynamic-investigation-graph-v2"
+)
+DYNAMIC_INVESTIGATION_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v3"
 DYNAMIC_INVESTIGATION_GRAPH_VERSIONS = frozenset(
-    (LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION, DYNAMIC_INVESTIGATION_GRAPH_VERSION)
+    (
+        LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION,
+        LEGACY_DYNAMIC_FIRST_ROUND_GRAPH_VERSION,
+        DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    )
 )
 
 

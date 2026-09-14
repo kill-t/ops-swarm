@@ -23,6 +23,8 @@ from opsswarm.investigation.loop.contracts import (
 from opsswarm.investigation.loop.history import saved_history as saved_history
 from opsswarm.investigation.loop.policy import conflict, require_result_size, validate_model_result
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
+from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
+from opsswarm.investigation.synthesis.policy import validate_proposal_evidence
 from opsswarm.investigation.tasks.tables import AgentTaskAttemptRow, AgentTaskRow
 
 READ_OPERATIONS = frozenset(
@@ -111,6 +113,34 @@ async def validate_call_result(
                 raise conflict("协调模型提案轮次与输入不一致")
         elif result is not None:
             raise conflict("失败或未知协调调用不能保存成功提案")
+        return
+    if CallOperation(row.operation) == CallOperation.SYNTHESIZE:
+        if (
+            row.task_id is not None
+            or row.task_attempt_id is not None
+            or row.tool_request is not None
+        ):
+            raise conflict("综合调用必须属于运行根级")
+        if result is not None:
+            require_result_size(result)
+        if run.workflow_version != "v3":
+            if result is not None:
+                raise conflict("旧工作流综合调用不允许保存开放假设")
+            return
+        if status == "succeeded":
+            if not isinstance(result, SynthesisModelResult):
+                raise conflict("动态综合成功结算必须保存开放假设提案")
+            sources = await load_sources(session, run, CallOperation.SYNTHESIZE, None)
+            validate_proposal_evidence(
+                result.proposal,
+                {
+                    evidence.evidence_id
+                    for task in sources.tasks
+                    for evidence in task.evidence.snapshot.evidence
+                },
+            )
+        elif result is not None:
+            raise conflict("失败或未知动态综合调用不能保存成功提案")
         return
     loop_model = (
         row.model_input is not None and row.model_input.get("version") == "evidence-loop-input-v1"
