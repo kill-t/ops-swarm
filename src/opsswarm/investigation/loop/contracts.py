@@ -10,6 +10,7 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationModelInput,
     CoordinationModelResult,
 )
+from opsswarm.investigation.review.contracts import ReviewModelResult
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.tasks.contracts import TaskModel
 
@@ -76,7 +77,13 @@ class EvidenceToolResult(TaskModel):
     message: ToolMessage
 
 
-CallResult = LoopModelResult | EvidenceToolResult | CoordinationModelResult | SynthesisModelResult
+CallResult = (
+    LoopModelResult
+    | EvidenceToolResult
+    | CoordinationModelResult
+    | SynthesisModelResult
+    | ReviewModelResult
+)
 CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 
 

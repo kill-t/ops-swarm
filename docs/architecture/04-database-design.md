@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 89 步增量见 [v3 独立假设审查与审查事实持久化](89-independent-hypothesis-review.md)：迁移 `0046_dynamic_review` 新增不可变 `investigation_hypothesis_reviews`，以复合外键绑定同运行、同轮开放假设、父尝试和成功 `review` 调用；调用账本增加根级审查结果约束，并允许图 v1/v2/v3/v4 共存。审查状态固定为 `recorded`，不改写开放假设，也不授予路由或执行资格。
+
 第 88 步增量见 [v3 首轮协调综合与开放假设持久化](88-dynamic-first-round-synthesis.md)：迁移 `0045_dynamic_synthesis` 新增不可变 `investigation_open_hypotheses`，把每轮待审查自由文本假设绑定到同运行的协调计划、父尝试和成功综合调用；调用账本保存版本化综合结果，并允许图 v1/v2/v3 共存。新表不替代旧 `hypotheses`，也不授予处置资格。
 
 第 85 步增量见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)：迁移 `0043_dynamic_workflow_start` 增加可空 `graph_version` 与 `coordination_policy_version`。v3 只接受冻结多 Agent，并强制动态协调、摘要上下文、工作摘要、冻结证据、调用/模型预算、function_calling 和独立图恢复版本同时固定；旧 v1/v2 两列保持空。协调策略完整 JSON 与散列继续保存于不可变策略表，并在运行创建事务中写入；存在 v3 事实时拒绝降级。

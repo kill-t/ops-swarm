@@ -21,6 +21,7 @@ from opsswarm.investigation.models import (
     InvestigationConclusion,
     SpecialistReport,
 )
+from opsswarm.investigation.review.contracts import HypothesisReviewProposal
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.evidence import require_matching_assignment
@@ -45,6 +46,7 @@ def validate_context(
         CallOperation.ANALYZE_METRIC,
         CallOperation.ANALYZE_CHANGE,
         CallOperation.SYNTHESIZE,
+        CallOperation.REVIEW,
     ):
         raise TaskFactConflict("context_operation_invalid", "只有模型调查接受上下文")
     try:
@@ -62,7 +64,9 @@ def validate_context(
     except ValueError:
         raise TaskFactConflict("context_input_invalid", "无法解析受支持的任务输入") from None
     schema = (
-        SpecialistReport
+        HypothesisReviewProposal
+        if operation == CallOperation.REVIEW
+        else SpecialistReport
         if role
         else OpenHypothesisProposal
         if sources.workflow_version == "v3"

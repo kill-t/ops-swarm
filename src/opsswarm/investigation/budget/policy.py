@@ -38,6 +38,7 @@ def operation_role(operation: CallOperation) -> str | None:
         CallOperation.LIST_CHANGES: "change",
         CallOperation.ANALYZE_CHANGE: "change",
         CallOperation.SYNTHESIZE: None,
+        CallOperation.REVIEW: None,
         CallOperation.READ_LOG_EVIDENCE: "log",
         CallOperation.READ_METRIC_EVIDENCE: "metric",
         CallOperation.READ_CHANGE_EVIDENCE: "change",

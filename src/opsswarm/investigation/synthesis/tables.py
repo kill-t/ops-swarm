@@ -48,6 +48,9 @@ class InvestigationOpenHypothesisRow(Base):
         ),
         UniqueConstraint("round_id", "investigation_run_id", name="uq_open_hypotheses_round_run"),
         UniqueConstraint(
+            "id", "round_id", "investigation_run_id", name="uq_open_hypotheses_id_round_run"
+        ),
+        UniqueConstraint(
             "source_call_id", "investigation_run_id", name="uq_open_hypotheses_source_run"
         ),
         CheckConstraint(

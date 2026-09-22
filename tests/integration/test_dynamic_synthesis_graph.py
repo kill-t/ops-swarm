@@ -7,11 +7,13 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.synthesis.persistence import OpenHypothesisStore
 from opsswarm.investigation.synthesis.queries import OpenHypothesisQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
@@ -24,7 +26,7 @@ from tests.integration.test_dynamic_first_round_graph import (
 )
 from tests.loop_helpers import loop_policy
 from tests.model_budget_helpers import sdk_model, sdk_response
-from tests.task_facts_helpers import TaskClock, claimed_run
+from tests.task_facts_helpers import BASE_TIME, TaskClock, started_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -70,12 +72,25 @@ class SynthesisReplies:
 
 
 async def current_v3_claim(database_session_factory):
-    return await claimed_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
+    )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v3")
+        )
+    claim = await store.claim_next(
+        worker_id="legacy-v3-synthesis-worker",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
         supported_workflow_versions=(WorkflowVersion.V3,),
     )
+    assert claim is not None
+    return store, claim
 
 
 def synthesis_factory(db, source, client, saver, clock):

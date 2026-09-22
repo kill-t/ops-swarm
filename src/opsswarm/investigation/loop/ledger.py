@@ -23,6 +23,8 @@ from opsswarm.investigation.loop.contracts import (
 from opsswarm.investigation.loop.history import saved_history as saved_history
 from opsswarm.investigation.loop.policy import conflict, require_result_size, validate_model_result
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
+from opsswarm.investigation.review.contracts import ReviewModelResult
+from opsswarm.investigation.review.policy import validate_review_evidence
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.synthesis.policy import validate_proposal_evidence
 from opsswarm.investigation.tasks.tables import AgentTaskAttemptRow, AgentTaskRow
@@ -141,6 +143,35 @@ async def validate_call_result(
             )
         elif result is not None:
             raise conflict("失败或未知动态综合调用不能保存成功提案")
+        return
+    if CallOperation(row.operation) == CallOperation.REVIEW:
+        if (
+            row.task_id is not None
+            or row.task_attempt_id is not None
+            or row.tool_request is not None
+        ):
+            raise conflict("独立审查调用必须属于运行根级")
+        if result is not None:
+            require_result_size(result)
+        if run.workflow_version != "v3":
+            raise conflict("独立审查只支持动态工作流")
+        if status == "succeeded":
+            if not isinstance(result, ReviewModelResult):
+                raise conflict("独立审查成功结算必须保存结构化审查提案")
+            sources = await load_sources(session, run, CallOperation.REVIEW, None)
+            if sources.open_hypothesis is None:
+                raise conflict("独立审查缺少开放假设")
+            validate_review_evidence(
+                result.proposal,
+                sources.open_hypothesis.hypothesis,
+                {
+                    evidence.evidence_id
+                    for task in sources.tasks
+                    for evidence in task.evidence.snapshot.evidence
+                },
+            )
+        elif result is not None:
+            raise conflict("失败或未知独立审查调用不能保存成功提案")
         return
     loop_model = (
         row.model_input is not None and row.model_input.get("version") == "evidence-loop-input-v1"

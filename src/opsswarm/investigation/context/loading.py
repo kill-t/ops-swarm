@@ -25,6 +25,7 @@ from opsswarm.investigation.tasks.evidence_store import validated_record
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
 from opsswarm.investigation.working_summary.persistence import validated_summary
 from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
@@ -36,6 +37,14 @@ async def load_sources(
     operation: CallOperation,
     task_id: UUID | None,
 ) -> ContextSources:
+    if (
+        operation == CallOperation.REVIEW
+        and run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+    ):
+        raise TaskFactConflict(
+            "hypothesis_review_context_not_supported",
+            "只有当前动态审查图可以预留独立审查上下文",
+        )
     if run.context_policy_version not in (
         "task-context-v1",
         "evidence-read-v1",
@@ -59,6 +68,8 @@ async def load_sources(
     if task_id is not None:
         query = query.where(AgentTaskRow.id == task_id)
     expected_count = 1 if role else 3
+    open_hypothesis = None
+    source_synthesis_manifest = None
     if role is None and run.workflow_version == "v3":
         # 协调持久层也依赖上下文契约，延迟导入可避免模块初始化环。
         from opsswarm.investigation.coordination.persistence import validated_plan
@@ -75,7 +86,7 @@ async def load_sources(
             else None
         )
         if plan_row is None:
-            raise TaskFactConflict("context_scope_mismatch", "动态综合缺少首轮协调计划")
+            raise TaskFactConflict("context_scope_mismatch", "动态根级调用缺少首轮协调计划")
         plan = (await validated_plan(session, plan_row)).plan
         expected_assignments = {item.task_key: item for item in plan.assignment.tasks}
         query = query.where(AgentTaskRow.round_id == plan_row.round_id)
@@ -90,8 +101,28 @@ async def load_sources(
                 for row in rows
             )
         ):
-            raise TaskFactConflict("context_scope_mismatch", "动态综合任务范围与首轮计划不一致")
+            raise TaskFactConflict("context_scope_mismatch", "动态根级任务范围与首轮计划不一致")
         expected_count = len(expected_assignments)
+        if operation == CallOperation.REVIEW:
+            # 审查持久层反向依赖上下文复核，延迟导入避免模块初始化环。
+            from opsswarm.investigation.synthesis.persistence import (
+                validated_open_hypothesis,
+                validated_synthesis_call,
+            )
+            from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
+
+            hypothesis_row = await session.scalar(
+                select(InvestigationOpenHypothesisRow).where(
+                    InvestigationOpenHypothesisRow.investigation_run_id == run.id,
+                    InvestigationOpenHypothesisRow.round_id == plan_row.round_id,
+                )
+            )
+            if hypothesis_row is None:
+                raise TaskFactConflict("context_scope_mismatch", "独立审查缺少开放假设")
+            open_hypothesis = await validated_open_hypothesis(session, hypothesis_row)
+            _, _, source_synthesis_manifest = await validated_synthesis_call(
+                session, run, open_hypothesis.source_call_id
+            )
     else:
         rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key)))
     if len(rows) != expected_count:
@@ -136,4 +167,6 @@ async def load_sources(
         tasks=tuple(tasks),
         workflow_version=cast(Literal["v2", "v3"], run.workflow_version),
         context_policy_version=cast(ContextPolicyVersion, run.context_policy_version),
+        open_hypothesis=open_hypothesis,
+        source_synthesis_manifest=source_synthesis_manifest,
     )

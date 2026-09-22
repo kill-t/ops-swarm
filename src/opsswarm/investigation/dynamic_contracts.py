@@ -5,6 +5,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from opsswarm.investigation.coordination.contracts import CoordinationPlanRecord
+from opsswarm.investigation.review.contracts import HypothesisReviewRecord
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
 from opsswarm.investigation.tasks.contracts import TaskModel
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
@@ -44,4 +45,20 @@ class FirstRoundSynthesisResult(FirstRoundInvestigationResult):
             or self.open_hypothesis.round_id != self.coordination_plan.round_id
         ):
             raise ValueError("开放假设必须属于当前首轮协调计划")
+        return self
+
+
+class FirstRoundReviewResult(FirstRoundSynthesisResult):
+    """首轮开放假设及其独立审查事实，仍不代表最终路由或结论。"""
+
+    hypothesis_review: HypothesisReviewRecord
+
+    @model_validator(mode="after")
+    def validate_review_source(self) -> Self:
+        if (
+            self.hypothesis_review.investigation_run_id != self.open_hypothesis.investigation_run_id
+            or self.hypothesis_review.round_id != self.open_hypothesis.round_id
+            or self.hypothesis_review.open_hypothesis_id != self.open_hypothesis.id
+        ):
+            raise ValueError("独立审查必须属于当前开放假设")
         return self

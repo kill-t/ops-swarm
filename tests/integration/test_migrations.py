@@ -37,6 +37,15 @@ def test_alembic_migration_matches_sqlalchemy_metadata(migrated_database_url: st
     assert migrated_database_url.startswith("postgresql+psycopg://")
     alembic_config = Config(str(PROJECT_ROOT / "alembic.ini"))
     command.check(alembic_config)
+    native_url = (
+        make_url(migrated_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    with psycopg.connect(native_url) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0046_dynamic_review",
+        )
 
 
 def test_alembic_migration_can_downgrade_and_upgrade(migrated_database_url: str) -> None:

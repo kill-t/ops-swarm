@@ -36,14 +36,16 @@ class CallReservationRow(Base):
             "(operation = 'synthesize' AND NOT (model_input ? 'version') AND "
             "COALESCE(call_result ->> 'version', '') = "
             "'open-hypothesis-synthesis-result-v1') OR "
-            "(operation NOT IN ('coordinate', 'synthesize') AND "
+            "(operation = 'review' AND NOT (model_input ? 'version') AND "
+            "COALESCE(call_result ->> 'version', '') = 'hypothesis-review-result-v1') OR "
+            "(operation NOT IN ('coordinate', 'synthesize', 'review') AND "
             "COALESCE(model_input ->> 'version', '') = "
             "'evidence-loop-input-v1'))) OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),
         CheckConstraint(
             "invocation_index BETWEEN 0 AND 99 AND "
-            "(operation <> 'coordinate' OR invocation_index = 0)",
+            "(operation NOT IN ('coordinate', 'review') OR invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
@@ -114,13 +116,14 @@ class CallReservationRow(Base):
             "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence', "
             "'read_metric_evidence', 'read_change_evidence') AND kind = 'tool') OR "
             "(operation IN ('coordinate', 'analyze_log', 'analyze_metric', 'analyze_change', "
-            "'synthesize') "
+            "'synthesize', 'review') "
             "AND kind = 'model')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
-            "(operation IN ('coordinate', 'synthesize') AND task_id IS NULL AND "
-            "task_attempt_id IS NULL) OR (operation NOT IN ('coordinate', 'synthesize') AND "
+            "(operation IN ('coordinate', 'synthesize', 'review') AND task_id IS NULL AND "
+            "task_attempt_id IS NULL) OR "
+            "(operation NOT IN ('coordinate', 'synthesize', 'review') AND "
             "task_id IS NOT NULL AND task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
         ),

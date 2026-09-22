@@ -26,7 +26,7 @@ from opsswarm.investigation.synthesis.contracts import (
 from opsswarm.investigation.synthesis.policy import validate_proposal_evidence
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import DYNAMIC_SYNTHESIS_GRAPH_VERSIONS
 
 
 def utc_now() -> datetime:
@@ -49,7 +49,7 @@ async def validated_synthesis_call(
     if (
         row is None
         or run.workflow_version != "v3"
-        or run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+        or run.graph_version not in DYNAMIC_SYNTHESIS_GRAPH_VERSIONS
         or row.operation != CallOperation.SYNTHESIZE.value
         or row.kind != "model"
         or row.status != "succeeded"
@@ -99,7 +99,7 @@ async def validated_open_hypothesis(
     if (
         run is None
         or run.workflow_version != "v3"
-        or run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+        or run.graph_version not in DYNAMIC_SYNTHESIS_GRAPH_VERSIONS
         or plan_row is None
         or plan_row.investigation_run_id != row.investigation_run_id
     ):
