@@ -26,7 +26,7 @@ from opsswarm.investigation.review.tables import InvestigationHypothesisReviewRo
 from opsswarm.investigation.synthesis.persistence import validated_open_hypothesis
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import DYNAMIC_REVIEW_GRAPH_VERSIONS
 
 
 def utc_now() -> datetime:
@@ -49,7 +49,7 @@ async def validated_review_call(
     if (
         row is None
         or run.workflow_version != "v3"
-        or run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+        or run.graph_version not in DYNAMIC_REVIEW_GRAPH_VERSIONS
         or row.operation != CallOperation.REVIEW.value
         or row.kind != "model"
         or row.status != "succeeded"

@@ -25,7 +25,7 @@ from opsswarm.investigation.tasks.evidence_store import validated_record
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import DYNAMIC_REVIEW_GRAPH_VERSIONS
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
 from opsswarm.investigation.working_summary.persistence import validated_summary
 from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
@@ -37,10 +37,7 @@ async def load_sources(
     operation: CallOperation,
     task_id: UUID | None,
 ) -> ContextSources:
-    if (
-        operation == CallOperation.REVIEW
-        and run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
-    ):
+    if operation == CallOperation.REVIEW and run.graph_version not in DYNAMIC_REVIEW_GRAPH_VERSIONS:
         raise TaskFactConflict(
             "hypothesis_review_context_not_supported",
             "只有当前动态审查图可以预留独立审查上下文",

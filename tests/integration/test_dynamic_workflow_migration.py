@@ -112,7 +112,7 @@ async def test_synthesis_version_downgrade_refuses_persisted_v3_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0046_dynamic_review"
+                == "0047_review_routing"
             )
             assert (
                 await session.scalar(
@@ -133,6 +133,12 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v4")
+        )
 
     with pytest.raises(DBAPIError, match="不能删除已保存的动态审查图或开放假设审查事实"):
         await asyncio.to_thread(command.downgrade, config(), "0045_dynamic_synthesis")
@@ -140,7 +146,7 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0046_dynamic_review"
+            == "0047_review_routing"
         )
         assert (
             await session.scalar(
@@ -148,6 +154,32 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
                 {"run_id": started.run.id},
             )
             == "dynamic-investigation-graph-v4"
+        )
+
+
+async def test_routing_version_downgrade_refuses_persisted_v5_graph(
+    database_session_factory,
+) -> None:
+    _, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+
+    with pytest.raises(DBAPIError, match="不能删除已保存的确定性审查路由图或路由事实"):
+        await asyncio.to_thread(command.downgrade, config(), "0046_dynamic_review")
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0047_review_routing"
+        )
+        assert (
+            await session.scalar(
+                text("SELECT graph_version FROM investigation_runs WHERE id=:run_id"),
+                {"run_id": started.run.id},
+            )
+            == "dynamic-investigation-graph-v5"
         )
 
 
@@ -173,7 +205,7 @@ async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0046_dynamic_review"
+                == "0047_review_routing"
             )
             assert (
                 await session.scalar(

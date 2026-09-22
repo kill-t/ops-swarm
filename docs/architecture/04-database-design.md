@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 90 步增量见 [v3 确定性审查路由与路由事实持久化](90-deterministic-review-routing.md)：迁移 `0047_review_routing` 新增不可变 `investigation_hypothesis_review_routes`，以复合外键绑定同运行、同轮开放假设、审查事实、父尝试和固定协调策略散列；图 v5 在独立审查后保存 `follow_up`、`await_human` 或 `candidate_evaluation`。路由不新增模型调用，不创建第二轮任务，也不修改父运行、开放假设或审查状态。
+
 第 89 步增量见 [v3 独立假设审查与审查事实持久化](89-independent-hypothesis-review.md)：迁移 `0046_dynamic_review` 新增不可变 `investigation_hypothesis_reviews`，以复合外键绑定同运行、同轮开放假设、父尝试和成功 `review` 调用；调用账本增加根级审查结果约束，并允许图 v1/v2/v3/v4 共存。审查状态固定为 `recorded`，不改写开放假设，也不授予路由或执行资格。
 
 第 88 步增量见 [v3 首轮协调综合与开放假设持久化](88-dynamic-first-round-synthesis.md)：迁移 `0045_dynamic_synthesis` 新增不可变 `investigation_open_hypotheses`，把每轮待审查自由文本假设绑定到同运行的协调计划、父尝试和成功综合调用；调用账本保存版本化综合结果，并允许图 v1/v2/v3 共存。新表不替代旧 `hypotheses`，也不授予处置资格。

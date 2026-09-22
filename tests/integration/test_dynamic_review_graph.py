@@ -7,12 +7,14 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.context.prompts import HYPOTHESIS_REVIEW_PROMPT
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.persistence import HypothesisReviewStore
 from opsswarm.investigation.review.queries import HypothesisReviewQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
@@ -31,9 +33,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class ReviewReplies:
-    def __init__(self, db, roles) -> None:
+    def __init__(self, db, roles, *, route_case: str | None = None) -> None:
         self.professionals = DynamicReplies(db, proposal_for(*roles))
         self.calls = CallBudgetQueries(db)
+        self.route_case = route_case
         self.synthesis_inputs = []
         self.review_inputs = []
 
@@ -51,7 +54,9 @@ class ReviewReplies:
                     "statement": "首轮材料显示服务异常仍需独立审查",
                     "confidence": 0.72,
                     "supporting_evidence_ids": evidence_ids[:1],
-                    "counter_evidence_ids": evidence_ids[1:2],
+                    "counter_evidence_ids": (
+                        [] if self.route_case == "candidate" else evidence_ids[1:2]
+                    ),
                     "unresolved_questions": ["是否存在尚未调查的竞争性解释？"],
                 },
             )
@@ -81,9 +86,36 @@ class ReviewReplies:
         assert review_manifest.materials[:-1] == synthesis_manifest.materials
         assert review_manifest.materials[-1].kind == "open_hypothesis"
         hypothesis = data["open_hypothesis"]["hypothesis"]
-        return sdk_response(
-            payload,
-            {
+        if self.route_case == "follow_up":
+            review = {
+                "support_is_sufficient": False,
+                "rationale": "当前证据不足，需要定向补查指标。",
+                "accepted_supporting_evidence_ids": [],
+                "counter_evidence_ids": hypothesis["counter_evidence_ids"],
+                "evidence_gaps": ["缺少依赖等待队列指标"],
+                "competing_explanations": [],
+                "suggested_direction": "follow_up",
+                "follow_up_suggestions": [
+                    {
+                        "role": "metric",
+                        "question": "补查依赖等待队列",
+                        "rationale": "区分容量耗尽与应用异常",
+                    }
+                ],
+            }
+        elif self.route_case == "human":
+            review = {
+                "support_is_sufficient": False,
+                "rationale": "当前存在无法自动消解的证据缺口。",
+                "accepted_supporting_evidence_ids": [],
+                "counter_evidence_ids": hypothesis["counter_evidence_ids"],
+                "evidence_gaps": ["需要工程师补充外部依赖状态"],
+                "competing_explanations": [],
+                "suggested_direction": "human_review",
+                "follow_up_suggestions": [],
+            }
+        else:
+            review = {
                 "support_is_sufficient": True,
                 "rationale": "独立核对后，首轮支持证据足以交由确定性路由评估。",
                 "accepted_supporting_evidence_ids": hypothesis["supporting_evidence_ids"][:1],
@@ -92,7 +124,10 @@ class ReviewReplies:
                 "competing_explanations": [],
                 "suggested_direction": "evaluate_for_routing",
                 "follow_up_suggestions": [],
-            },
+            }
+        return sdk_response(
+            payload,
+            review,
         )
 
 
@@ -102,9 +137,14 @@ async def current_v4_claim(database_session_factory):
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
-    assert started.run.graph_version == "dynamic-investigation-graph-v4"
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v4")
+        )
     claim = await store.claim_next(
-        worker_id="dynamic-review-worker",
+        worker_id="legacy-v4-review-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
         lease_duration=timedelta(seconds=30),
         supported_workflow_versions=(WorkflowVersion.V3,),

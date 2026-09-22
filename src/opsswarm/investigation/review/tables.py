@@ -55,6 +55,13 @@ class InvestigationHypothesisReviewRow(Base):
         UniqueConstraint(
             "source_call_id", "investigation_run_id", name="uq_hypothesis_reviews_source_run"
         ),
+        UniqueConstraint(
+            "id",
+            "open_hypothesis_id",
+            "round_id",
+            "investigation_run_id",
+            name="uq_hypothesis_reviews_route_source",
+        ),
         CheckConstraint(
             "version = 'hypothesis-review-v1' AND status = 'recorded' AND "
             "COALESCE(review ->> 'version', '') = version AND "

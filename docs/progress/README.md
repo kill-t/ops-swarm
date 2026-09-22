@@ -10,10 +10,10 @@
 | --- | --- |
 | 已有运行交付 | 第 63 步 MVP 发布已验收，见 [发布记录](63-mvp-compose-release.md)；历史测试结果不是本轮重新执行的结果 |
 | 最新文档切片 | 第 78 步开发交接已验收，见 [切片记录](78-development-handoff.md)；以 [项目状态](../PROJECT_STATE.md) 为新会话入口，原第 65 篇仍为架构事实来源 |
-| 最新实现切片 | 第 89 步 v3 独立假设审查与审查事实持久化已验收，见 [切片记录](89-independent-hypothesis-review.md)；图 v4 可恢复不可变审查事实，通用 Worker 仍跳过 v3 |
+| 最新实现切片 | 第 90 步 v3 确定性审查路由与路由事实持久化已验收，见 [切片记录](90-deterministic-review-routing.md)；图 v5 可恢复不可变路由事实，通用 Worker 仍跳过 v3 |
 | 当前架构来源 | [第 64 篇总路线](../architecture/64-full-multi-agent-roadmap.md) + [第 65 篇专项设计](../architecture/65-agent-system-design.md) |
 | 待开发能力 | 完整 Harness、专业交互历史裁剪、动态协作、MCP、经验、图内人工介入和多步骤处置 |
-| 下一切片 | 第 90 步：保存确定性审查路由事实，先决定补查、等待人工或候选路径，不提前创建第二轮任务或进入规划 |
+| 下一切片 | 第 91 步：把 `follow_up` 路由中的完整补查意图编译为第二轮协调计划与持久任务，不提前执行人工暂停或规划 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。
 
@@ -145,3 +145,4 @@
 - [87 - v3 动态首轮任务分派与专业结果恢复](87-dynamic-first-round-fanout.md)
 - [88 - v3 首轮协调综合与开放假设持久化](88-dynamic-first-round-synthesis.md)
 - [89 - v3 独立假设审查与审查事实持久化](89-independent-hypothesis-review.md)
+- [90 - v3 确定性审查路由与路由事实持久化](90-deterministic-review-routing.md)

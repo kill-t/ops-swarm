@@ -17,6 +17,7 @@ InvestigationGraphVersion = Literal[
     "dynamic-investigation-graph-v2",
     "dynamic-investigation-graph-v3",
     "dynamic-investigation-graph-v4",
+    "dynamic-investigation-graph-v5",
 ]
 LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION: InvestigationGraphVersion = (
     "dynamic-investigation-graph-v1"
@@ -25,15 +26,25 @@ LEGACY_DYNAMIC_FIRST_ROUND_GRAPH_VERSION: InvestigationGraphVersion = (
     "dynamic-investigation-graph-v2"
 )
 LEGACY_DYNAMIC_SYNTHESIS_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v3"
-DYNAMIC_INVESTIGATION_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v4"
+LEGACY_DYNAMIC_REVIEW_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v4"
+DYNAMIC_INVESTIGATION_GRAPH_VERSION: InvestigationGraphVersion = "dynamic-investigation-graph-v5"
 DYNAMIC_SYNTHESIS_GRAPH_VERSIONS = frozenset(
-    (LEGACY_DYNAMIC_SYNTHESIS_GRAPH_VERSION, DYNAMIC_INVESTIGATION_GRAPH_VERSION)
+    (
+        LEGACY_DYNAMIC_SYNTHESIS_GRAPH_VERSION,
+        LEGACY_DYNAMIC_REVIEW_GRAPH_VERSION,
+        DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    )
 )
+DYNAMIC_REVIEW_GRAPH_VERSIONS = frozenset(
+    (LEGACY_DYNAMIC_REVIEW_GRAPH_VERSION, DYNAMIC_INVESTIGATION_GRAPH_VERSION)
+)
+DYNAMIC_ROUTING_GRAPH_VERSIONS = frozenset((DYNAMIC_INVESTIGATION_GRAPH_VERSION,))
 DYNAMIC_INVESTIGATION_GRAPH_VERSIONS = frozenset(
     (
         LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION,
         LEGACY_DYNAMIC_FIRST_ROUND_GRAPH_VERSION,
         LEGACY_DYNAMIC_SYNTHESIS_GRAPH_VERSION,
+        LEGACY_DYNAMIC_REVIEW_GRAPH_VERSION,
         DYNAMIC_INVESTIGATION_GRAPH_VERSION,
     )
 )

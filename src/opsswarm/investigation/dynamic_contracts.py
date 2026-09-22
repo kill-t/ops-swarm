@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from opsswarm.investigation.coordination.contracts import CoordinationPlanRecord
 from opsswarm.investigation.review.contracts import HypothesisReviewRecord
+from opsswarm.investigation.review_routing.contracts import ReviewRoutingRecord
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
 from opsswarm.investigation.tasks.contracts import TaskModel
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
@@ -61,4 +62,21 @@ class FirstRoundReviewResult(FirstRoundSynthesisResult):
             or self.hypothesis_review.open_hypothesis_id != self.open_hypothesis.id
         ):
             raise ValueError("独立审查必须属于当前开放假设")
+        return self
+
+
+class FirstRoundRoutingResult(FirstRoundReviewResult):
+    """首轮审查及其确定性路由事实，仍不代表最终调查结论。"""
+
+    review_route: ReviewRoutingRecord
+
+    @model_validator(mode="after")
+    def validate_route_source(self) -> Self:
+        if (
+            self.review_route.investigation_run_id != self.hypothesis_review.investigation_run_id
+            or self.review_route.round_id != self.hypothesis_review.round_id
+            or self.review_route.open_hypothesis_id != self.open_hypothesis.id
+            or self.review_route.hypothesis_review_id != self.hypothesis_review.id
+        ):
+            raise ValueError("确定性路由必须属于当前独立审查")
         return self
