@@ -180,15 +180,12 @@ class CoordinationPlanner:
         plans = await CoordinationPlanQueries(self._factory).list_plans(self._run_id)
         if not plans:
             return None
-        if len(plans) != 1:
-            raise TaskFactConflict(
-                "coordination_context_not_supported", "首版协调模型只支持恢复第一轮计划"
-            )
         plan = plans[0]
         tasks = plan.plan.assignment.tasks
         if (
             plan.plan.assignment.round_number != 1
             or plan.source_call_id is None
+            or plan.source_review_route_id is not None
             or any(
                 task.window_end != observation_cutoff_at
                 or task.evidence_snapshot_id != evidence_snapshot_id

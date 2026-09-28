@@ -80,3 +80,26 @@ class FirstRoundRoutingResult(FirstRoundReviewResult):
         ):
             raise ValueError("确定性路由必须属于当前独立审查")
         return self
+
+
+class FollowUpPlanningResult(FirstRoundRoutingResult):
+    """首轮路由及可选第二轮计划；任务仍未执行。"""
+
+    follow_up_plan: CoordinationPlanRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_follow_up_plan(self) -> Self:
+        route = self.review_route
+        if route.decision.route == "follow_up":
+            if (
+                self.follow_up_plan is None
+                or self.follow_up_plan.investigation_run_id != route.investigation_run_id
+                or self.follow_up_plan.source_review_route_id != route.id
+                or self.follow_up_plan.source_call_id is not None
+                or self.follow_up_plan.plan.assignment.round_number
+                != route.decision.round_number + 1
+            ):
+                raise ValueError("补查路由必须绑定其下一轮协调计划")
+        elif self.follow_up_plan is not None:
+            raise ValueError("非补查路由不能携带后续协调计划")
+        return self

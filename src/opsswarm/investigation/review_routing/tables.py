@@ -63,6 +63,11 @@ class InvestigationHypothesisReviewRouteRow(Base):
             "investigation_run_id",
             name="uq_hypothesis_review_routes_round_run",
         ),
+        UniqueConstraint(
+            "id",
+            "investigation_run_id",
+            name="uq_hypothesis_review_routes_id_run",
+        ),
         CheckConstraint(
             "version = 'review-routing-v1' AND status = 'recorded' AND "
             "COALESCE(decision ->> 'version', '') = version AND "

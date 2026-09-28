@@ -26,6 +26,7 @@ from opsswarm.investigation.coordination.tables import (
     InvestigationCoordinationPlanRow,
     InvestigationCoordinationPolicyRow,
 )
+from opsswarm.investigation.follow_up_planning.policy import compile_follow_up_proposal
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
 from opsswarm.investigation.persistence.tables import InvestigationAttemptRow, InvestigationRunRow
@@ -34,7 +35,10 @@ from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.identity import round_content_hash, round_specification
 from opsswarm.investigation.tasks.store import create_round_in_transaction
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS,
+    DYNAMIC_INVESTIGATION_GRAPH_VERSIONS,
+)
 
 
 def utc_now() -> datetime:
@@ -139,6 +143,13 @@ async def validated_plan(
                 or source.finished_at > record.created_at
             ):
                 raise ValueError("计划与协调模型调用来源不一致")
+        if record.source_review_route_id is not None:
+            await _validate_follow_up_plan_source(session, run, record, cutoff, snapshot_id)
+        elif (
+            run.graph_version in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS
+            and record.plan.assignment.round_number > 1
+        ):
+            raise ValueError("补查图的后续轮次缺少审查路由来源")
         return record
     except (TaskFactConflict, ValueError) as error:
         if isinstance(error, TaskFactConflict) and error.code.startswith("coordination_policy_"):
@@ -146,6 +157,57 @@ async def validated_plan(
         raise TaskFactConflict(
             "coordination_plan_integrity_violation", "已保存协调计划无法通过完整性校验"
         ) from error
+
+
+async def _validate_follow_up_plan_source(
+    session: AsyncSession,
+    run: InvestigationRunRow,
+    record: CoordinationPlanRecord,
+    cutoff: datetime,
+    snapshot_id: str,
+) -> None:
+    """从不可变路由和来源轮次重建补查提案与系统范围。"""
+
+    from opsswarm.investigation.review_routing.persistence import validated_review_routing
+    from opsswarm.investigation.review_routing.tables import (
+        InvestigationHypothesisReviewRouteRow,
+    )
+
+    if run.graph_version not in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS or record.source_call_id:
+        raise ValueError("当前运行或计划来源不支持补查计划")
+    route_row = await session.get(
+        InvestigationHypothesisReviewRouteRow, record.source_review_route_id
+    )
+    if route_row is None or route_row.investigation_run_id != run.id:
+        raise ValueError("补查计划缺少同运行审查路由")
+    route = await validated_review_routing(session, route_row)
+    expected_proposal = compile_follow_up_proposal(route)
+    if (
+        record.plan.proposal != expected_proposal
+        or record.plan.assignment.round_number != route.decision.round_number + 1
+        or record.policy_sha256 != route.policy_sha256
+        or record.created_at < route.created_at
+    ):
+        raise ValueError("补查计划与审查路由不一致")
+    source_plan_row = await session.get(InvestigationCoordinationPlanRow, route.round_id)
+    if source_plan_row is None or source_plan_row.round_id == record.round_id:
+        raise ValueError("补查计划缺少独立来源轮次计划")
+    source_plan = await validated_plan(session, source_plan_row)
+    source_assignments = source_plan.plan.assignment.tasks
+    source_snapshot_id = source_assignments[0].evidence_snapshot_id
+    source_cutoff = source_assignments[0].window_end
+    if (
+        source_plan.investigation_run_id != record.investigation_run_id
+        or source_plan.round_id != route.round_id
+        or source_snapshot_id is None
+        or any(
+            item.evidence_snapshot_id != source_snapshot_id or item.window_end != source_cutoff
+            for item in source_assignments
+        )
+        or snapshot_id != source_snapshot_id
+        or cutoff != source_cutoff
+    ):
+        raise ValueError("补查计划没有复用来源轮次的冻结范围")
 
 
 def _request(incident: IncidentRow) -> InvestigationRequest:
@@ -364,6 +426,11 @@ class CoordinationPlanStore:
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock
         ) as (session, parent, incident, run, now):
+            if run.graph_version in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS and proposal.round_number > 1:
+                raise TaskFactConflict(
+                    "follow_up_plan_source_required",
+                    "补查图的后续轮次必须由审查路由专用入口创建",
+                )
             rounds = list(
                 await session.scalars(
                     select(InvestigationRoundRow)
@@ -414,6 +481,7 @@ class CoordinationPlanStore:
                     record.plan != plan
                     or record.policy_sha256 != policy_sha256
                     or record.source_call_id != source_call_id
+                    or record.source_review_route_id is not None
                 ):
                     raise TaskFactConflict(
                         "coordination_plan_conflict", "该轮次已绑定另一份协调计划"
@@ -435,6 +503,7 @@ class CoordinationPlanStore:
                 investigation_run_id=run_id,
                 investigation_attempt_id=parent.id,
                 source_call_id=source_call_id,
+                source_review_route_id=None,
                 version=plan.version,
                 policy_sha256=policy_sha256,
                 plan=plan.model_dump(mode="json"),
@@ -444,3 +513,149 @@ class CoordinationPlanStore:
             session.add(row)
             await session.flush()
             return await validated_plan(session, row), True
+
+    async def create_follow_up_plan(
+        self,
+        run_id: UUID,
+        *,
+        lease_token: UUID,
+        source_review_route_id: UUID,
+    ) -> tuple[CoordinationPlanRecord, bool]:
+        """从完整路由来源编译并原子保存第二轮计划、轮次和任务。"""
+
+        from opsswarm.investigation.review_routing.persistence import validated_review_routing
+        from opsswarm.investigation.review_routing.tables import (
+            InvestigationHypothesisReviewRouteRow,
+        )
+
+        async with active_investigation_transaction(
+            self._session_factory, run_id, lease_token, self._clock
+        ) as (session, parent, incident, run, now):
+            if run.graph_version not in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS:
+                raise TaskFactConflict(
+                    "follow_up_planning_not_supported", "只有补查计划图可以创建第二轮计划"
+                )
+            route_row = await session.get(
+                InvestigationHypothesisReviewRouteRow, source_review_route_id
+            )
+            if route_row is None or route_row.investigation_run_id != run_id:
+                raise TaskFactConflict("follow_up_source_invalid", "补查计划缺少同运行审查路由")
+            route = await validated_review_routing(session, route_row)
+            proposal = compile_follow_up_proposal(route)
+            source_plan_row = await session.get(InvestigationCoordinationPlanRow, route.round_id)
+            if source_plan_row is None:
+                raise TaskFactConflict("follow_up_source_invalid", "补查路由缺少来源轮次协调计划")
+            source_plan = await validated_plan(session, source_plan_row)
+            source_assignments = source_plan.plan.assignment.tasks
+            evidence_snapshot_id = source_assignments[0].evidence_snapshot_id
+            observation_cutoff_at = source_assignments[0].window_end
+            if evidence_snapshot_id is None or any(
+                task.evidence_snapshot_id != evidence_snapshot_id
+                or task.window_end != observation_cutoff_at
+                for task in source_assignments
+            ):
+                raise TaskFactConflict("follow_up_source_invalid", "来源轮次没有一致的冻结证据范围")
+            policy_row = await session.get(InvestigationCoordinationPolicyRow, run_id)
+            if policy_row is None:
+                raise TaskFactConflict("follow_up_source_invalid", "补查计划缺少固定协调策略")
+            policy_record = validated_policy(policy_row)
+            if (
+                route.policy_sha256 != policy_record.content_sha256
+                or source_plan.policy_sha256 != policy_record.content_sha256
+            ):
+                raise TaskFactConflict(
+                    "follow_up_source_invalid", "补查路由与来源计划使用的策略不一致"
+                )
+            rounds = list(
+                await session.scalars(
+                    select(InvestigationRoundRow)
+                    .where(InvestigationRoundRow.investigation_run_id == run_id)
+                    .order_by(InvestigationRoundRow.round_number)
+                )
+            )
+            existing_round = next(
+                (item for item in rounds if item.round_number == proposal.round_number), None
+            )
+            expected_round_number = (
+                proposal.round_number if existing_round is not None else len(rounds) + 1
+            )
+            plan = compile_coordination_plan(
+                proposal,
+                policy=policy_record.policy,
+                request=_request(incident),
+                expected_round_number=expected_round_number,
+                existing_task_count=await _prior_task_count(session, run_id, proposal.round_number),
+                observation_cutoff_at=observation_cutoff_at,
+                evidence_snapshot_id=evidence_snapshot_id,
+            )
+            fixed_policy, _ = await _fix_policy(session, run_id, policy_record.policy, now, rounds)
+            if fixed_policy.content_sha256 != route.policy_sha256:
+                raise TaskFactConflict(
+                    "follow_up_source_invalid", "补查计划与固定协调策略散列不一致"
+                )
+            if existing_round is not None:
+                existing_plan = await session.get(
+                    InvestigationCoordinationPlanRow, existing_round.id
+                )
+                if existing_plan is None:
+                    raise TaskFactConflict(
+                        "coordination_plan_missing", "第二轮不是由动态协调计划创建"
+                    )
+                record = await validated_plan(session, existing_plan)
+                if (
+                    record.plan != plan
+                    or record.policy_sha256 != fixed_policy.content_sha256
+                    or record.source_call_id is not None
+                    or record.source_review_route_id != route.id
+                ):
+                    raise TaskFactConflict(
+                        "coordination_plan_conflict", "第二轮已绑定另一份协调计划"
+                    )
+                return record, False
+            round_id, created = await create_round_in_transaction(
+                session,
+                run_id=run_id,
+                incident=incident,
+                assignment=plan.assignment,
+                now=now,
+            )
+            if not created:
+                raise TaskFactConflict(
+                    "coordination_plan_conflict", "第二轮竞争未返回已持久化协调计划"
+                )
+            row = InvestigationCoordinationPlanRow(
+                round_id=round_id,
+                investigation_run_id=run_id,
+                investigation_attempt_id=parent.id,
+                source_call_id=None,
+                source_review_route_id=route.id,
+                version=plan.version,
+                policy_sha256=fixed_policy.content_sha256,
+                plan=plan.model_dump(mode="json"),
+                content_sha256=coordination_hash(plan),
+                created_at=now,
+            )
+            session.add(row)
+            await session.flush()
+            return await validated_plan(session, row), True
+
+    async def get_follow_up_plan(
+        self,
+        run_id: UUID,
+        *,
+        lease_token: UUID,
+        source_review_route_id: UUID,
+    ) -> CoordinationPlanRecord | None:
+        """在有效父租约下读取并重建指定路由派生的第二轮计划。"""
+
+        async with active_investigation_transaction(
+            self._session_factory, run_id, lease_token, self._clock
+        ) as (session, _, _, _, _):
+            row = await session.scalar(
+                select(InvestigationCoordinationPlanRow).where(
+                    InvestigationCoordinationPlanRow.investigation_run_id == run_id,
+                    InvestigationCoordinationPlanRow.source_review_route_id
+                    == source_review_route_id,
+                )
+            )
+            return await validated_plan(session, row) if row is not None else None

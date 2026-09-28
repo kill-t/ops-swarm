@@ -12,6 +12,7 @@ from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_s
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review_routing.persistence import ReviewRoutingStore
 from opsswarm.investigation.review_routing.queries import ReviewRoutingQueries
 from opsswarm.investigation.review_routing.tables import InvestigationHypothesisReviewRouteRow
@@ -35,6 +36,12 @@ async def current_v5_claim(database_session_factory):
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v5")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v5-routing-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),

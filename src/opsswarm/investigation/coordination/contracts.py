@@ -87,6 +87,7 @@ class CoordinationPlanRecord(TaskModel):
     investigation_run_id: UUID
     investigation_attempt_id: UUID
     source_call_id: UUID | None = None
+    source_review_route_id: UUID | None = None
     version: Literal["compiled-coordination-plan-v1"]
     policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     plan: CompiledCoordinationPlan
@@ -95,8 +96,12 @@ class CoordinationPlanRecord(TaskModel):
 
     @model_validator(mode="after")
     def validate_record(self) -> Self:
-        if self.version != self.plan.version or coordination_hash(self.plan) != self.content_sha256:
-            raise ValueError("协调计划记录的版本或散列不一致")
+        if (
+            self.version != self.plan.version
+            or coordination_hash(self.plan) != self.content_sha256
+            or (self.source_call_id is not None and self.source_review_route_id is not None)
+        ):
+            raise ValueError("协调计划记录的版本、来源或散列不一致")
         return self
 
 

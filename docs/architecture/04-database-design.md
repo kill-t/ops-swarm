@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 91 步增量见 [v3 确定性补查计划与第二轮任务持久化](91-deterministic-follow-up-planning.md)：迁移 `0048_follow_up_planning` 在协调计划增加可空 `source_review_route_id`，以复合外键绑定同运行审查路由，并增加来源唯一与互斥约束。图 v6 只为 `follow_up` 原子创建第二轮计划、轮次和待执行任务，不执行该轮或结算父运行。
+
 第 90 步增量见 [v3 确定性审查路由与路由事实持久化](90-deterministic-review-routing.md)：迁移 `0047_review_routing` 新增不可变 `investigation_hypothesis_review_routes`，以复合外键绑定同运行、同轮开放假设、审查事实、父尝试和固定协调策略散列；图 v5 在独立审查后保存 `follow_up`、`await_human` 或 `candidate_evaluation`。路由不新增模型调用，不创建第二轮任务，也不修改父运行、开放假设或审查状态。
 
 第 89 步增量见 [v3 独立假设审查与审查事实持久化](89-independent-hypothesis-review.md)：迁移 `0046_dynamic_review` 新增不可变 `investigation_hypothesis_reviews`，以复合外键绑定同运行、同轮开放假设、父尝试和成功 `review` 调用；调用账本增加根级审查结果约束，并允许图 v1/v2/v3/v4 共存。审查状态固定为 `recorded`，不改写开放假设，也不授予路由或执行资格。
@@ -478,11 +480,11 @@ JSONB 的三种精确字段形状由 Pydantic 在写入和读取时双向校验�
 | 表 | 字段与约束 |
 | --- | --- |
 | `investigation_coordination_policies` | `investigation_run_id` 主键、策略版本、完整策略 JSONB、SHA-256 和创建时间；运行与散列组成候选键，JSON 类型、大小和版本受数据库约束 |
-| `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、可空协调调用来源、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略、父尝试及调用来源 |
+| `investigation_coordination_plans` | `round_id` 主键、运行 ID、父调查尝试 ID、互斥可空的协调调用或审查路由来源、计划版本、策略散列、完整编译计划 JSONB、内容 SHA-256 和创建时间；以复合外键绑定同一运行的轮次、策略、父尝试及来源 |
 
 第 85 步起，v3 在运行创建事务内即写入一条 `investigation_coordination_policies`，并把其版本固定到运行；查询先检查运行版本字段，再复核策略内容和散列。第 83～84 步产生的 v2 内部策略保留原事实，但不回填为 v2 启动契约。
 
-计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md)。第 85 步已在 v3 运行创建事务内固定该策略。
+计划按运行与创建时间建立索引。两表拒绝更新和删除；存在任一协调事实时迁移拒绝降级。旧运行不回填，现有 `investigation_rounds`、`agent_tasks` 和 checkpoint 语义不变。第 84 步允许新计划以 `(source_call_id, investigation_run_id)` 复合外键引用同运行调用账本；来源为空保留第 83 步既有计划，模型创建入口则强制应用层验证成功的根级 `coordinate` 调用。调用表约束该操作使用模型类型、根级范围、第 0 槽及协调输入/结果版本。第 91 步允许第二轮计划改以 `(source_review_route_id, investigation_run_id)` 引用完整补查路由；两种来源不能同时存在，一条路由只能生成一份计划，读取时会从路由和首轮计划重建第二轮分派。详细语义见 [协调模型结构化调用与共享预算账本](84-coordination-model-ledger.md) 和 [确定性补查计划](91-deterministic-follow-up-planning.md)。第 85 步已在 v3 运行创建事务内固定该策略。
 
 ### 4.30 动态开放假设
 

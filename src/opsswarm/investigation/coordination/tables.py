@@ -89,6 +89,25 @@ class InvestigationCoordinationPlanRow(Base):
             ondelete="RESTRICT",
             name="fk_coordination_plans_source_call",
         ),
+        ForeignKeyConstraint(
+            ["source_review_route_id", "investigation_run_id"],
+            [
+                "investigation_hypothesis_review_routes.id",
+                "investigation_hypothesis_review_routes.investigation_run_id",
+            ],
+            ondelete="RESTRICT",
+            use_alter=True,
+            name="fk_coordination_plans_source_review_route",
+        ),
+        UniqueConstraint(
+            "source_review_route_id",
+            "investigation_run_id",
+            name="uq_coordination_plans_source_review_route",
+        ),
+        CheckConstraint(
+            "source_call_id IS NULL OR source_review_route_id IS NULL",
+            name="ck_coordination_plans_source_exclusive",
+        ),
         CheckConstraint(
             "version = 'compiled-coordination-plan-v1' AND "
             "COALESCE(plan ->> 'version', '') = version AND "
@@ -113,6 +132,7 @@ class InvestigationCoordinationPlanRow(Base):
         PostgreSQLUUID(as_uuid=True), nullable=False
     )
     source_call_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    source_review_route_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     version: Mapped[str] = mapped_column(String(40), nullable=False)
     policy_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
