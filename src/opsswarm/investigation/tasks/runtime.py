@@ -241,31 +241,41 @@ class DynamicTaskRuntime(_PersistentTaskRuntime):
         self,
         *,
         round_id: UUID,
+        expected_round_number: int,
         assignment: TaskAssignment,
         operation: Callable[[], Awaitable[SpecialistTaskResult]],
     ) -> SpecialistTaskResult:
         await self.require_active()
-        task = await self._planned_task(round_id, assignment)
+        task = await self._planned_task(round_id, expected_round_number, assignment)
         return await self._execute_task(task, operation)
 
     async def get_completed(
-        self, *, round_id: UUID, assignment: TaskAssignment
+        self,
+        *,
+        round_id: UUID,
+        expected_round_number: int,
+        assignment: TaskAssignment,
     ) -> SpecialistTaskResult:
         """最终返回前从业务库复核已成功结果、证据与摘要。"""
 
         await self.require_active()
-        task = await self._planned_task(round_id, assignment)
+        task = await self._planned_task(round_id, expected_round_number, assignment)
         if task.status is not TaskStatus.SUCCEEDED:
-            raise TaskFactConflict("task_result_missing", "动态首轮任务尚未成功")
+            raise TaskFactConflict("task_result_missing", "动态任务尚未成功")
         return await self._completed_result(task)
 
-    async def _planned_task(self, round_id: UUID, assignment: TaskAssignment) -> TaskRecord:
+    async def _planned_task(
+        self,
+        round_id: UUID,
+        expected_round_number: int,
+        assignment: TaskAssignment,
+    ) -> TaskRecord:
         if assignment.evidence_snapshot_id != self.snapshot_id:
             raise TaskFactConflict("task_assignment_mismatch", "动态任务不属于当前冻结快照")
         snapshot = await self._queries.get_snapshot(self.run_id)
         rounds = [item for item in snapshot.rounds if item.id == round_id]
-        if len(rounds) != 1 or rounds[0].round_number != 1:
-            raise TaskFactConflict("task_round_mismatch", "动态首轮缺少匹配的业务轮次")
+        if len(rounds) != 1 or rounds[0].round_number != expected_round_number:
+            raise TaskFactConflict("task_round_mismatch", "动态任务缺少匹配的业务轮次")
         tasks = [
             item for item in rounds[0].tasks if item.assignment.task_key == assignment.task_key
         ]

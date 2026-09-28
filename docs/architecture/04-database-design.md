@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 92 步增量见 [v3 第二轮专业任务执行与恢复](92-second-round-investigation.md)：迁移 `0049_second_round_investigation` 只把 `investigation_runs.graph_version` 约束扩展到图 v7，不增加业务表、字段或公开 API。图 v7 复用已存在的第二轮计划、轮次、任务、尝试、证据、调用、结果、工作摘要和事件；存在图 v7 运行时拒绝降级到 `0048`。
+
 第 91 步增量见 [v3 确定性补查计划与第二轮任务持久化](91-deterministic-follow-up-planning.md)：迁移 `0048_follow_up_planning` 在协调计划增加可空 `source_review_route_id`，以复合外键绑定同运行审查路由，并增加来源唯一与互斥约束。图 v6 只为 `follow_up` 原子创建第二轮计划、轮次和待执行任务，不执行该轮或结算父运行。
 
 第 90 步增量见 [v3 确定性审查路由与路由事实持久化](90-deterministic-review-routing.md)：迁移 `0047_review_routing` 新增不可变 `investigation_hypothesis_review_routes`，以复合外键绑定同运行、同轮开放假设、审查事实、父尝试和固定协调策略散列；图 v5 在独立审查后保存 `follow_up`、`await_human` 或 `candidate_evaluation`。路由不新增模型调用，不创建第二轮任务，也不修改父运行、开放假设或审查状态。
@@ -229,7 +231,7 @@ erDiagram
 | 字段组 | 说明 |
 | --- | --- |
 | 标识与关联 | UUID 主键、`incident_id` 外键；同一 Incident 最多一个 `queued` 或 `running` 运行 |
-| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，图 v1 保留协调阶段恢复，图 v2 承载动态首轮专业分派，图 v3 增加首轮综合，旧工作流 v1/v2 两列保持空 |
+| 模式与版本 | `mode` 支持 `single_agent`、`multi_agent`；`data_source_mode` 支持 `frozen`、`live`；保存 `workflow_version` 与对应 `prompt_version`，多 Agent 必须有 `graph_thread_id` 关联独立 checkpoint 数据库；v3 另固定 `graph_version` 与 `coordination_policy_version`，图 v1～v6 依次保留协调、首轮执行、综合、审查、路由和第二轮计划恢复语义，图 v7 增加第二轮专业任务执行；旧工作流 v1/v2 两列保持空 |
 | 状态 | `queued`、`running`、`succeeded`、`failed` |
 | 结果 | 成功时保存经过 Pydantic 校验的 `result` 与可选 `metrics` JSONB |
 | 错误 | 保存限制长度的最后错误摘要，不保存堆栈和任意模型输入 |

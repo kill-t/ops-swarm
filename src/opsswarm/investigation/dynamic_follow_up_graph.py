@@ -41,7 +41,7 @@ from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.runtime import DynamicTaskRuntime
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION,
     WorkflowVersion,
 )
 
@@ -150,7 +150,7 @@ class DynamicFollowUpGraph:
             {
                 "request": request,
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION,
                 "specialist_results": [],
             },
             config=self._execution_config(thread_id),
@@ -254,6 +254,7 @@ class DynamicFollowUpGraph:
 
         result = await self._runtime.run(
             round_id=state["round_id"],
+            expected_round_number=1,
             assignment=assignment,
             operation=operation,
         )
@@ -318,7 +319,9 @@ class DynamicFollowUpGraph:
             raise RuntimeError("checkpoint 协调计划与业务事实不一致")
         completed = [
             await self._runtime.get_completed(
-                round_id=persisted_plan.round_id, assignment=assignment
+                round_id=persisted_plan.round_id,
+                expected_round_number=1,
+                assignment=assignment,
             )
             for assignment in persisted_plan.plan.assignment.tasks
         ]
@@ -393,7 +396,7 @@ class DynamicFollowUpGraph:
     def _validate_state_version(state: Mapping[str, object]) -> None:
         if (
             state.get("workflow_version") != WorkflowVersion.V3.value
-            or state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or state.get("graph_version") != LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION
         ):
             raise RuntimeError("动态首轮图状态版本不兼容")
 
@@ -406,7 +409,7 @@ class DynamicFollowUpGraph:
             "max_concurrency": 3,
             "metadata": {
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION,
             },
             "configurable": {"thread_id": normalized},
         }
@@ -420,7 +423,7 @@ class DynamicFollowUpGraph:
             raise RuntimeError("checkpoint 工作流版本不兼容")
         if state.get("workflow_version") != WorkflowVersion.V3.value:
             raise RuntimeError("checkpoint 状态工作流版本不兼容")
-        if checkpoint.metadata.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if checkpoint.metadata.get("graph_version") != LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION:
             raise RuntimeError("checkpoint 图版本不兼容")
-        if state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if state.get("graph_version") != LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION:
             raise RuntimeError("checkpoint 状态图版本不兼容")

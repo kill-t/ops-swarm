@@ -224,6 +224,7 @@ class DynamicSynthesisGraph:
 
         result = await self._runtime.run(
             round_id=state["round_id"],
+            expected_round_number=1,
             assignment=assignment,
             operation=operation,
         )
@@ -266,7 +267,9 @@ class DynamicSynthesisGraph:
             raise RuntimeError("checkpoint 协调计划与业务事实不一致")
         completed = [
             await self._runtime.get_completed(
-                round_id=persisted_plan.round_id, assignment=assignment
+                round_id=persisted_plan.round_id,
+                expected_round_number=1,
+                assignment=assignment,
             )
             for assignment in persisted_plan.plan.assignment.tasks
         ]

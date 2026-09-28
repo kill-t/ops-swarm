@@ -103,3 +103,31 @@ class FollowUpPlanningResult(FirstRoundRoutingResult):
         elif self.follow_up_plan is not None:
             raise ValueError("非补查路由不能携带后续协调计划")
         return self
+
+
+class FollowUpExecutionResult(FollowUpPlanningResult):
+    """首轮路由、可选第二轮计划及其已提交专业结果。"""
+
+    follow_up_results: tuple[SpecialistTaskResult, ...] = Field(default=(), max_length=3)
+
+    @model_validator(mode="after")
+    def validate_follow_up_results(self) -> Self:
+        if self.review_route.decision.route != "follow_up":
+            if self.follow_up_results:
+                raise ValueError("非补查路由不能携带第二轮专业结果")
+            return self
+        if self.follow_up_plan is None:
+            # 父契约会提供面向调用方的计划缺失错误，此处避免依赖无效字段。
+            return self
+        assignments = self.follow_up_plan.plan.assignment.tasks
+        by_role = {item.report.specialist: item for item in self.follow_up_results}
+        if len(by_role) != len(self.follow_up_results) or set(by_role) != {
+            item.role for item in assignments
+        }:
+            raise ValueError("第二轮专业结果必须与补查计划选择的角色完全一致")
+        if any(
+            by_role[item.role].evidence_snapshot_id != item.evidence_snapshot_id
+            for item in assignments
+        ):
+            raise ValueError("第二轮专业结果与补查计划的证据快照不一致")
+        return self

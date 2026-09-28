@@ -112,7 +112,7 @@ async def test_synthesis_version_downgrade_refuses_persisted_v3_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0048_follow_up_planning"
+                == "0049_second_round_investigation"
             )
             assert (
                 await session.scalar(
@@ -146,7 +146,7 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0048_follow_up_planning"
+            == "0049_second_round_investigation"
         )
         assert (
             await session.scalar(
@@ -178,7 +178,7 @@ async def test_routing_version_downgrade_refuses_persisted_v5_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0048_follow_up_planning"
+            == "0049_second_round_investigation"
         )
         assert (
             await session.scalar(
@@ -197,6 +197,12 @@ async def test_follow_up_version_downgrade_refuses_persisted_v6_graph(
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v6")
+        )
 
     with pytest.raises(DBAPIError, match="不能删除已保存的补查计划图或补查计划来源"):
         await asyncio.to_thread(command.downgrade, config(), "0047_review_routing")
@@ -204,7 +210,7 @@ async def test_follow_up_version_downgrade_refuses_persisted_v6_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0048_follow_up_planning"
+            == "0049_second_round_investigation"
         )
         assert (
             await session.scalar(
@@ -212,6 +218,32 @@ async def test_follow_up_version_downgrade_refuses_persisted_v6_graph(
                 {"run_id": started.run.id},
             )
             == "dynamic-investigation-graph-v6"
+        )
+
+
+async def test_second_round_version_downgrade_refuses_persisted_v7_graph(
+    database_session_factory,
+) -> None:
+    _, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+
+    with pytest.raises(DBAPIError, match="不能删除已保存的第二轮专业调查图"):
+        await asyncio.to_thread(command.downgrade, config(), "0048_follow_up_planning")
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0049_second_round_investigation"
+        )
+        assert (
+            await session.scalar(
+                text("SELECT graph_version FROM investigation_runs WHERE id=:run_id"),
+                {"run_id": started.run.id},
+            )
+            == "dynamic-investigation-graph-v7"
         )
 
 
@@ -237,7 +269,7 @@ async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0048_follow_up_planning"
+                == "0049_second_round_investigation"
             )
             assert (
                 await session.scalar(
