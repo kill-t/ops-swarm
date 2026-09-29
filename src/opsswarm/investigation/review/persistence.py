@@ -26,6 +26,7 @@ from opsswarm.investigation.review.tables import InvestigationHypothesisReviewRo
 from opsswarm.investigation.synthesis.persistence import validated_open_hypothesis
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.tables import InvestigationRoundRow
 from opsswarm.investigation.workflow_versions import DYNAMIC_REVIEW_GRAPH_VERSIONS
 
 
@@ -37,6 +38,8 @@ async def validated_review_call(
     session: AsyncSession,
     run: InvestigationRunRow,
     call_id: UUID,
+    *,
+    expected_round_number: int | None = None,
 ) -> tuple[ModelInput, ReviewModelResult, ContextManifest]:
     """从当前业务材料重建一次成功独立审查调用。"""
 
@@ -60,6 +63,7 @@ async def validated_review_call(
         or row.context_manifest is None
         or row.call_result is None
         or row.finished_at is None
+        or (expected_round_number is not None and row.invocation_index != expected_round_number - 1)
     ):
         raise TaskFactConflict("hypothesis_review_call_invalid", "独立审查缺少有效的成功模型调用")
     try:
@@ -78,6 +82,7 @@ async def validated_review_call(
         model_input,
         manifest,
         manifest.prompt_version,
+        invocation_index=row.invocation_index,
     )
     if (
         row.model_input != model_input.model_dump(mode="json")
@@ -106,7 +111,36 @@ async def validated_hypothesis_review(
     ):
         raise TaskFactConflict("hypothesis_review_source_invalid", "独立审查不属于当前开放假设")
     hypothesis = await validated_open_hypothesis(session, hypothesis_row)
-    _, called, _ = await validated_review_call(session, run, row.source_call_id)
+    round_number = await session.scalar(
+        select(InvestigationRoundRow.round_number).where(
+            InvestigationRoundRow.id == row.round_id,
+            InvestigationRoundRow.investigation_run_id == row.investigation_run_id,
+        )
+    )
+    if round_number not in (1, 2):
+        raise TaskFactConflict("hypothesis_review_source_invalid", "独立审查轮次不受支持")
+    successful_call_ids = tuple(
+        await session.scalars(
+            select(CallReservationRow.id)
+            .where(
+                CallReservationRow.investigation_run_id == run.id,
+                CallReservationRow.operation == CallOperation.REVIEW.value,
+                CallReservationRow.invocation_index == round_number - 1,
+                CallReservationRow.status == "succeeded",
+            )
+            .order_by(CallReservationRow.sequence)
+        )
+    )
+    if successful_call_ids != (row.source_call_id,):
+        raise TaskFactConflict(
+            "hypothesis_review_call_conflict", "当前轮次必须且只能存在一条成功独立审查调用"
+        )
+    _, called, manifest = await validated_review_call(
+        session,
+        run,
+        row.source_call_id,
+        expected_round_number=round_number,
+    )
     source_call = await session.get(CallReservationRow, row.source_call_id)
     assert source_call is not None and source_call.finished_at is not None
     try:
@@ -115,8 +149,13 @@ async def validated_hypothesis_review(
         raise TaskFactConflict(
             "hypothesis_review_integrity_violation", "独立审查内容无法通过校验"
         ) from error
+    hypothesis_materials = [item for item in manifest.materials if item.kind == "open_hypothesis"]
     if (
         HypothesisReview.from_proposal(called.proposal) != record.review
+        or len(hypothesis_materials) != 1
+        or hypothesis_materials[0].material_id != hypothesis.id
+        or hypothesis_materials[0].version != hypothesis.version
+        or hypothesis_materials[0].content_sha256 != hypothesis.content_sha256
         or row.created_at < hypothesis.created_at
         or row.created_at < source_call.finished_at
     ):
@@ -164,17 +203,30 @@ class HypothesisReviewStore:
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock
         ) as (session, parent, _, run, now):
-            _, called, manifest = await validated_review_call(session, run, source_call_id)
-            if called.proposal != proposal:
-                raise TaskFactConflict(
-                    "hypothesis_review_call_mismatch", "独立审查与模型调用返回不一致"
-                )
             hypothesis_row = await session.get(InvestigationOpenHypothesisRow, open_hypothesis_id)
             if hypothesis_row is None or hypothesis_row.investigation_run_id != run_id:
                 raise TaskFactConflict(
                     "hypothesis_review_source_invalid", "独立审查缺少同运行开放假设"
                 )
             hypothesis = await validated_open_hypothesis(session, hypothesis_row)
+            round_number = await session.scalar(
+                select(InvestigationRoundRow.round_number).where(
+                    InvestigationRoundRow.id == hypothesis.round_id,
+                    InvestigationRoundRow.investigation_run_id == run_id,
+                )
+            )
+            if round_number not in (1, 2):
+                raise TaskFactConflict("hypothesis_review_source_invalid", "独立审查轮次不受支持")
+            _, called, manifest = await validated_review_call(
+                session,
+                run,
+                source_call_id,
+                expected_round_number=round_number,
+            )
+            if called.proposal != proposal:
+                raise TaskFactConflict(
+                    "hypothesis_review_call_mismatch", "独立审查与模型调用返回不一致"
+                )
             hypothesis_materials = [
                 item for item in manifest.materials if str(item.kind) == "open_hypothesis"
             ]

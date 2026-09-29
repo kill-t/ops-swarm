@@ -65,6 +65,7 @@ class ContextManifest(TaskModel):
         "dynamic-synthesis-v1",
         "dynamic-follow-up-synthesis-v1",
         "independent-review-v1",
+        "independent-follow-up-review-v1",
     ] = "fixed-roles-v1"
     workflow_version: Literal["v2", "v3"] = "v2"
     prompt_version: Literal[
@@ -75,6 +76,7 @@ class ContextManifest(TaskModel):
         "open-hypothesis-synthesis-v1",
         "follow-up-open-hypothesis-synthesis-v1",
         "open-hypothesis-review-v1",
+        "follow-up-open-hypothesis-review-v1",
     ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=2, max_length=11)
@@ -120,12 +122,21 @@ class ContextManifest(TaskModel):
                 raise ValueError("动态综合上下文策略、材料或权限不匹配")
             return self
         if self.role == "reviewer":
+            review_version = (
+                self.role_version,
+                self.prompt_version,
+            ) in (
+                ("independent-review-v1", "open-hypothesis-review-v1"),
+                (
+                    "independent-follow-up-review-v1",
+                    "follow-up-open-hypothesis-review-v1",
+                ),
+            )
             if (
                 self.version != "summary-context-v1"
                 or self.workflow_version != "v3"
                 or self.task_id is not None
-                or self.role_version != "independent-review-v1"
-                or self.prompt_version != "open-hypothesis-review-v1"
+                or not review_version
                 or self.tool_names
                 or self.trimming
                 or len(self.materials) < 5

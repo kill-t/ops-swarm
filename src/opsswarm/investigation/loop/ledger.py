@@ -164,7 +164,13 @@ async def validate_call_result(
         if status == "succeeded":
             if not isinstance(result, ReviewModelResult):
                 raise conflict("独立审查成功结算必须保存结构化审查提案")
-            sources = await load_sources(session, run, CallOperation.REVIEW, None)
+            sources = await load_sources(
+                session,
+                run,
+                CallOperation.REVIEW,
+                None,
+                invocation_index=row.invocation_index,
+            )
             if sources.open_hypothesis is None:
                 raise conflict("独立审查缺少开放假设")
             validate_review_evidence(

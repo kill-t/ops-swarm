@@ -12,7 +12,10 @@ from sqlalchemy import update
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
 from opsswarm.investigation.budget.queries import CallBudgetQueries
-from opsswarm.investigation.context.prompts import HYPOTHESIS_REVIEW_PROMPT
+from opsswarm.investigation.context.prompts import (
+    FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT,
+    HYPOTHESIS_REVIEW_PROMPT,
+)
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.persistence import HypothesisReviewStore
@@ -33,10 +36,18 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class ReviewReplies:
-    def __init__(self, db, roles, *, route_case: str | None = None) -> None:
+    def __init__(
+        self,
+        db,
+        roles,
+        *,
+        route_case: str | None = None,
+        allow_follow_up_review: bool = False,
+    ) -> None:
         self.professionals = DynamicReplies(db, proposal_for(*roles))
         self.calls = CallBudgetQueries(db)
         self.route_case = route_case
+        self.allow_follow_up_review = allow_follow_up_review
         self.synthesis_inputs = []
         self.review_inputs = []
 
@@ -62,7 +73,12 @@ class ReviewReplies:
             )
 
         self.review_inputs.append(data)
-        assert payload["messages"][0]["content"] == HYPOTHESIS_REVIEW_PROMPT
+        expected_prompts = (
+            (HYPOTHESIS_REVIEW_PROMPT, FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT)
+            if self.allow_follow_up_review
+            else (HYPOTHESIS_REVIEW_PROMPT,)
+        )
+        assert payload["messages"][0]["content"] in expected_prompts
         run_id = UUID(data["task_context"]["investigation_run_id"])
         snapshot = await self.calls.get_snapshot(run_id)
         review_call = next(
@@ -80,8 +96,13 @@ class ReviewReplies:
         assert review_manifest is not None and synthesis_manifest is not None
         assert review_manifest.workflow_version == "v3"
         assert review_manifest.role == "reviewer"
-        assert review_manifest.role_version == "independent-review-v1"
-        assert review_manifest.prompt_version == "open-hypothesis-review-v1"
+        follow_up = payload["messages"][0]["content"] == FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT
+        assert review_manifest.role_version == (
+            "independent-follow-up-review-v1" if follow_up else "independent-review-v1"
+        )
+        assert review_manifest.prompt_version == (
+            "follow-up-open-hypothesis-review-v1" if follow_up else "open-hypothesis-review-v1"
+        )
         assert review_manifest.tool_names == ()
         assert review_manifest.materials[:-1] == synthesis_manifest.materials
         assert review_manifest.materials[-1].kind == "open_hypothesis"

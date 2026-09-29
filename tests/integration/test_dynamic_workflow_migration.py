@@ -1,7 +1,9 @@
 """真实 PostgreSQL 验证 v3 启动契约迁移与降级保护。"""
 
 import asyncio
+from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
@@ -12,7 +14,7 @@ from alembic import command
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from tests.loop_helpers import loop_policy
-from tests.task_facts_helpers import started_run
+from tests.task_facts_helpers import BASE_TIME, started_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -112,7 +114,7 @@ async def test_synthesis_version_downgrade_refuses_persisted_v3_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0050_second_round_synthesis"
+                == "0051_second_round_review"
             )
             assert (
                 await session.scalar(
@@ -146,7 +148,7 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0050_second_round_synthesis"
+            == "0051_second_round_review"
         )
         assert (
             await session.scalar(
@@ -178,7 +180,7 @@ async def test_routing_version_downgrade_refuses_persisted_v5_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0050_second_round_synthesis"
+            == "0051_second_round_review"
         )
         assert (
             await session.scalar(
@@ -210,7 +212,7 @@ async def test_follow_up_version_downgrade_refuses_persisted_v6_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0050_second_round_synthesis"
+            == "0051_second_round_review"
         )
         assert (
             await session.scalar(
@@ -242,7 +244,7 @@ async def test_second_round_version_downgrade_refuses_persisted_v7_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0050_second_round_synthesis"
+            == "0051_second_round_review"
         )
         assert (
             await session.scalar(
@@ -261,6 +263,12 @@ async def test_second_round_synthesis_downgrade_refuses_persisted_v8_graph(
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v8")
+        )
 
     with pytest.raises(DBAPIError, match="不能删除已保存的第二轮综合图"):
         await asyncio.to_thread(
@@ -272,7 +280,7 @@ async def test_second_round_synthesis_downgrade_refuses_persisted_v8_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0050_second_round_synthesis"
+            == "0051_second_round_review"
         )
         assert (
             await session.scalar(
@@ -280,6 +288,97 @@ async def test_second_round_synthesis_downgrade_refuses_persisted_v8_graph(
                 {"run_id": started.run.id},
             )
             == "dynamic-investigation-graph-v8"
+        )
+
+
+async def test_second_round_review_downgrade_refuses_persisted_v9_graph(
+    database_session_factory,
+) -> None:
+    _, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+
+    with pytest.raises(DBAPIError, match="不能删除已保存的第二轮独立审查图"):
+        await asyncio.to_thread(
+            command.downgrade,
+            config(),
+            "0050_second_round_synthesis",
+        )
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0051_second_round_review"
+        )
+        assert (
+            await session.scalar(
+                text("SELECT graph_version FROM investigation_runs WHERE id=:run_id"),
+                {"run_id": started.run.id},
+            )
+            == "dynamic-investigation-graph-v9"
+        )
+
+
+async def test_second_round_review_downgrade_refuses_persisted_second_review_call(
+    database_session_factory,
+) -> None:
+    store, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+    claim = await store.claim_next(
+        worker_id="second-review-migration-test",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+        lease_duration=timedelta(seconds=30),
+        supported_workflow_versions=(WorkflowVersion.V3,),
+    )
+    assert claim is not None
+    call_id = uuid4()
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v8")
+        )
+        await session.execute(
+            text(
+                "INSERT INTO investigation_call_reservations "
+                "(id,investigation_run_id,investigation_attempt_id,sequence,invocation_index,"
+                "idempotency_key,operation,kind,status,reserved_at) VALUES "
+                "(:id,:run_id,:attempt_id,1,1,:key,'review','model','reserved',:reserved_at)"
+            ),
+            {
+                "id": call_id,
+                "run_id": started.run.id,
+                "attempt_id": claim.attempt.id,
+                "key": f"{claim.attempt.id}:root:review:1",
+                "reserved_at": BASE_TIME + timedelta(seconds=2),
+            },
+        )
+
+    with pytest.raises(DBAPIError, match="不能删除已保存的第二轮独立审查调用"):
+        await asyncio.to_thread(
+            command.downgrade,
+            config(),
+            "0050_second_round_synthesis",
+        )
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0051_second_round_review"
+        )
+        assert (
+            await session.scalar(
+                text(
+                    "SELECT invocation_index FROM investigation_call_reservations WHERE id=:call_id"
+                ),
+                {"call_id": call_id},
+            )
+            == 1
         )
 
 
@@ -305,7 +404,7 @@ async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0050_second_round_synthesis"
+                == "0051_second_round_review"
             )
             assert (
                 await session.scalar(

@@ -155,3 +155,28 @@ class SecondRoundSynthesisResult(FollowUpExecutionResult):
         ):
             raise ValueError("补查路由必须携带绑定第二轮计划的开放假设")
         return self
+
+
+class SecondRoundReviewResult(SecondRoundSynthesisResult):
+    """第二轮开放假设及其可选独立审查，仍不代表最终路由或结论。"""
+
+    follow_up_hypothesis_review: HypothesisReviewRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_follow_up_review(self) -> Self:
+        if self.review_route.decision.route != "follow_up":
+            if self.follow_up_hypothesis_review is not None:
+                raise ValueError("非补查路由不能携带第二轮独立审查")
+            return self
+        if self.follow_up_hypothesis is None:
+            # 父契约负责报告假设缺失；此处避免读取无效字段。
+            return self
+        review = self.follow_up_hypothesis_review
+        if (
+            review is None
+            or review.investigation_run_id != self.follow_up_hypothesis.investigation_run_id
+            or review.round_id != self.follow_up_hypothesis.round_id
+            or review.open_hypothesis_id != self.follow_up_hypothesis.id
+        ):
+            raise ValueError("补查路由必须携带绑定第二轮开放假设的独立审查")
+        return self

@@ -19,13 +19,19 @@ from opsswarm.investigation.context.contracts import (
     ContextSources,
 )
 from opsswarm.investigation.context.hashing import content_hash
-from opsswarm.investigation.context.prompts import HYPOTHESIS_REVIEW_PROMPT
+from opsswarm.investigation.context.prompts import (
+    FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT,
+    HYPOTHESIS_REVIEW_PROMPT,
+)
 from opsswarm.investigation.context.validation import validate_context
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
 
 REVIEW_PROMPT_VERSION: Literal["open-hypothesis-review-v1"] = "open-hypothesis-review-v1"
+FOLLOW_UP_REVIEW_PROMPT_VERSION: Literal["follow-up-open-hypothesis-review-v1"] = (
+    "follow-up-open-hypothesis-review-v1"
+)
 
 
 class ReviewContextBuilder:
@@ -44,6 +50,7 @@ class ReviewContextBuilder:
             or operation != CallOperation.REVIEW
             or sources.open_hypothesis is None
             or sources.source_synthesis_manifest is None
+            or sources.round_number not in (1, 2)
         ):
             raise TaskFactConflict("context_operation_invalid", "独立审查缺少固定的假设来源")
         hypothesis = OpenHypothesisRecord.model_validate(
@@ -72,7 +79,7 @@ class ReviewContextBuilder:
                     raise ValueError("摘要不匹配当前业务材料")
             except ValueError:
                 raise TaskFactConflict(
-                    "context_summary_mismatch", "独立审查需要与首轮事实一致的工作摘要"
+                    "context_summary_mismatch", "独立审查需要与当前轮次事实一致的工作摘要"
                 ) from None
             summaries.append(record)
 
@@ -161,9 +168,12 @@ class ReviewContextBuilder:
         )
         if len(serialized.encode("utf-8")) > 262144:
             raise CallBudgetExceeded("model_input_too_large")
+        follow_up = sources.round_number == 2
+        prompt = FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT if follow_up else HYPOTHESIS_REVIEW_PROMPT
+        prompt_version = FOLLOW_UP_REVIEW_PROMPT_VERSION if follow_up else REVIEW_PROMPT_VERSION
         model_input = ModelInput(
             messages=(
-                TextModelMessage(role="system", content=HYPOTHESIS_REVIEW_PROMPT),
+                TextModelMessage(role="system", content=prompt),
                 TextModelMessage(role="user", content=serialized),
             ),
             output_schema=supplied.output_schema,
@@ -178,7 +188,7 @@ class ReviewContextBuilder:
                 content_sha256=hypothesis.content_sha256,
             ),
         )
-        allocation = allocate_input(policy, model_input, prompt_version=REVIEW_PROMPT_VERSION)
+        allocation = allocate_input(policy, model_input, prompt_version=prompt_version)
         return ContextPacket(
             model_input=model_input,
             manifest=ContextManifest(
@@ -186,9 +196,11 @@ class ReviewContextBuilder:
                 investigation_run_id=sources.run_id,
                 task_id=None,
                 role="reviewer",
-                role_version="independent-review-v1",
+                role_version=(
+                    "independent-follow-up-review-v1" if follow_up else "independent-review-v1"
+                ),
                 workflow_version="v3",
-                prompt_version=REVIEW_PROMPT_VERSION,
+                prompt_version=prompt_version,
                 evidence_policy_version=sources.evidence_policy_version,
                 materials=materials,
                 allocation=allocation,

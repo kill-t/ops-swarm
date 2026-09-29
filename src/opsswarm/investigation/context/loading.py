@@ -27,6 +27,7 @@ from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_REVIEW_GRAPH_VERSIONS,
+    DYNAMIC_SECOND_ROUND_REVIEW_GRAPH_VERSIONS,
     DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
 )
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
@@ -86,8 +87,15 @@ async def load_sources(
                 raise TaskFactConflict(
                     "context_scope_mismatch", "动态综合调用序号没有对应的受支持业务轮次"
                 )
-        elif operation == CallOperation.REVIEW and invocation_index == 0:
-            round_number = 1
+        elif operation == CallOperation.REVIEW:
+            round_number = invocation_index + 1
+            if round_number not in (1, 2) or (
+                round_number == 2
+                and run.graph_version not in DYNAMIC_SECOND_ROUND_REVIEW_GRAPH_VERSIONS
+            ):
+                raise TaskFactConflict(
+                    "context_scope_mismatch", "动态审查调用序号没有对应的受支持业务轮次"
+                )
         else:
             raise TaskFactConflict("context_scope_mismatch", "动态根级调用缺少受支持的轮次范围")
         round_row = await session.scalar(
@@ -137,7 +145,10 @@ async def load_sources(
                 raise TaskFactConflict("context_scope_mismatch", "独立审查缺少开放假设")
             open_hypothesis = await validated_open_hypothesis(session, hypothesis_row)
             _, _, source_synthesis_manifest = await validated_synthesis_call(
-                session, run, open_hypothesis.source_call_id
+                session,
+                run,
+                open_hypothesis.source_call_id,
+                expected_round_number=round_number,
             )
     else:
         rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key)))

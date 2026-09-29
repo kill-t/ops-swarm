@@ -10,6 +10,7 @@ from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.contracts import HypothesisReviewRecord
 from opsswarm.investigation.review.persistence import validated_hypothesis_review
 from opsswarm.investigation.review.tables import InvestigationHypothesisReviewRow
+from opsswarm.investigation.tasks.tables import InvestigationRoundRow
 
 
 class HypothesisReviewQueries:
@@ -23,8 +24,15 @@ class HypothesisReviewQueries:
             rows = list(
                 await session.scalars(
                     select(InvestigationHypothesisReviewRow)
+                    .join(
+                        InvestigationRoundRow,
+                        InvestigationRoundRow.id == InvestigationHypothesisReviewRow.round_id,
+                    )
                     .where(InvestigationHypothesisReviewRow.investigation_run_id == run_id)
-                    .order_by(InvestigationHypothesisReviewRow.created_at)
+                    .order_by(
+                        InvestigationRoundRow.round_number,
+                        InvestigationHypothesisReviewRow.id,
+                    )
                 )
             )
             records = []

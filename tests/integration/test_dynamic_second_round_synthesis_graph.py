@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
@@ -13,6 +14,7 @@ from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.context.prompts import FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.synthesis.persistence import OpenHypothesisStore
 from opsswarm.investigation.synthesis.queries import OpenHypothesisQueries
@@ -46,11 +48,17 @@ class SecondRoundSynthesisReplies(ReviewReplies):
 
 
 async def current_v8_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v8")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v8-second-round-synthesis-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
