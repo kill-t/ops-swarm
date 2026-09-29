@@ -19,7 +19,11 @@ from opsswarm.investigation.context.contracts import (
     ContextSources,
 )
 from opsswarm.investigation.context.hashing import content_hash
-from opsswarm.investigation.context.prompts import OPEN_HYPOTHESIS_PROMPT, SUMMARY_PROMPT
+from opsswarm.investigation.context.prompts import (
+    FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
+    OPEN_HYPOTHESIS_PROMPT,
+    SUMMARY_PROMPT,
+)
 from opsswarm.investigation.context.validation import validate_context
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
@@ -27,6 +31,9 @@ from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecor
 SUMMARY_PROMPT_VERSION: Literal["summary-context-v1"] = "summary-context-v1"
 OPEN_HYPOTHESIS_PROMPT_VERSION: Literal["open-hypothesis-synthesis-v1"] = (
     "open-hypothesis-synthesis-v1"
+)
+FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT_VERSION: Literal["follow-up-open-hypothesis-synthesis-v1"] = (
+    "follow-up-open-hypothesis-synthesis-v1"
 )
 
 
@@ -126,8 +133,23 @@ class SummaryContextBuilder:
             },
         }
         dynamic = sources.workflow_version == "v3"
-        prompt = OPEN_HYPOTHESIS_PROMPT if dynamic else SUMMARY_PROMPT
-        prompt_version = OPEN_HYPOTHESIS_PROMPT_VERSION if dynamic else SUMMARY_PROMPT_VERSION
+        if dynamic and sources.round_number not in (1, 2):
+            raise TaskFactConflict("context_scope_mismatch", "动态综合上下文缺少受支持的业务轮次")
+        follow_up = dynamic and sources.round_number == 2
+        prompt = (
+            FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT
+            if follow_up
+            else OPEN_HYPOTHESIS_PROMPT
+            if dynamic
+            else SUMMARY_PROMPT
+        )
+        prompt_version = (
+            FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT_VERSION
+            if follow_up
+            else OPEN_HYPOTHESIS_PROMPT_VERSION
+            if dynamic
+            else SUMMARY_PROMPT_VERSION
+        )
         if supplied.structured_output_method == "json_mode":
             prompt += " 必须只输出符合下方 JSON Schema 的 JSON 对象。"
             assembled["output_json_schema"] = supplied.output_schema
@@ -171,7 +193,13 @@ class SummaryContextBuilder:
                 task_id=None,
                 role="synthesis",
                 workflow_version=sources.workflow_version,
-                role_version="dynamic-synthesis-v1" if dynamic else "fixed-roles-v1",
+                role_version=(
+                    "dynamic-follow-up-synthesis-v1"
+                    if follow_up
+                    else "dynamic-synthesis-v1"
+                    if dynamic
+                    else "fixed-roles-v1"
+                ),
                 prompt_version=prompt_version,
                 evidence_policy_version=sources.evidence_policy_version,
                 materials=materials,

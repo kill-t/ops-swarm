@@ -24,10 +24,13 @@ class TaskContextService:
         operation: CallOperation,
         task_id: UUID | None,
         policy: ModelBudgetPolicy,
+        invocation_index: int = 0,
     ) -> ContextPacket:
         async with self._factory() as session:
             run = await session.get(InvestigationRunRow, self._run_id)
             if run is None:
                 raise InvestigationRunNotFound(self._run_id)
-            sources = await load_sources(session, run, operation, task_id)
+            sources = await load_sources(
+                session, run, operation, task_id, invocation_index=invocation_index
+            )
         return build_context(supplied, sources, operation, policy)

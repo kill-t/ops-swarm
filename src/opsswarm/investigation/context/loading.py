@@ -25,7 +25,10 @@ from opsswarm.investigation.tasks.evidence_store import validated_record
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import TaskResultRecord
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_REVIEW_GRAPH_VERSIONS
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_REVIEW_GRAPH_VERSIONS,
+    DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
+)
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
 from opsswarm.investigation.working_summary.persistence import validated_summary
 from opsswarm.investigation.working_summary.tables import AgentTaskWorkingSummaryRow
@@ -36,6 +39,8 @@ async def load_sources(
     run: InvestigationRunRow,
     operation: CallOperation,
     task_id: UUID | None,
+    *,
+    invocation_index: int = 0,
 ) -> ContextSources:
     if operation == CallOperation.REVIEW and run.graph_version not in DYNAMIC_REVIEW_GRAPH_VERSIONS:
         raise TaskFactConflict(
@@ -67,14 +72,28 @@ async def load_sources(
     expected_count = 1 if role else 3
     open_hypothesis = None
     source_synthesis_manifest = None
+    round_number = None
     if role is None and run.workflow_version == "v3":
         # 协调持久层也依赖上下文契约，延迟导入可避免模块初始化环。
         from opsswarm.investigation.coordination.persistence import validated_plan
 
+        if operation == CallOperation.SYNTHESIZE:
+            round_number = invocation_index + 1
+            if round_number not in (1, 2) or (
+                round_number == 2
+                and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+            ):
+                raise TaskFactConflict(
+                    "context_scope_mismatch", "动态综合调用序号没有对应的受支持业务轮次"
+                )
+        elif operation == CallOperation.REVIEW and invocation_index == 0:
+            round_number = 1
+        else:
+            raise TaskFactConflict("context_scope_mismatch", "动态根级调用缺少受支持的轮次范围")
         round_row = await session.scalar(
             select(InvestigationRoundRow).where(
                 InvestigationRoundRow.investigation_run_id == run.id,
-                InvestigationRoundRow.round_number == 1,
+                InvestigationRoundRow.round_number == round_number,
             )
         )
         plan_row = (
@@ -83,13 +102,13 @@ async def load_sources(
             else None
         )
         if plan_row is None:
-            raise TaskFactConflict("context_scope_mismatch", "动态根级调用缺少首轮协调计划")
+            raise TaskFactConflict("context_scope_mismatch", "动态根级调用缺少目标轮次协调计划")
         plan = (await validated_plan(session, plan_row)).plan
         expected_assignments = {item.task_key: item for item in plan.assignment.tasks}
         query = query.where(AgentTaskRow.round_id == plan_row.round_id)
         rows = list(await session.scalars(query.order_by(AgentTaskRow.task_key)))
         if (
-            plan.assignment.round_number != 1
+            plan.assignment.round_number != round_number
             or {row.task_key for row in rows} != set(expected_assignments)
             or any(
                 row.round_id != plan_row.round_id
@@ -98,7 +117,7 @@ async def load_sources(
                 for row in rows
             )
         ):
-            raise TaskFactConflict("context_scope_mismatch", "动态根级任务范围与首轮计划不一致")
+            raise TaskFactConflict("context_scope_mismatch", "动态根级任务范围与目标计划不一致")
         expected_count = len(expected_assignments)
         if operation == CallOperation.REVIEW:
             # 审查持久层反向依赖上下文复核，延迟导入避免模块初始化环。
@@ -164,6 +183,7 @@ async def load_sources(
         tasks=tuple(tasks),
         workflow_version=cast(Literal["v2", "v3"], run.workflow_version),
         context_policy_version=cast(ContextPolicyVersion, run.context_policy_version),
+        round_number=round_number,
         open_hypothesis=open_hypothesis,
         source_synthesis_manifest=source_synthesis_manifest,
     )

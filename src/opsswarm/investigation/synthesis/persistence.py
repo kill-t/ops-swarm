@@ -26,7 +26,10 @@ from opsswarm.investigation.synthesis.contracts import (
 from opsswarm.investigation.synthesis.policy import validate_proposal_evidence
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
-from opsswarm.investigation.workflow_versions import DYNAMIC_SYNTHESIS_GRAPH_VERSIONS
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
+    DYNAMIC_SYNTHESIS_GRAPH_VERSIONS,
+)
 
 
 def utc_now() -> datetime:
@@ -37,6 +40,8 @@ async def validated_synthesis_call(
     session: AsyncSession,
     run: InvestigationRunRow,
     call_id: UUID,
+    *,
+    expected_round_number: int | None = None,
 ) -> tuple[ModelInput, SynthesisModelResult, ContextManifest]:
     """从当前业务材料重建一次成功动态综合调用。"""
 
@@ -60,6 +65,7 @@ async def validated_synthesis_call(
         or row.context_manifest is None
         or row.call_result is None
         or row.finished_at is None
+        or (expected_round_number is not None and row.invocation_index != expected_round_number - 1)
     ):
         raise TaskFactConflict("dynamic_synthesis_call_invalid", "开放假设缺少有效的成功综合调用")
     try:
@@ -78,6 +84,7 @@ async def validated_synthesis_call(
         model_input,
         manifest,
         manifest.prompt_version,
+        invocation_index=row.invocation_index,
     )
     if (
         row.model_input != model_input.model_dump(mode="json")
@@ -92,7 +99,7 @@ async def validated_synthesis_call(
 async def validated_open_hypothesis(
     session: AsyncSession, row: InvestigationOpenHypothesisRow
 ) -> OpenHypothesisRecord:
-    """复核假设内容、首轮计划与成功模型来源。"""
+    """复核假设内容、目标轮次计划与成功模型来源。"""
 
     run = await session.get(InvestigationRunRow, row.investigation_run_id)
     plan_row = await session.get(InvestigationCoordinationPlanRow, row.round_id)
@@ -103,11 +110,35 @@ async def validated_open_hypothesis(
         or plan_row is None
         or plan_row.investigation_run_id != row.investigation_run_id
     ):
-        raise TaskFactConflict("open_hypothesis_source_invalid", "开放假设不属于当前动态首轮计划")
+        raise TaskFactConflict("open_hypothesis_source_invalid", "开放假设不属于当前动态计划")
     plan = await validated_plan(session, plan_row)
-    if plan.plan.assignment.round_number != 1:
-        raise TaskFactConflict("open_hypothesis_source_invalid", "当前开放假设只支持首轮协调计划")
-    _, called, _ = await validated_synthesis_call(session, run, row.source_call_id)
+    round_number = plan.plan.assignment.round_number
+    if round_number not in (1, 2) or (
+        round_number == 2 and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+    ):
+        raise TaskFactConflict("open_hypothesis_source_invalid", "开放假设轮次不受当前图支持")
+    successful_call_ids = tuple(
+        await session.scalars(
+            select(CallReservationRow.id)
+            .where(
+                CallReservationRow.investigation_run_id == run.id,
+                CallReservationRow.operation == CallOperation.SYNTHESIZE.value,
+                CallReservationRow.invocation_index == round_number - 1,
+                CallReservationRow.status == "succeeded",
+            )
+            .order_by(CallReservationRow.sequence)
+        )
+    )
+    if successful_call_ids != (row.source_call_id,):
+        raise TaskFactConflict(
+            "dynamic_synthesis_call_conflict", "当前轮次必须且只能存在一条成功综合调用"
+        )
+    _, called, _ = await validated_synthesis_call(
+        session,
+        run,
+        row.source_call_id,
+        expected_round_number=round_number,
+    )
     source_call = await session.get(CallReservationRow, row.source_call_id)
     assert source_call is not None and source_call.finished_at is not None
     try:
@@ -128,7 +159,7 @@ async def validated_open_hypothesis(
 
 
 class OpenHypothesisStore:
-    """只在有效父租约下提交或复用首轮开放假设。"""
+    """只在有效父租约下按轮次提交或复用开放假设。"""
 
     def __init__(
         self,
@@ -165,32 +196,40 @@ class OpenHypothesisStore:
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock
         ) as (session, parent, _, run, now):
-            _, called, manifest = await validated_synthesis_call(session, run, source_call_id)
+            plan_row = await session.get(InvestigationCoordinationPlanRow, round_id)
+            if plan_row is None or plan_row.investigation_run_id != run_id:
+                raise TaskFactConflict(
+                    "open_hypothesis_source_invalid", "开放假设缺少同运行目标轮次计划"
+                )
+            plan = await validated_plan(session, plan_row)
+            round_number = plan.plan.assignment.round_number
+            if round_number not in (1, 2) or (
+                round_number == 2
+                and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+            ):
+                raise TaskFactConflict(
+                    "open_hypothesis_source_invalid", "开放假设轮次不受当前图支持"
+                )
+            _, called, manifest = await validated_synthesis_call(
+                session,
+                run,
+                source_call_id,
+                expected_round_number=round_number,
+            )
             if called.proposal != proposal:
                 raise TaskFactConflict(
                     "open_hypothesis_call_mismatch", "开放假设与综合调用返回不一致"
                 )
-            plan_row = await session.get(InvestigationCoordinationPlanRow, round_id)
-            if plan_row is None or plan_row.investigation_run_id != run_id:
-                raise TaskFactConflict(
-                    "open_hypothesis_source_invalid", "开放假设缺少同运行首轮计划"
-                )
-            plan = await validated_plan(session, plan_row)
             task_ids = {
                 item.material_id for item in manifest.materials if item.kind == "task_evidence"
             }
-            if (
-                plan.plan.assignment.round_number != 1
-                or task_ids
-                != {
-                    item.material_id
-                    for item in manifest.materials
-                    if item.kind == "task_working_summary"
-                }
-                or len(task_ids) != len(plan.plan.assignment.tasks)
-            ):
+            if task_ids != {
+                item.material_id
+                for item in manifest.materials
+                if item.kind == "task_working_summary"
+            } or len(task_ids) != len(plan.plan.assignment.tasks):
                 raise TaskFactConflict(
-                    "open_hypothesis_source_invalid", "综合材料与首轮计划任务范围不一致"
+                    "open_hypothesis_source_invalid", "综合材料与目标轮次计划任务范围不一致"
                 )
             allowed = {
                 evidence_id
@@ -209,7 +248,9 @@ class OpenHypothesisStore:
             if existing is not None:
                 record = await validated_open_hypothesis(session, existing)
                 if record.hypothesis != hypothesis or record.source_call_id != source_call_id:
-                    raise TaskFactConflict("open_hypothesis_conflict", "首轮已经保存另一份开放假设")
+                    raise TaskFactConflict(
+                        "open_hypothesis_conflict", "当前轮次已经保存另一份开放假设"
+                    )
                 return record, False
             row = InvestigationOpenHypothesisRow(
                 id=uuid5(round_id, "open-hypothesis:primary"),

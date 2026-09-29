@@ -8,10 +8,12 @@ from datetime import timedelta
 import httpx2
 import pytest
 from langchain_openai.chat_models.base import OpenAIConnectionError
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.store import InvestigationTaskStore
@@ -30,11 +32,17 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def current_v7_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v7")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v7-second-round-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),

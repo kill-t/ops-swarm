@@ -132,7 +132,13 @@ async def validate_call_result(
         if status == "succeeded":
             if not isinstance(result, SynthesisModelResult):
                 raise conflict("动态综合成功结算必须保存开放假设提案")
-            sources = await load_sources(session, run, CallOperation.SYNTHESIZE, None)
+            sources = await load_sources(
+                session,
+                run,
+                CallOperation.SYNTHESIZE,
+                None,
+                invocation_index=row.invocation_index,
+            )
             validate_proposal_evidence(
                 result.proposal,
                 {

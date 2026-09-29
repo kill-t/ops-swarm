@@ -131,3 +131,27 @@ class FollowUpExecutionResult(FollowUpPlanningResult):
         ):
             raise ValueError("第二轮专业结果与补查计划的证据快照不一致")
         return self
+
+
+class SecondRoundSynthesisResult(FollowUpExecutionResult):
+    """补查执行结果及其可选第二轮开放假设，仍不是最终调查结论。"""
+
+    follow_up_hypothesis: OpenHypothesisRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_follow_up_hypothesis(self) -> Self:
+        if self.review_route.decision.route != "follow_up":
+            if self.follow_up_hypothesis is not None:
+                raise ValueError("非补查路由不能携带第二轮开放假设")
+            return self
+        if self.follow_up_plan is None:
+            # 父契约负责报告计划缺失；此处避免读取无效字段。
+            return self
+        if (
+            self.follow_up_hypothesis is None
+            or self.follow_up_hypothesis.investigation_run_id
+            != self.follow_up_plan.investigation_run_id
+            or self.follow_up_hypothesis.round_id != self.follow_up_plan.round_id
+        ):
+            raise ValueError("补查路由必须携带绑定第二轮计划的开放假设")
+        return self

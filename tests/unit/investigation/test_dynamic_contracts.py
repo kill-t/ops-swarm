@@ -14,7 +14,10 @@ from opsswarm.investigation.coordination.contracts import (
     ProposedTask,
 )
 from opsswarm.investigation.coordination.hashing import coordination_hash
-from opsswarm.investigation.dynamic_contracts import FollowUpExecutionResult
+from opsswarm.investigation.dynamic_contracts import (
+    FollowUpExecutionResult,
+    SecondRoundSynthesisResult,
+)
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
 from opsswarm.investigation.review.contracts import (
     FollowUpSuggestion,
@@ -278,3 +281,35 @@ def test_non_follow_up_route_requires_empty_second_round_results() -> None:
     payload["follow_up_results"] = (_result(EvidenceKind.METRIC),)
     with pytest.raises(ValidationError, match="非补查路由不能携带第二轮专业结果"):
         FollowUpExecutionResult(**payload)
+
+
+def test_second_round_synthesis_requires_hypothesis_bound_to_follow_up_plan() -> None:
+    payload = _valid_payload()
+    plan = payload["follow_up_plan"]
+    first_hypothesis = payload["open_hypothesis"]
+    assert isinstance(plan, CoordinationPlanRecord)
+    assert isinstance(first_hypothesis, OpenHypothesisRecord)
+    hypothesis = first_hypothesis.hypothesis
+    record = OpenHypothesisRecord(
+        id=uuid4(),
+        investigation_run_id=plan.investigation_run_id,
+        round_id=plan.round_id,
+        investigation_attempt_id=uuid4(),
+        source_call_id=uuid4(),
+        version=hypothesis.version,
+        status=hypothesis.status,
+        hypothesis=hypothesis,
+        content_sha256=content_hash(hypothesis),
+        created_at=NOW,
+    )
+
+    result = SecondRoundSynthesisResult(**payload, follow_up_hypothesis=record)
+    assert result.follow_up_hypothesis == record
+
+    with pytest.raises(ValidationError, match="第二轮计划"):
+        SecondRoundSynthesisResult(**payload)
+    with pytest.raises(ValidationError, match="第二轮计划"):
+        SecondRoundSynthesisResult(
+            **payload,
+            follow_up_hypothesis=record.model_copy(update={"round_id": uuid4()}),
+        )

@@ -10,6 +10,7 @@ from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
 from opsswarm.investigation.synthesis.persistence import validated_open_hypothesis
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
+from opsswarm.investigation.tasks.tables import InvestigationRoundRow
 
 
 class OpenHypothesisQueries:
@@ -23,8 +24,12 @@ class OpenHypothesisQueries:
             rows = list(
                 await session.scalars(
                     select(InvestigationOpenHypothesisRow)
+                    .join(
+                        InvestigationRoundRow,
+                        InvestigationRoundRow.id == InvestigationOpenHypothesisRow.round_id,
+                    )
                     .where(InvestigationOpenHypothesisRow.investigation_run_id == run_id)
-                    .order_by(InvestigationOpenHypothesisRow.created_at)
+                    .order_by(InvestigationRoundRow.round_number)
                 )
             )
             records = []

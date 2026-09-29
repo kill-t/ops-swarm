@@ -38,8 +38,22 @@ async def prepared_synthesis(db, checkpoint_url, monkeypatch):
     captured = []
     original = TaskContextService.prepare
 
-    async def pause(self, supplied, operation, task_id, policy):
-        packet = await original(self, supplied, operation, task_id, policy)
+    async def pause(
+        self,
+        supplied,
+        operation,
+        task_id,
+        policy,
+        invocation_index=0,
+    ):
+        packet = await original(
+            self,
+            supplied,
+            operation,
+            task_id,
+            policy,
+            invocation_index,
+        )
         if operation == CallOperation.SYNTHESIZE:
             captured.append(packet)
             raise RuntimeError("模拟综合组装完成后预留前进程中断")

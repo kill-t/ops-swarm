@@ -63,6 +63,7 @@ class ContextManifest(TaskModel):
         "fixed-roles-v1",
         "dynamic-coordinator-v1",
         "dynamic-synthesis-v1",
+        "dynamic-follow-up-synthesis-v1",
         "independent-review-v1",
     ] = "fixed-roles-v1"
     workflow_version: Literal["v2", "v3"] = "v2"
@@ -72,6 +73,7 @@ class ContextManifest(TaskModel):
         "summary-context-v1",
         "coordination-plan-v1",
         "open-hypothesis-synthesis-v1",
+        "follow-up-open-hypothesis-synthesis-v1",
         "open-hypothesis-review-v1",
     ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
@@ -97,11 +99,20 @@ class ContextManifest(TaskModel):
                 raise ValueError("协调上下文策略、材料或权限不匹配")
             return self
         if self.role == "synthesis" and self.workflow_version == "v3":
+            synthesis_version = (
+                self.role_version,
+                self.prompt_version,
+            ) in (
+                ("dynamic-synthesis-v1", "open-hypothesis-synthesis-v1"),
+                (
+                    "dynamic-follow-up-synthesis-v1",
+                    "follow-up-open-hypothesis-synthesis-v1",
+                ),
+            )
             if (
                 self.version != "summary-context-v1"
                 or self.task_id is not None
-                or self.role_version != "dynamic-synthesis-v1"
-                or self.prompt_version != "open-hypothesis-synthesis-v1"
+                or not synthesis_version
                 or self.tool_names
                 or self.trimming
                 or len(self.materials) < 4
@@ -169,5 +180,6 @@ class ContextSources:
     tasks: tuple[ContextTaskMaterial, ...]
     workflow_version: Literal["v2", "v3"] = "v2"
     context_policy_version: ContextPolicyVersion = CONTEXT_POLICY_VERSION
+    round_number: int | None = None
     open_hypothesis: OpenHypothesisRecord | None = None
     source_synthesis_manifest: ContextManifest | None = None

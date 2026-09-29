@@ -49,6 +49,7 @@ class BudgetedModelCaller:
         prepared_packet: ContextPacket | None = None,
         result_factory: Callable[[T], CallResult] | None = None,
         reservation_observer: Callable[[UUID], None] = lambda _: None,
+        invocation_index: int = 0,
     ) -> T:
         if any(
             not isinstance(m, (SystemMessage, HumanMessage)) or not isinstance(m.content, str)
@@ -100,6 +101,7 @@ class BudgetedModelCaller:
                 operation,
                 self._runner.current_task_id,
                 self._policy,
+                invocation_index,
             )
             if not isinstance(packet.model_input, ModelInput):
                 raise CallBudgetExceeded("model_input_type_unsupported")
@@ -168,4 +170,5 @@ class BudgetedModelCaller:
             result_reader=lambda: call_result,
             reservation_observer=reservation_observer,
             usage_reader=lambda: usage,
+            invocation_index=invocation_index,
         )

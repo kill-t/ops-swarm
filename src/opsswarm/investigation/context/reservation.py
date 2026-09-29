@@ -55,7 +55,9 @@ async def validate_context_reservation(
         return
     if manifest is None or model_input is None or run.model_budget is None:
         raise TaskFactConflict("context_required", "启用上下文策略的模型调用必须提供材料清单")
-    sources = await load_sources(session, run, operation, task_id)
+    sources = await load_sources(
+        session, run, operation, task_id, invocation_index=invocation_index
+    )
     policy = ModelBudgetPolicy.model_validate(run.model_budget)
     if (
         run.context_policy_version in ("evidence-read-v1", "summary-context-v1")

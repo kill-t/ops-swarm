@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-09-28。最新完成切片为第 92 步 v3 第二轮专业任务执行与恢复，基线为 main 的 `3e2813c`（第 91 步）。本文随第 92 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 92 步进度记录为准。
+核对日期：2026-09-29。最新完成切片为第 93 步 v3 第二轮综合与开放假设恢复，基线为 main 的 `cdd9e0d`（第 92 步）。本文随第 93 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 93 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 92 步设计](architecture/92-second-round-investigation.md) 与 [验收记录](progress/92-second-round-investigation.md)，再读第 83～91 步设计与记录，需要上下文前置时再读第 79～82 步。
+2. 先读 [第 93 步设计](architecture/93-second-round-synthesis.md) 与 [验收记录](progress/93-second-round-synthesis.md)，再读第 84～92 步设计与记录，需要上下文前置时再读第 79～83 步。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -18,11 +18,11 @@
 ## 3. 当前架构与技术栈
 
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
-- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v7 已按持久计划动态执行首轮与第二轮专业任务，并形成首轮开放假设、独立审查和确定性路由。图 v1～v6 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
-- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，并为 `follow_up` 编译和执行第二轮任务，但尚未综合第二轮结果或形成有界多轮循环。专业新策略只读取已保存证据，不动态查询现场遥测。
+- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v8 已按持久计划动态执行首轮与第二轮专业任务，并分别形成按轮开放假设；首轮已有独立审查和确定性路由。图 v1～v7 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
+- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为 `follow_up` 编译和执行第二轮任务，并只用第二轮材料形成新开放假设；尚未审查第二轮假设或形成有界多轮循环。专业新策略只读取已保存证据，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0049_second_round_investigation`；第 92 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0050_second_round_synthesis`；第 93 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`，第 87 步提交为 `8eb4712`，第 88 步提交为 `956dad6`，第 89 步提交为 `3e98d7a`，第 90 步提交为 `e902e0b`，第 91 步提交为 `3e2813c`。第 92 步第二轮专业任务执行详见 [当前验收记录](progress/92-second-round-investigation.md)，对应本片独立提交。
+第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`，第 87 步提交为 `8eb4712`，第 88 步提交为 `956dad6`，第 89 步提交为 `3e98d7a`，第 90 步提交为 `e902e0b`，第 91 步提交为 `3e2813c`。第 92 步第二轮专业任务执行对应提交 `cdd9e0d`。第 93 步第二轮综合与开放假设恢复详见 [当前验收记录](progress/93-second-round-synthesis.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -82,7 +82,9 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 92 步继续保留图 v1～v6，新运行固定到 `dynamic-investigation-graph-v7`。图 v7 只从已持久第二轮计划稳定分派专业任务，使用独立 `follow_up_results` 隔离两轮同角色结果，并让任务运行器显式核对期望轮次。第二轮复用冻结范围、任务证据、专业循环、工作摘要和原运行共享预算；部分失败接管只重试失败任务，结果落库后 checkpoint 前中断不会重调外部请求。第二轮结算为 `completed`，父运行仍为 `running`；另外两种路由不执行补查，通用 Worker 继续跳过 v3。
 
-尚未完成：专业交互历史裁剪；第二轮综合、再次审查和有界多轮；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
+第 93 步继续保留图 v1～v7，新运行固定到 `dynamic-investigation-graph-v8`。图 v8 只在 `follow_up` 第二轮任务全部完成后，使用第二轮已提交工作摘要和完整证据执行一次根级综合，并以独立 `follow_up_hypothesis` 保存绑定第二轮计划的 `pending_review` 开放假设。首轮和第二轮 `synthesize` 分别固定调用槽位 0 与 1，第二轮使用独立提示/角色版本；模型成功后事实提交前和事实提交后 checkpoint 前均可跨父租约恢复。另外两种路由不新增综合调用或假设，父运行仍为 `running`，通用 Worker 继续跳过 v3。
+
+尚未完成：专业交互历史裁剪；第二轮假设的独立审查、再次路由和有界多轮；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -101,11 +103,11 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [coordination/context.py](../src/opsswarm/investigation/coordination/context.py)、[coordination/planner.py](../src/opsswarm/investigation/coordination/planner.py) | 首轮最小上下文、根级共享预算调用、成功结果复用与计划提交恢复 |
 | [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次、父尝试和模型调用来源的原子写入及重建核对 |
 | [workflow_versions.py](../src/opsswarm/investigation/workflow_versions.py)、[persistence/repository.py](../src/opsswarm/investigation/persistence/repository.py) | v3 路由、启动策略原子冻结、运行查询及 Worker 支持版本领取过滤 |
-| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[dynamic_synthesis_graph.py](../src/opsswarm/investigation/dynamic_synthesis_graph.py)、[dynamic_review_graph.py](../src/opsswarm/investigation/dynamic_review_graph.py)、[dynamic_routing_graph.py](../src/opsswarm/investigation/dynamic_routing_graph.py)、[dynamic_follow_up_graph.py](../src/opsswarm/investigation/dynamic_follow_up_graph.py)、[dynamic_second_round_graph.py](../src/opsswarm/investigation/dynamic_second_round_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1～v6 保留协调、首轮专业、综合、审查、路由和补查计划恢复；图 v7 执行持久第二轮任务，仍不综合该轮或结算调查 |
-| [synthesis/contracts.py](../src/opsswarm/investigation/synthesis/contracts.py)、[synthesis/persistence.py](../src/opsswarm/investigation/synthesis/persistence.py)、[synthesis/service.py](../src/opsswarm/investigation/synthesis/service.py) | 开放假设契约、证据闭包、成功调用复用、不可变写入和业务来源重建；不映射旧根因或处置资格 |
+| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[dynamic_synthesis_graph.py](../src/opsswarm/investigation/dynamic_synthesis_graph.py)、[dynamic_review_graph.py](../src/opsswarm/investigation/dynamic_review_graph.py)、[dynamic_routing_graph.py](../src/opsswarm/investigation/dynamic_routing_graph.py)、[dynamic_follow_up_graph.py](../src/opsswarm/investigation/dynamic_follow_up_graph.py)、[dynamic_second_round_graph.py](../src/opsswarm/investigation/dynamic_second_round_graph.py)、[dynamic_second_round_synthesis_graph.py](../src/opsswarm/investigation/dynamic_second_round_synthesis_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1～v7 保留各阶段历史恢复语义；图 v8 汇合第二轮任务并综合新开放假设，仍不审查该假设或结算调查 |
+| [synthesis/contracts.py](../src/opsswarm/investigation/synthesis/contracts.py)、[synthesis/persistence.py](../src/opsswarm/investigation/synthesis/persistence.py)、[synthesis/service.py](../src/opsswarm/investigation/synthesis/service.py) | 按轮开放假设契约、证据闭包、槽位隔离、成功调用复用、不可变写入和来源重建；不映射旧根因或处置资格 |
 | [review/contracts.py](../src/opsswarm/investigation/review/contracts.py)、[review/persistence.py](../src/opsswarm/investigation/review/persistence.py)、[review/service.py](../src/opsswarm/investigation/review/service.py) | 独立审查契约、同源材料、成功调用复用和不可变事实；建议不创建任务或授予路由与执行资格 |
 | [review_routing/contracts.py](../src/opsswarm/investigation/review_routing/contracts.py)、[review_routing/policy.py](../src/opsswarm/investigation/review_routing/policy.py)、[review_routing/persistence.py](../src/opsswarm/investigation/review_routing/persistence.py) | 纯规则路由、有限原因码、冻结容量检查、不可变事实与来源重建；决定尚不执行对应路径 |
-| [follow_up_planning/policy.py](../src/opsswarm/investigation/follow_up_planning/policy.py)、[follow_up_planning/service.py](../src/opsswarm/investigation/follow_up_planning/service.py)、[coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py) | 完整补查建议的确定性第二轮编译、路由来源绑定、计划/轮次/任务原子提交与恢复；执行由图 v7 消费 |
+| [follow_up_planning/policy.py](../src/opsswarm/investigation/follow_up_planning/policy.py)、[follow_up_planning/service.py](../src/opsswarm/investigation/follow_up_planning/service.py)、[coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py) | 完整补查建议的确定性第二轮编译、路由来源绑定、计划/轮次/任务原子提交与恢复；执行由图 v7/v8 消费 |
 | [worker/processor.py](../src/opsswarm/worker/processor.py)、[worker/task_graph.py](../src/opsswarm/worker/task_graph.py) | 现有 v1/v2 Worker 的显式版本分派与固定图二次拒绝；通用 Worker 尚未接 v3 |
 
 第 79 步核对了锁定 LangChain 的 middleware、ToolStrategy 与输出确认契约。工具 schema 必须与框架实际绑定一致；升级依赖时通过真实 SDK 假传输测试核对，不能凭记忆改参数。
@@ -118,7 +120,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 93 步：**第二轮综合与新开放假设持久化**。只消费第 92 步已提交的第二轮工作摘要和证据，形成绑定第二轮协调计划的新开放假设，并覆盖模型调用与业务事实提交窗口恢复。本片不提前再次审查、创建第三轮、进入人工等待、候选结论或规划，也不结算父运行。
+第 94 步：**第二轮开放假设独立审查**。只使用第二轮综合调用的同轮材料与新开放假设，保存绑定第二轮假设的独立审查事实，并覆盖模型调用与业务事实提交窗口恢复。本片不提前再次路由、创建第三轮、进入人工等待、候选结论或规划，也不结算父运行。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -126,7 +128,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；完整第 92 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，异步子进程继续参考现有线程桥接。
+使用仓库 `.venv/Scripts/`；完整第 93 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，异步子进程继续参考现有线程桥接。
 
 ```powershell
 git status --short
@@ -138,8 +140,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 92 步测试入口为 [v3 第二轮执行图](../tests/integration/test_dynamic_second_round_graph.py)、[阶段结果契约](../tests/unit/investigation/test_dynamic_contracts.py) 和 [动态任务轮次校验](../tests/unit/investigation/test_dynamic_task_runtime.py)；图 v6～v1 回归分别见补查计划、确定性路由、独立审查、开放假设综合、动态首轮专业分派与首轮协调图测试。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 93 步测试入口为 [v3 第二轮综合图](../tests/integration/test_dynamic_second_round_synthesis_graph.py)、[阶段结果契约](../tests/unit/investigation/test_dynamic_contracts.py) 和 [摘要上下文](../tests/unit/investigation/test_summary_context.py)；图 v7～v1 回归分别见第二轮执行、补查计划、确定性路由、独立审查、开放假设综合、动态首轮专业分派与首轮协调图测试。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 92 步设计/验收，核对 Git 与实际代码。v3 图 v7 已执行已持久化的第二轮补查任务，独立保存两轮结果并验证部分失败和业务提交窗口恢复；旧图 v1～v6 保留，父运行仍不结算。从第 93 步第二轮综合与新开放假设持久化推进，只消费第二轮已提交工作摘要和证据，继续共享原运行预算。完成真实 PostgreSQL、checkpoint 兼容回归、文档和中文独立提交。不要提前再次审查、创建第三轮、实现图内人工恢复、进入规划、开放 v3 Worker 或接入 MCP。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 93 步设计/验收，核对 Git 与实际代码。v3 图 v8 已用独立调用槽位和提示版本综合第二轮已提交材料，按轮保存新开放假设并验证两处提交窗口恢复；旧图 v1～v7 保留，父运行仍不结算。从第 94 步第二轮开放假设独立审查推进，只读取同轮综合材料和新假设，继续共享原运行预算。完成真实 PostgreSQL、checkpoint 兼容回归、文档和中文独立提交。不要提前再次路由、创建第三轮、实现图内人工恢复、进入规划、开放 v3 Worker 或接入 MCP。
