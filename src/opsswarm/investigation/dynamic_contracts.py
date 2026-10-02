@@ -180,3 +180,30 @@ class SecondRoundReviewResult(SecondRoundSynthesisResult):
         ):
             raise ValueError("补查路由必须携带绑定第二轮开放假设的独立审查")
         return self
+
+
+class SecondRoundRoutingResult(SecondRoundReviewResult):
+    """第二轮独立审查及其确定性路由，仍不执行下一路径。"""
+
+    follow_up_review_route: ReviewRoutingRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_follow_up_route(self) -> Self:
+        if self.review_route.decision.route != "follow_up":
+            if self.follow_up_review_route is not None:
+                raise ValueError("非补查首轮路由不能携带第二轮确定性路由")
+            return self
+        review = self.follow_up_hypothesis_review
+        route = self.follow_up_review_route
+        if review is None:
+            # 父契约负责报告审查缺失；此处避免读取无效字段。
+            return self
+        if (
+            route is None
+            or route.investigation_run_id != review.investigation_run_id
+            or route.round_id != review.round_id
+            or route.open_hypothesis_id != review.open_hypothesis_id
+            or route.hypothesis_review_id != review.id
+        ):
+            raise ValueError("补查首轮路由必须携带绑定第二轮审查的确定性路由")
+        return self

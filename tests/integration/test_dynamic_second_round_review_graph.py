@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.contracts import CallOperation
@@ -17,9 +18,11 @@ from opsswarm.investigation.context.prompts import (
     HYPOTHESIS_REVIEW_PROMPT,
 )
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.contracts import ReviewModelResult
 from opsswarm.investigation.review.persistence import HypothesisReviewStore
 from opsswarm.investigation.review.queries import HypothesisReviewQueries
+from opsswarm.investigation.review_routing.service import SecondRoundReviewRoutingService
 from opsswarm.investigation.synthesis.queries import OpenHypothesisQueries
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.queries import CollaborationQueries
@@ -64,6 +67,12 @@ async def current_v9_claim(database_session_factory):
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v9")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v9-second-round-review-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -139,6 +148,14 @@ async def test_second_round_review_is_scoped_to_follow_up_materials(
     )
 
     if expects_follow_up:
+        with pytest.raises(TaskFactConflict) as unsupported:
+            await SecondRoundReviewRoutingService(
+                database_session_factory,
+                run_id=claim.run.id,
+                lease_token=claim.work_item.lease_token,
+                clock=TaskClock(),
+            ).route(result)
+        assert unsupported.value.code == "review_routing_not_supported"
         snapshot = await CollaborationQueries(database_session_factory).get_snapshot(claim.run.id)
         first_task_ids = {task.id for task in snapshot.rounds[0].tasks}
         second_task_ids = {task.id for task in snapshot.rounds[1].tasks}

@@ -150,6 +150,46 @@ def test_insufficient_review_with_capacity_preserves_all_suggestions() -> None:
     )
 
 
+def test_second_round_preserves_follow_up_intent_when_capacity_remains() -> None:
+    decision = compile_decision(
+        insufficient_review(),
+        round_number=2,
+        existing_task_count=3,
+    )
+
+    assert decision.route == "follow_up"
+    assert decision.round_number == 2
+    assert decision.remaining_rounds == 1
+    assert decision.remaining_task_slots == 3
+
+
+def test_second_round_waits_for_human_when_round_capacity_is_exhausted() -> None:
+    decision = compile_decision(
+        insufficient_review(),
+        policy=CoordinationPolicy(max_rounds=2),
+        round_number=2,
+        existing_task_count=3,
+    )
+
+    assert decision.route == "await_human"
+    assert "round_limit_reached" in decision.reason_codes
+
+
+def test_second_round_waits_for_human_when_total_task_capacity_is_exhausted() -> None:
+    review = insufficient_review(roles=("log", "metric"))
+
+    decision = compile_decision(
+        review,
+        policy=CoordinationPolicy(max_total_tasks=4),
+        round_number=2,
+        existing_task_count=3,
+    )
+
+    assert decision.route == "await_human"
+    assert "total_task_limit_exceeded" in decision.reason_codes
+    assert decision.follow_up_suggestions == review.follow_up_suggestions
+
+
 @pytest.mark.parametrize(
     ("policy", "round_number", "existing_task_count", "reason"),
     [

@@ -10,6 +10,7 @@ from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review_routing.contracts import ReviewRoutingRecord
 from opsswarm.investigation.review_routing.persistence import validated_review_routing
 from opsswarm.investigation.review_routing.tables import InvestigationHypothesisReviewRouteRow
+from opsswarm.investigation.tasks.tables import InvestigationRoundRow
 
 
 class ReviewRoutingQueries:
@@ -23,9 +24,13 @@ class ReviewRoutingQueries:
             rows = list(
                 await session.scalars(
                     select(InvestigationHypothesisReviewRouteRow)
+                    .join(
+                        InvestigationRoundRow,
+                        InvestigationRoundRow.id == InvestigationHypothesisReviewRouteRow.round_id,
+                    )
                     .where(InvestigationHypothesisReviewRouteRow.investigation_run_id == run_id)
                     .order_by(
-                        InvestigationHypothesisReviewRouteRow.created_at,
+                        InvestigationRoundRow.round_number,
                         InvestigationHypothesisReviewRouteRow.id,
                     )
                 )

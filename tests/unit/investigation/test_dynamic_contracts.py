@@ -17,6 +17,7 @@ from opsswarm.investigation.coordination.hashing import coordination_hash
 from opsswarm.investigation.dynamic_contracts import (
     FollowUpExecutionResult,
     SecondRoundReviewResult,
+    SecondRoundRoutingResult,
     SecondRoundSynthesisResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
@@ -391,3 +392,68 @@ def test_non_follow_up_route_forbids_second_round_review() -> None:
     assert SecondRoundReviewResult(**payload).follow_up_hypothesis_review is None
     with pytest.raises(ValidationError, match="非补查路由不能携带第二轮独立审查"):
         SecondRoundReviewResult(**payload, follow_up_hypothesis_review=review)
+
+
+def test_second_round_routing_requires_fact_bound_to_second_review() -> None:
+    payload = _valid_payload()
+    plan = payload["follow_up_plan"]
+    first_hypothesis = payload["open_hypothesis"]
+    first_review = payload["hypothesis_review"]
+    first_route = payload["review_route"]
+    assert isinstance(plan, CoordinationPlanRecord)
+    assert isinstance(first_hypothesis, OpenHypothesisRecord)
+    assert isinstance(first_review, HypothesisReviewRecord)
+    assert isinstance(first_route, ReviewRoutingRecord)
+    hypothesis = first_hypothesis.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": plan.round_id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    review = first_review.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    decision = first_route.decision.model_copy(
+        update={
+            "round_number": 2,
+            "existing_task_count": 2,
+            "remaining_rounds": 1,
+            "remaining_task_slots": 4,
+        }
+    )
+    route = first_route.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "hypothesis_review_id": review.id,
+            "investigation_attempt_id": uuid4(),
+            "review_sha256": review.content_sha256,
+            "decision": decision,
+            "content_sha256": content_hash(decision),
+        }
+    )
+
+    result = SecondRoundRoutingResult(
+        **payload,
+        follow_up_hypothesis=hypothesis,
+        follow_up_hypothesis_review=review,
+        follow_up_review_route=route,
+    )
+    assert result.follow_up_review_route == route
+
+    with pytest.raises(ValidationError, match="第二轮审查"):
+        SecondRoundRoutingResult(
+            **payload,
+            follow_up_hypothesis=hypothesis,
+            follow_up_hypothesis_review=review,
+            follow_up_review_route=route.model_copy(update={"hypothesis_review_id": uuid4()}),
+        )

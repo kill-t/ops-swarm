@@ -1099,7 +1099,7 @@ async def test_start_v3_investigation_returns_frozen_dynamic_contract(
     assert started.status_code == 200
     investigation = started.json()["investigation"]
     assert investigation["workflow_version"] == "v3"
-    assert investigation["graph_version"] == "dynamic-investigation-graph-v9"
+    assert investigation["graph_version"] == "dynamic-investigation-graph-v10"
     assert investigation["coordination_policy_version"] == "dynamic-coordination-v1"
     assert investigation["coordination_policy"]["max_rounds"] == 2
     assert investigation["coordination_policy"]["max_total_tasks"] == 5
