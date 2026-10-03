@@ -21,11 +21,16 @@ from opsswarm.investigation.budget.model_contracts import (
 from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.contracts import ContextManifest
-from opsswarm.investigation.context.prompts import OPEN_HYPOTHESIS_PROMPT
+from opsswarm.investigation.context.prompts import (
+    FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
+    OPEN_HYPOTHESIS_PROMPT,
+    THIRD_ROUND_OPEN_HYPOTHESIS_PROMPT,
+)
 from opsswarm.investigation.context.service import TaskContextService
 from opsswarm.investigation.dynamic_contracts import (
     FirstRoundInvestigationResult,
     FollowUpExecutionResult,
+    ThirdRoundExecutionResult,
 )
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
@@ -94,7 +99,9 @@ class _RoundSynthesizer:
         )
         if existing is not None:
             return existing
-        supplied, messages = self._supplied_input(request, specialist_results)
+        supplied, messages = self._supplied_input(
+            request, specialist_results, round_number=round_number
+        )
         packet = await TaskContextService(self._factory, self._run_id).prepare(
             supplied,
             CallOperation.SYNTHESIZE,
@@ -152,6 +159,8 @@ class _RoundSynthesizer:
         self,
         request: InvestigationRequest,
         specialist_results: tuple[SpecialistTaskResult, ...],
+        *,
+        round_number: int,
     ) -> tuple[ModelInput, list[SystemMessage | HumanMessage]]:
         evidence = sorted(
             (item for result in specialist_results for item in result.evidence),
@@ -166,8 +175,17 @@ class _RoundSynthesizer:
             "evidence": [item.model_dump(mode="json") for item in evidence],
             "reports": [item.model_dump(mode="json") for item in reports],
         }
+        prompt = {
+            1: OPEN_HYPOTHESIS_PROMPT,
+            2: FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
+            3: THIRD_ROUND_OPEN_HYPOTHESIS_PROMPT,
+        }.get(round_number)
+        if prompt is None:
+            raise TaskFactConflict(
+                "dynamic_synthesis_scope_invalid", "动态综合缺少受支持的业务轮次"
+            )
         messages: list[SystemMessage | HumanMessage] = [
-            SystemMessage(content=OPEN_HYPOTHESIS_PROMPT),
+            SystemMessage(content=prompt),
             HumanMessage(
                 content=json.dumps(
                     payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -287,4 +305,40 @@ class SecondRoundSynthesizer(_RoundSynthesizer):
         )
         if record is None:
             raise TaskFactConflict("open_hypothesis_missing", "第二轮尚未保存开放假设")
+        return record
+
+
+class ThirdRoundSynthesizer(_RoundSynthesizer):
+    """只投影第三轮专业结果，并保存与第三轮计划绑定的新开放假设。"""
+
+    async def synthesize(
+        self,
+        request: InvestigationRequest,
+        execution: ThirdRoundExecutionResult,
+    ) -> OpenHypothesisRecord:
+        plan = execution.third_round_plan
+        if plan is None or plan.plan.assignment.round_number != 3:
+            raise TaskFactConflict(
+                "third_round_synthesis_scope_invalid", "第三轮综合缺少已完成的第三轮计划"
+            )
+        return await self._synthesize_round(
+            request,
+            round_id=plan.round_id,
+            round_number=3,
+            specialist_results=execution.third_round_results,
+        )
+
+    async def get_completed(self, execution: ThirdRoundExecutionResult) -> OpenHypothesisRecord:
+        plan = execution.third_round_plan
+        if plan is None or plan.plan.assignment.round_number != 3:
+            raise TaskFactConflict(
+                "third_round_synthesis_scope_invalid", "第三轮综合缺少已完成的第三轮计划"
+            )
+        record = await self._store.get_existing(
+            self._run_id,
+            plan.round_id,
+            lease_token=self._lease_token,
+        )
+        if record is None:
+            raise TaskFactConflict("open_hypothesis_missing", "第三轮尚未保存开放假设")
         return record

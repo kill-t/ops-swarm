@@ -188,5 +188,5 @@ async def test_downgrade_refuses_summary_context_audit(database_session_factory,
     async with db() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0054_third_round_investigation"
+            == "0055_third_round_synthesis"
         )

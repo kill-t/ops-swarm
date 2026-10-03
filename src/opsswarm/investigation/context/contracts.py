@@ -64,6 +64,7 @@ class ContextManifest(TaskModel):
         "dynamic-coordinator-v1",
         "dynamic-synthesis-v1",
         "dynamic-follow-up-synthesis-v1",
+        "dynamic-third-round-synthesis-v1",
         "independent-review-v1",
         "independent-follow-up-review-v1",
     ] = "fixed-roles-v1"
@@ -75,6 +76,7 @@ class ContextManifest(TaskModel):
         "coordination-plan-v1",
         "open-hypothesis-synthesis-v1",
         "follow-up-open-hypothesis-synthesis-v1",
+        "third-round-open-hypothesis-synthesis-v1",
         "open-hypothesis-review-v1",
         "follow-up-open-hypothesis-review-v1",
     ] = CONTEXT_PROMPT_VERSION
@@ -109,6 +111,10 @@ class ContextManifest(TaskModel):
                 (
                     "dynamic-follow-up-synthesis-v1",
                     "follow-up-open-hypothesis-synthesis-v1",
+                ),
+                (
+                    "dynamic-third-round-synthesis-v1",
+                    "third-round-open-hypothesis-synthesis-v1",
                 ),
             )
             if (

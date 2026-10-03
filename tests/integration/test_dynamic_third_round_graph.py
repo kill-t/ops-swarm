@@ -41,7 +41,7 @@ def migration_config() -> Config:
 
 
 async def current_v12_claim(database_session_factory, *, expanded_budget: bool = False):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(max_output_tokens=40000 if expanded_budget else 24000),
@@ -49,6 +49,12 @@ async def current_v12_claim(database_session_factory, *, expanded_budget: bool =
             CallBudgetPolicy(max_model_calls=24, max_tool_calls=30) if expanded_budget else None
         ),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v12")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v12-third-round-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -422,7 +428,7 @@ async def test_third_round_execution_fact_blocks_downgrade_without_v12_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0054_third_round_investigation"
+            == "0055_third_round_synthesis"
         )
         assert (
             await session.scalar(

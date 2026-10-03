@@ -5,16 +5,25 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import ValidationError
 
 from opsswarm.investigation.budget.contracts import CallOperation
-from opsswarm.investigation.budget.model_contracts import TextModelMessage
+from opsswarm.investigation.budget.model_contracts import ModelInput, TextModelMessage
 from opsswarm.investigation.budget.model_policy import allocate_input
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.context.builder import ContextBuilder, content_hash
 from opsswarm.investigation.context.catalog import catalog_group
+from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.dispatch import build_context
+from opsswarm.investigation.context.prompts import (
+    FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
+    OPEN_HYPOTHESIS_PROMPT,
+    THIRD_ROUND_OPEN_HYPOTHESIS_PROMPT,
+)
 from opsswarm.investigation.context.summary_builder import SummaryContextBuilder
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
+from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.results import SpecialistTaskResult, TaskResultRecord
 from opsswarm.investigation.working_summary.contracts import (
@@ -129,6 +138,16 @@ def policy():
     return model_policy(max_input_tokens_per_call=60000)
 
 
+def dynamic_supplied_input(material) -> ModelInput:
+    supplied = supplied_input(material)
+    return supplied.model_copy(
+        update={
+            "output_schema": OpenHypothesisProposal.model_json_schema(),
+            "tool_schema": convert_to_openai_tool(OpenHypothesisProposal),
+        }
+    )
+
+
 def test_summary_context_keeps_complete_evidence_and_rebuilds_exact_input():
     material = summary_sources()
     packet = build_context(supplied_input(material), material, CallOperation.SYNTHESIZE, policy())
@@ -154,6 +173,54 @@ def test_summary_context_keeps_complete_evidence_and_rebuilds_exact_input():
         policy(), packet.model_input, prompt_version="summary-context-v1"
     )
     assert build_context(packet.model_input, material, CallOperation.SYNTHESIZE, policy()) == packet
+
+
+@pytest.mark.parametrize(
+    ("round_number", "expected_prompt", "role_version", "prompt_version"),
+    [
+        (1, OPEN_HYPOTHESIS_PROMPT, "dynamic-synthesis-v1", "open-hypothesis-synthesis-v1"),
+        (
+            2,
+            FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
+            "dynamic-follow-up-synthesis-v1",
+            "follow-up-open-hypothesis-synthesis-v1",
+        ),
+        (
+            3,
+            THIRD_ROUND_OPEN_HYPOTHESIS_PROMPT,
+            "dynamic-third-round-synthesis-v1",
+            "third-round-open-hypothesis-synthesis-v1",
+        ),
+    ],
+)
+def test_dynamic_summary_context_uses_round_specific_prompt_and_manifest(
+    round_number, expected_prompt, role_version, prompt_version
+):
+    material = replace(summary_sources(), workflow_version="v3", round_number=round_number)
+
+    packet = build_context(
+        dynamic_supplied_input(material), material, CallOperation.SYNTHESIZE, policy()
+    )
+
+    assert packet.model_input.messages[0].content == expected_prompt
+    assert packet.manifest.role_version == role_version
+    assert packet.manifest.prompt_version == prompt_version
+    assert packet.manifest.allocation == allocate_input(
+        policy(), packet.model_input, prompt_version=prompt_version
+    )
+
+
+def test_dynamic_synthesis_manifest_rejects_mixed_third_round_versions():
+    material = replace(summary_sources(), workflow_version="v3", round_number=3)
+    packet = build_context(
+        dynamic_supplied_input(material), material, CallOperation.SYNTHESIZE, policy()
+    )
+
+    with pytest.raises(ValidationError):
+        ContextManifest.model_validate(
+            packet.manifest.model_dump()
+            | {"prompt_version": "follow-up-open-hypothesis-synthesis-v1"}
+        )
 
 
 @pytest.mark.parametrize("change", ["missing", "hash", "result", "catalog", "attempt"])

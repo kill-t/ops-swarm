@@ -29,6 +29,7 @@ from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
     DYNAMIC_SYNTHESIS_GRAPH_VERSIONS,
+    DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSIONS,
 )
 
 
@@ -113,8 +114,16 @@ async def validated_open_hypothesis(
         raise TaskFactConflict("open_hypothesis_source_invalid", "开放假设不属于当前动态计划")
     plan = await validated_plan(session, plan_row)
     round_number = plan.plan.assignment.round_number
-    if round_number not in (1, 2) or (
-        round_number == 2 and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+    if (
+        round_number not in (1, 2, 3)
+        or (
+            round_number == 2
+            and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+        )
+        or (
+            round_number == 3
+            and run.graph_version not in DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSIONS
+        )
     ):
         raise TaskFactConflict("open_hypothesis_source_invalid", "开放假设轮次不受当前图支持")
     successful_call_ids = tuple(
@@ -203,9 +212,16 @@ class OpenHypothesisStore:
                 )
             plan = await validated_plan(session, plan_row)
             round_number = plan.plan.assignment.round_number
-            if round_number not in (1, 2) or (
-                round_number == 2
-                and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+            if (
+                round_number not in (1, 2, 3)
+                or (
+                    round_number == 2
+                    and run.graph_version not in DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS
+                )
+                or (
+                    round_number == 3
+                    and run.graph_version not in DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSIONS
+                )
             ):
                 raise TaskFactConflict(
                     "open_hypothesis_source_invalid", "开放假设轮次不受当前图支持"

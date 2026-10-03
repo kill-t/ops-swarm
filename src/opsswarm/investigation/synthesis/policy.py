@@ -16,5 +16,5 @@ def validate_proposal_evidence(
     if unknown:
         raise TaskFactConflict(
             "open_hypothesis_evidence_mismatch",
-            "开放假设引用了首轮已选任务之外的证据",
+            "开放假设引用了目标轮次计划之外的证据",
         )

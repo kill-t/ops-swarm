@@ -258,3 +258,24 @@ class ThirdRoundExecutionResult(ThirdRoundPlanningResult):
         ):
             raise ValueError("第三轮专业结果与第三轮计划的证据快照不一致")
         return self
+
+
+class ThirdRoundSynthesisResult(ThirdRoundExecutionResult):
+    """第三轮专业结果及其可选开放假设，仍未经过独立审查。"""
+
+    third_round_hypothesis: OpenHypothesisRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_third_round_hypothesis(self) -> Self:
+        plan = self.third_round_plan
+        if plan is None:
+            if self.third_round_hypothesis is not None:
+                raise ValueError("没有第三轮计划时不能携带第三轮开放假设")
+            return self
+        if (
+            self.third_round_hypothesis is None
+            or self.third_round_hypothesis.investigation_run_id != plan.investigation_run_id
+            or self.third_round_hypothesis.round_id != plan.round_id
+        ):
+            raise ValueError("第三轮开放假设必须绑定第三轮协调计划")
+        return self

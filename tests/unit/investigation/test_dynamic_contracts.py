@@ -21,6 +21,7 @@ from opsswarm.investigation.dynamic_contracts import (
     SecondRoundSynthesisResult,
     ThirdRoundExecutionResult,
     ThirdRoundPlanningResult,
+    ThirdRoundSynthesisResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
 from opsswarm.investigation.review.contracts import (
@@ -649,3 +650,61 @@ def test_missing_third_round_plan_requires_empty_results() -> None:
         update={"decision": decision, "content_sha256": content_hash(decision)}
     )
     assert ThirdRoundExecutionResult(**payload).third_round_results == ()
+
+
+def _third_round_hypothesis_payload() -> dict[str, object]:
+    payload = _third_round_payload()
+    plan = payload["third_round_plan"]
+    hypothesis = payload["open_hypothesis"]
+    assert isinstance(plan, CoordinationPlanRecord)
+    assert isinstance(hypothesis, OpenHypothesisRecord)
+    payload["third_round_hypothesis"] = hypothesis.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": plan.round_id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    return payload
+
+
+def test_third_round_synthesis_requires_hypothesis_bound_to_plan() -> None:
+    payload = _third_round_hypothesis_payload()
+    result = ThirdRoundSynthesisResult(**payload)
+
+    assert result.third_round_hypothesis is not None
+    assert result.third_round_hypothesis.round_id == result.third_round_plan.round_id
+
+    for change in (
+        None,
+        result.third_round_hypothesis.model_copy(update={"investigation_run_id": uuid4()}),
+        result.third_round_hypothesis.model_copy(update={"round_id": uuid4()}),
+    ):
+        with pytest.raises(ValidationError, match="第三轮开放假设"):
+            ThirdRoundSynthesisResult(
+                **(
+                    payload
+                    | {
+                        "third_round_hypothesis": change,
+                    }
+                )
+            )
+
+
+def test_missing_third_round_plan_rejects_hypothesis() -> None:
+    payload = _valid_payload()
+    payload["follow_up_plan"] = None
+    payload["follow_up_results"] = ()
+    route = payload["review_route"]
+    assert isinstance(route, ReviewRoutingRecord)
+    decision = route.decision.model_copy(
+        update={"route": "candidate_evaluation", "follow_up_suggestions": ()}
+    )
+    payload["review_route"] = route.model_copy(
+        update={"decision": decision, "content_sha256": content_hash(decision)}
+    )
+    hypothesis = _third_round_hypothesis_payload()["third_round_hypothesis"]
+
+    with pytest.raises(ValidationError, match="没有第三轮计划"):
+        ThirdRoundSynthesisResult(**payload, third_round_hypothesis=hypothesis)
