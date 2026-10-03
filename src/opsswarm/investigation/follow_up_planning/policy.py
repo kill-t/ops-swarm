@@ -23,8 +23,6 @@ def compile_follow_up_proposal(route: ReviewRoutingRecord) -> CoordinationPropos
     decision = route.decision
     if decision.route != "follow_up":
         raise TaskFactConflict("follow_up_route_required", "只有补查路由可以编译下一轮计划")
-    if decision.round_number != 1:
-        raise TaskFactConflict("follow_up_round_not_supported", "当前切片只编译首轮后的第二轮补查")
     if (
         decision.round_number >= decision.max_rounds
         or not decision.follow_up_suggestions

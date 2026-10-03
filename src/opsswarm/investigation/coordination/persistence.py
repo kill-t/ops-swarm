@@ -38,11 +38,20 @@ from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRound
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS,
     DYNAMIC_INVESTIGATION_GRAPH_VERSIONS,
+    DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSIONS,
 )
 
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _supports_follow_up_plan_source(graph_version: str | None, source_round: int) -> bool:
+    if source_round == 1:
+        return graph_version in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS
+    if source_round == 2:
+        return graph_version in DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSIONS
+    return False
 
 
 def validated_policy(row: InvestigationCoordinationPolicyRow) -> CoordinationPolicyRecord:
@@ -173,14 +182,16 @@ async def _validate_follow_up_plan_source(
         InvestigationHypothesisReviewRouteRow,
     )
 
-    if run.graph_version not in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS or record.source_call_id:
-        raise ValueError("当前运行或计划来源不支持补查计划")
+    if record.source_call_id:
+        raise ValueError("补查计划不能绑定协调模型调用")
     route_row = await session.get(
         InvestigationHypothesisReviewRouteRow, record.source_review_route_id
     )
     if route_row is None or route_row.investigation_run_id != run.id:
         raise ValueError("补查计划缺少同运行审查路由")
     route = await validated_review_routing(session, route_row)
+    if not _supports_follow_up_plan_source(run.graph_version, route.decision.round_number):
+        raise ValueError("当前图版本不能读取该轮次派生的补查计划")
     expected_proposal = compile_follow_up_proposal(route)
     if (
         record.plan.proposal != expected_proposal
@@ -521,7 +532,7 @@ class CoordinationPlanStore:
         lease_token: UUID,
         source_review_route_id: UUID,
     ) -> tuple[CoordinationPlanRecord, bool]:
-        """从完整路由来源编译并原子保存第二轮计划、轮次和任务。"""
+        """从完整路由来源编译并原子保存下一轮计划、轮次和任务。"""
 
         from opsswarm.investigation.review_routing.persistence import validated_review_routing
         from opsswarm.investigation.review_routing.tables import (
@@ -531,16 +542,17 @@ class CoordinationPlanStore:
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock
         ) as (session, parent, incident, run, now):
-            if run.graph_version not in DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS:
-                raise TaskFactConflict(
-                    "follow_up_planning_not_supported", "只有补查计划图可以创建第二轮计划"
-                )
             route_row = await session.get(
                 InvestigationHypothesisReviewRouteRow, source_review_route_id
             )
             if route_row is None or route_row.investigation_run_id != run_id:
                 raise TaskFactConflict("follow_up_source_invalid", "补查计划缺少同运行审查路由")
             route = await validated_review_routing(session, route_row)
+            if not _supports_follow_up_plan_source(run.graph_version, route.decision.round_number):
+                raise TaskFactConflict(
+                    "follow_up_planning_not_supported",
+                    "当前图版本不能创建该轮次派生的补查计划",
+                )
             proposal = compile_follow_up_proposal(route)
             source_plan_row = await session.get(InvestigationCoordinationPlanRow, route.round_id)
             if source_plan_row is None:
@@ -599,7 +611,7 @@ class CoordinationPlanStore:
                 )
                 if existing_plan is None:
                     raise TaskFactConflict(
-                        "coordination_plan_missing", "第二轮不是由动态协调计划创建"
+                        "coordination_plan_missing", "下一轮不是由动态协调计划创建"
                     )
                 record = await validated_plan(session, existing_plan)
                 if (
@@ -609,7 +621,7 @@ class CoordinationPlanStore:
                     or record.source_review_route_id != route.id
                 ):
                     raise TaskFactConflict(
-                        "coordination_plan_conflict", "第二轮已绑定另一份协调计划"
+                        "coordination_plan_conflict", "下一轮已绑定另一份协调计划"
                     )
                 return record, False
             round_id, created = await create_round_in_transaction(
@@ -621,7 +633,7 @@ class CoordinationPlanStore:
             )
             if not created:
                 raise TaskFactConflict(
-                    "coordination_plan_conflict", "第二轮竞争未返回已持久化协调计划"
+                    "coordination_plan_conflict", "下一轮竞争未返回已持久化协调计划"
                 )
             row = InvestigationCoordinationPlanRow(
                 round_id=round_id,
@@ -646,7 +658,7 @@ class CoordinationPlanStore:
         lease_token: UUID,
         source_review_route_id: UUID,
     ) -> CoordinationPlanRecord | None:
-        """在有效父租约下读取并重建指定路由派生的第二轮计划。"""
+        """在有效父租约下读取并重建指定路由派生的下一轮计划。"""
 
         async with active_investigation_transaction(
             self._session_factory, run_id, lease_token, self._clock

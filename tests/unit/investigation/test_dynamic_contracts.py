@@ -19,6 +19,7 @@ from opsswarm.investigation.dynamic_contracts import (
     SecondRoundReviewResult,
     SecondRoundRoutingResult,
     SecondRoundSynthesisResult,
+    ThirdRoundPlanningResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
 from opsswarm.investigation.review.contracts import (
@@ -456,4 +457,78 @@ def test_second_round_routing_requires_fact_bound_to_second_review() -> None:
             follow_up_hypothesis=hypothesis,
             follow_up_hypothesis_review=review,
             follow_up_review_route=route.model_copy(update={"hypothesis_review_id": uuid4()}),
+        )
+
+
+def test_third_round_planning_requires_plan_bound_to_second_route() -> None:
+    payload = _valid_payload()
+    second_plan = payload["follow_up_plan"]
+    first_hypothesis = payload["open_hypothesis"]
+    first_review = payload["hypothesis_review"]
+    first_route = payload["review_route"]
+    assert isinstance(second_plan, CoordinationPlanRecord)
+    assert isinstance(first_hypothesis, OpenHypothesisRecord)
+    assert isinstance(first_review, HypothesisReviewRecord)
+    assert isinstance(first_route, ReviewRoutingRecord)
+    hypothesis = first_hypothesis.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    review = first_review.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    decision = first_route.decision.model_copy(
+        update={
+            "round_number": 2,
+            "existing_task_count": 3,
+            "remaining_rounds": 1,
+            "remaining_task_slots": 3,
+        }
+    )
+    route = first_route.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "hypothesis_review_id": review.id,
+            "investigation_attempt_id": uuid4(),
+            "review_sha256": review.content_sha256,
+            "decision": decision,
+            "content_sha256": content_hash(decision),
+        }
+    )
+    third_plan = _plan(
+        route.investigation_run_id,
+        uuid4(),
+        round_number=3,
+        roles=(EvidenceKind.CHANGE, EvidenceKind.METRIC),
+        source_review_route_id=route.id,
+    )
+
+    result = ThirdRoundPlanningResult(
+        **payload,
+        follow_up_hypothesis=hypothesis,
+        follow_up_hypothesis_review=review,
+        follow_up_review_route=route,
+        third_round_plan=third_plan,
+    )
+    assert result.third_round_plan == third_plan
+
+    with pytest.raises(ValidationError, match="第三轮计划"):
+        ThirdRoundPlanningResult(
+            **payload,
+            follow_up_hypothesis=hypothesis,
+            follow_up_hypothesis_review=review,
+            follow_up_review_route=route,
+            third_round_plan=third_plan.model_copy(update={"source_review_route_id": uuid4()}),
         )

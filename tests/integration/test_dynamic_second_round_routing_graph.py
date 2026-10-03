@@ -15,10 +15,12 @@ from sqlalchemy.exc import DBAPIError
 from alembic import command
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.coordination.persistence import CoordinationPlanStore
 from opsswarm.investigation.models import EvidenceKind, InvestigationRunStatus, WorkItemError
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review_routing.persistence import ReviewRoutingStore
 from opsswarm.investigation.review_routing.queries import ReviewRoutingQueries
+from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.worker.dynamic_graph import DynamicSecondRoundRoutingGraphFactory
@@ -60,11 +62,17 @@ class SecondRoundRoutingReplies(SecondRoundReviewReplies):
 
 
 async def current_v10_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v10")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v10-second-round-routing-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -120,11 +128,12 @@ async def test_second_round_review_is_routed_without_creating_third_round(
         lambda *_: next(route_ids),
     )
 
+    clock = TaskClock()
     async with (
         httpx2.AsyncClient(transport=httpx2.MockTransport(replies)) as client,
         open_checkpoint_saver(checkpoint_database_url) as saver,
     ):
-        graph = routing_factory(database_session_factory, source, client, saver, TaskClock())(
+        graph = routing_factory(database_session_factory, source, client, saver, clock)(
             processor_context(claim)
         )
         result = await graph.investigate(claim.request, thread_id=claim.run.graph_thread_id)
@@ -150,6 +159,25 @@ async def test_second_round_review_is_routed_without_creating_third_round(
     )
     assert routes[1].hypothesis_review_id == result.follow_up_hypothesis_review.id
     assert routes[1].open_hypothesis_id == result.follow_up_hypothesis.id
+    if second_route_case == "follow_up":
+        with pytest.raises(TaskFactConflict) as unsupported:
+            await CoordinationPlanStore(
+                database_session_factory,
+                clock=clock,
+            ).create_follow_up_plan(
+                claim.run.id,
+                lease_token=claim.work_item.lease_token,
+                source_review_route_id=routes[1].id,
+            )
+        assert unsupported.value.code == "follow_up_planning_not_supported"
+        assert (
+            len(
+                (
+                    await CollaborationQueries(database_session_factory).get_snapshot(claim.run.id)
+                ).rounds
+            )
+            == 2
+        )
     assert budget.reserved_model_calls == 11
     assert checkpoint is not None
     assert checkpoint.metadata["graph_version"] == "dynamic-investigation-graph-v10"
@@ -316,7 +344,7 @@ async def test_second_round_route_fact_blocks_downgrade_without_v10_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0052_second_round_routing"
+            == "0053_third_round_planning"
         )
         assert (
             await session.scalar(

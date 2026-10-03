@@ -207,3 +207,28 @@ class SecondRoundRoutingResult(SecondRoundReviewResult):
         ):
             raise ValueError("补查首轮路由必须携带绑定第二轮审查的确定性路由")
         return self
+
+
+class ThirdRoundPlanningResult(SecondRoundRoutingResult):
+    """第二轮路由及其可选第三轮计划，尚未执行第三轮任务。"""
+
+    third_round_plan: CoordinationPlanRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_third_round_plan(self) -> Self:
+        route = self.follow_up_review_route
+        plan = self.third_round_plan
+        if route is None or route.decision.route != "follow_up":
+            if plan is not None:
+                raise ValueError("非补查第二轮路由不能携带第三轮计划")
+            return self
+        if (
+            plan is None
+            or plan.investigation_run_id != route.investigation_run_id
+            or plan.source_review_route_id != route.id
+            or plan.source_call_id is not None
+            or plan.plan.assignment.round_number != route.decision.round_number + 1
+            or plan.plan.assignment.round_number != 3
+        ):
+            raise ValueError("补查第二轮路由必须携带绑定该路由的第三轮计划")
+        return self

@@ -77,11 +77,11 @@ def test_compile_follow_up_preserves_all_suggestions_with_system_scope() -> None
     assert [item.lookback_seconds for item in proposal.tasks] == [21600, 900, 900]
 
 
-def test_compile_follow_up_only_accepts_first_round_follow_up_route() -> None:
+def test_compile_follow_up_accepts_second_round_and_rejects_terminal_route() -> None:
     second_round_route = route_record(round_number=2)
-    with pytest.raises(TaskFactConflict) as caught:
-        compile_follow_up_proposal(second_round_route)
-    assert caught.value.code == "follow_up_round_not_supported"
+    proposal = compile_follow_up_proposal(second_round_route)
+    assert proposal.round_number == 3
+    assert [item.role.value for item in proposal.tasks] == ["change", "log", "metric"]
 
     candidate_decision = ReviewRoutingDecision(
         route="candidate_evaluation",
