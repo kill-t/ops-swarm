@@ -29,7 +29,7 @@ async def test_v3_start_atomically_freezes_queryable_policies(database_session_f
     )
 
     assert persisted.workflow_version is WorkflowVersion.V3
-    assert persisted.graph_version == "dynamic-investigation-graph-v11"
+    assert persisted.graph_version == "dynamic-investigation-graph-v12"
     assert persisted.coordination_policy_version == "dynamic-coordination-v1"
     assert persisted.coordination_policy == policy
     assert persisted.call_budget is not None
@@ -87,5 +87,5 @@ async def test_explicit_v3_capability_receives_frozen_start_contract(
 
     assert claimed is not None
     assert claimed.run.id == started.run.id
-    assert claimed.run.graph_version == "dynamic-investigation-graph-v11"
+    assert claimed.run.graph_version == "dynamic-investigation-graph-v12"
     assert claimed.run.coordination_policy == CoordinationPolicy()

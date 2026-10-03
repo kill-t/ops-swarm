@@ -19,6 +19,7 @@ from opsswarm.investigation.dynamic_contracts import (
     SecondRoundReviewResult,
     SecondRoundRoutingResult,
     SecondRoundSynthesisResult,
+    ThirdRoundExecutionResult,
     ThirdRoundPlanningResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
@@ -532,3 +533,119 @@ def test_third_round_planning_requires_plan_bound_to_second_route() -> None:
             follow_up_review_route=route,
             third_round_plan=third_plan.model_copy(update={"source_review_route_id": uuid4()}),
         )
+
+
+def _third_round_payload() -> dict[str, object]:
+    payload = _valid_payload()
+    second_plan = payload["follow_up_plan"]
+    first_hypothesis = payload["open_hypothesis"]
+    first_review = payload["hypothesis_review"]
+    first_route = payload["review_route"]
+    assert isinstance(second_plan, CoordinationPlanRecord)
+    assert isinstance(first_hypothesis, OpenHypothesisRecord)
+    assert isinstance(first_review, HypothesisReviewRecord)
+    assert isinstance(first_route, ReviewRoutingRecord)
+    hypothesis = first_hypothesis.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    review = first_review.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    decision = first_route.decision.model_copy(
+        update={
+            "round_number": 2,
+            "existing_task_count": 3,
+            "remaining_rounds": 1,
+            "remaining_task_slots": 3,
+        }
+    )
+    route = first_route.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": second_plan.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "hypothesis_review_id": review.id,
+            "investigation_attempt_id": uuid4(),
+            "review_sha256": review.content_sha256,
+            "decision": decision,
+            "content_sha256": content_hash(decision),
+        }
+    )
+    third_plan = _plan(
+        route.investigation_run_id,
+        uuid4(),
+        round_number=3,
+        roles=(EvidenceKind.CHANGE, EvidenceKind.METRIC),
+        source_review_route_id=route.id,
+    )
+    return {
+        **payload,
+        "follow_up_hypothesis": hypothesis,
+        "follow_up_hypothesis_review": review,
+        "follow_up_review_route": route,
+        "third_round_plan": third_plan,
+        "third_round_results": (
+            _result(EvidenceKind.METRIC),
+            _result(EvidenceKind.CHANGE),
+        ),
+    }
+
+
+def test_third_round_execution_accepts_complete_results_independent_of_order() -> None:
+    result = ThirdRoundExecutionResult(**_third_round_payload())
+
+    assert {item.report.specialist for item in result.third_round_results} == {
+        EvidenceKind.CHANGE,
+        EvidenceKind.METRIC,
+    }
+
+
+@pytest.mark.parametrize(
+    "third_round_results",
+    [
+        (),
+        (_result(EvidenceKind.METRIC),),
+        (_result(EvidenceKind.METRIC), _result(EvidenceKind.METRIC)),
+        (_result(EvidenceKind.METRIC), _result(EvidenceKind.CHANGE, snapshot_id="other")),
+    ],
+)
+def test_third_round_execution_rejects_incomplete_duplicate_or_wrong_snapshot_results(
+    third_round_results: tuple[SpecialistTaskResult, ...],
+) -> None:
+    payload = _third_round_payload()
+    payload["third_round_results"] = third_round_results
+
+    with pytest.raises(ValidationError, match="第三轮专业结果"):
+        ThirdRoundExecutionResult(**payload)
+
+
+def test_missing_third_round_plan_requires_empty_results() -> None:
+    payload = _third_round_payload()
+    payload["follow_up_review_route"] = None
+    payload["third_round_plan"] = None
+    payload["third_round_results"] = ()
+
+    with pytest.raises(ValidationError, match="补查首轮路由"):
+        ThirdRoundExecutionResult(**payload)
+
+    payload = _valid_payload()
+    payload["follow_up_plan"] = None
+    payload["follow_up_results"] = ()
+    decision = payload["review_route"].decision.model_copy(
+        update={"route": "candidate_evaluation", "follow_up_suggestions": ()}
+    )
+    payload["review_route"] = payload["review_route"].model_copy(
+        update={"decision": decision, "content_sha256": content_hash(decision)}
+    )
+    assert ThirdRoundExecutionResult(**payload).third_round_results == ()

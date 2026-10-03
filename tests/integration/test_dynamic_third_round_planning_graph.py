@@ -61,11 +61,17 @@ class SecondRoundRoutingReplies(SecondRoundReviewReplies):
 
 
 async def current_v11_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v11")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v11-third-round-planning-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -332,7 +338,7 @@ async def test_third_round_plan_fact_blocks_downgrade_without_v11_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(

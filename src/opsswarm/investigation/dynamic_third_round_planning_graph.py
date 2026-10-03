@@ -58,7 +58,7 @@ from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.runtime import DynamicTaskRuntime
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION,
     WorkflowVersion,
 )
 
@@ -200,7 +200,7 @@ class DynamicThirdRoundPlanningGraph:
             {
                 "request": request,
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION,
                 "specialist_results": [],
                 "follow_up_results": [],
             },
@@ -657,7 +657,7 @@ class DynamicThirdRoundPlanningGraph:
     def _validate_state_version(state: Mapping[str, object]) -> None:
         if (
             state.get("workflow_version") != WorkflowVersion.V3.value
-            or state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or state.get("graph_version") != LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION
         ):
             raise RuntimeError("第三轮计划图状态版本不兼容")
 
@@ -670,7 +670,7 @@ class DynamicThirdRoundPlanningGraph:
             "max_concurrency": 3,
             "metadata": {
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION,
             },
             "configurable": {"thread_id": normalized},
         }
@@ -684,7 +684,10 @@ class DynamicThirdRoundPlanningGraph:
             raise RuntimeError("checkpoint 工作流版本不兼容")
         if state.get("workflow_version") != WorkflowVersion.V3.value:
             raise RuntimeError("checkpoint 状态工作流版本不兼容")
-        if checkpoint.metadata.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if (
+            checkpoint.metadata.get("graph_version")
+            != LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION
+        ):
             raise RuntimeError("checkpoint 图版本不兼容")
-        if state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if state.get("graph_version") != LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION:
             raise RuntimeError("checkpoint 状态图版本不兼容")

@@ -114,7 +114,7 @@ async def test_synthesis_version_downgrade_refuses_persisted_v3_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0053_third_round_planning"
+                == "0054_third_round_investigation"
             )
             assert (
                 await session.scalar(
@@ -148,7 +148,7 @@ async def test_review_version_downgrade_refuses_persisted_v4_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -180,7 +180,7 @@ async def test_routing_version_downgrade_refuses_persisted_v5_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -212,7 +212,7 @@ async def test_follow_up_version_downgrade_refuses_persisted_v6_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -244,7 +244,7 @@ async def test_second_round_version_downgrade_refuses_persisted_v7_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -280,7 +280,7 @@ async def test_second_round_synthesis_downgrade_refuses_persisted_v8_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -316,7 +316,7 @@ async def test_second_round_review_downgrade_refuses_persisted_v9_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -324,6 +324,36 @@ async def test_second_round_review_downgrade_refuses_persisted_v9_graph(
                 {"run_id": started.run.id},
             )
             == "dynamic-investigation-graph-v9"
+        )
+
+
+async def test_third_round_investigation_downgrade_refuses_persisted_v12_graph(
+    database_session_factory,
+) -> None:
+    _, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V3,
+        model_budget=loop_policy(),
+    )
+
+    with pytest.raises(DBAPIError, match="不能删除已保存的第三轮专业调查图"):
+        await asyncio.to_thread(
+            command.downgrade,
+            config(),
+            "0053_third_round_planning",
+        )
+
+    async with database_session_factory() as session:
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0054_third_round_investigation"
+        )
+        assert (
+            await session.scalar(
+                text("SELECT graph_version FROM investigation_runs WHERE id=:run_id"),
+                {"run_id": started.run.id},
+            )
+            == "dynamic-investigation-graph-v12"
         )
 
 
@@ -335,6 +365,12 @@ async def test_third_round_planning_downgrade_refuses_persisted_v11_graph(
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v11")
+        )
 
     with pytest.raises(DBAPIError, match="不能删除已保存的第三轮计划图"):
         await asyncio.to_thread(
@@ -346,7 +382,7 @@ async def test_third_round_planning_downgrade_refuses_persisted_v11_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -382,7 +418,7 @@ async def test_second_round_routing_downgrade_refuses_persisted_v10_graph(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
 
 
@@ -434,7 +470,7 @@ async def test_second_round_review_downgrade_refuses_persisted_second_review_cal
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0053_third_round_planning"
+            == "0054_third_round_investigation"
         )
         assert (
             await session.scalar(
@@ -469,7 +505,7 @@ async def test_fanout_version_downgrade_refuses_persisted_v2_graph(
         async with database_session_factory() as session:
             assert (
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0053_third_round_planning"
+                == "0054_third_round_investigation"
             )
             assert (
                 await session.scalar(

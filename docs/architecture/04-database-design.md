@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 97 步增量见 [v3 第三轮专业任务执行与恢复](97-third-round-investigation.md)：迁移 `0054_third_round_investigation` 只把 `investigation_runs.graph_version` 约束扩展到图 v12，不新增业务表、字段或公开 API。图 v12 复用既有第 3 轮计划、任务、尝试、证据、调用、结果、工作摘要和事件；存在图 v12 运行或第 3 轮及以后任务尝试时拒绝降级到 `0053`，避免改写运行图版本后丢失执行事实保护。
+
 第 96 步增量见 [v3 第二轮补查路由的第三轮计划持久化](96-third-round-planning.md)：迁移 `0053_third_round_planning` 只把 `investigation_runs.graph_version` 约束扩展到图 v11，不新增业务表、字段或公开 API。现有计划、轮次和任务表原子保存绑定第二轮路由的第 3 轮计划与待执行任务；存在图 v11 或第三轮派生计划事实时拒绝降级到 `0052`。
 
 第 95 步增量见 [v3 第二轮独立审查的确定性再次路由](95-second-round-routing.md)：迁移 `0052_second_round_routing` 只把 `investigation_runs.graph_version` 约束扩展到图 v10，不新增业务表、字段或公开 API。现有路由表已按审查与轮次唯一，可保存绑定第二轮假设、审查和冻结策略的第二条路由；存在图 v10 或第二轮及以后路由事实时拒绝降级到 `0051`。

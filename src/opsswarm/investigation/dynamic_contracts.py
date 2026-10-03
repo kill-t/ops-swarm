@@ -232,3 +232,29 @@ class ThirdRoundPlanningResult(SecondRoundRoutingResult):
         ):
             raise ValueError("补查第二轮路由必须携带绑定该路由的第三轮计划")
         return self
+
+
+class ThirdRoundExecutionResult(ThirdRoundPlanningResult):
+    """可选第三轮计划及其已提交专业结果，仍不是最终调查结论。"""
+
+    third_round_results: tuple[SpecialistTaskResult, ...] = Field(default=(), max_length=3)
+
+    @model_validator(mode="after")
+    def validate_third_round_results(self) -> Self:
+        plan = self.third_round_plan
+        if plan is None:
+            if self.third_round_results:
+                raise ValueError("没有第三轮计划时不能携带第三轮专业结果")
+            return self
+        assignments = plan.plan.assignment.tasks
+        by_role = {item.report.specialist: item for item in self.third_round_results}
+        if len(by_role) != len(self.third_round_results) or set(by_role) != {
+            item.role for item in assignments
+        }:
+            raise ValueError("第三轮专业结果必须与第三轮计划选择的角色完全一致")
+        if any(
+            by_role[item.role].evidence_snapshot_id != item.evidence_snapshot_id
+            for item in assignments
+        ):
+            raise ValueError("第三轮专业结果与第三轮计划的证据快照不一致")
+        return self

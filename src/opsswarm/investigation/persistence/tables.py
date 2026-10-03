@@ -99,7 +99,7 @@ class InvestigationRunRow(Base):
             "'dynamic-investigation-graph-v5', 'dynamic-investigation-graph-v6', "
             "'dynamic-investigation-graph-v7', 'dynamic-investigation-graph-v8', "
             "'dynamic-investigation-graph-v9', 'dynamic-investigation-graph-v10', "
-            "'dynamic-investigation-graph-v11') AND "
+            "'dynamic-investigation-graph-v11', 'dynamic-investigation-graph-v12') AND "
             "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
             "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
             "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
