@@ -7,13 +7,23 @@ import pytest
 from pydantic import ValidationError
 
 from opsswarm.investigation.context.hashing import content_hash
+from opsswarm.investigation.context.prompts import (
+    HYPOTHESIS_REVIEW_PROMPT,
+    THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT,
+)
+from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.review.contracts import (
     HypothesisReview,
     HypothesisReviewProposal,
     HypothesisReviewRecord,
 )
 from opsswarm.investigation.review.policy import validate_review_evidence
-from opsswarm.investigation.synthesis.contracts import OpenHypothesis, OpenHypothesisProposal
+from opsswarm.investigation.review.service import _RoundHypothesisReviewer
+from opsswarm.investigation.synthesis.contracts import (
+    OpenHypothesis,
+    OpenHypothesisProposal,
+    OpenHypothesisRecord,
+)
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
@@ -26,6 +36,22 @@ def hypothesis() -> OpenHypothesis:
             counter_evidence_ids=("change-1",),
             unresolved_questions=("连接池上限是否发生过变更？",),
         )
+    )
+
+
+def hypothesis_record() -> OpenHypothesisRecord:
+    value = hypothesis()
+    return OpenHypothesisRecord(
+        id=uuid4(),
+        investigation_run_id=uuid4(),
+        round_id=uuid4(),
+        investigation_attempt_id=uuid4(),
+        source_call_id=uuid4(),
+        version=value.version,
+        status=value.status,
+        hypothesis=value,
+        content_sha256=content_hash(value),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -52,6 +78,49 @@ def test_system_records_review_without_routing_or_execution_fields() -> None:
     assert "route" not in HypothesisReview.model_fields
     assert "action" not in HypothesisReview.model_fields
     assert "approved" not in HypothesisReview.model_fields
+
+
+def test_review_service_uses_explicit_third_round_prompt() -> None:
+    request = InvestigationRequest(
+        incident_id=uuid4(),
+        service_name="checkout-api",
+        title="错误率升高",
+        started_at=datetime.now(UTC),
+    )
+
+    _, first_messages = _RoundHypothesisReviewer._supplied_input(
+        request,
+        open_hypothesis=hypothesis_record(),
+        specialist_results=(),
+        round_number=1,
+    )
+    _, third_messages = _RoundHypothesisReviewer._supplied_input(
+        request,
+        open_hypothesis=hypothesis_record(),
+        specialist_results=(),
+        round_number=3,
+    )
+
+    assert first_messages[0].content == HYPOTHESIS_REVIEW_PROMPT
+    assert third_messages[0].content == THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT
+
+
+def test_review_service_rejects_unknown_round() -> None:
+    request = InvestigationRequest(
+        incident_id=uuid4(),
+        service_name="checkout-api",
+        title="错误率升高",
+        started_at=datetime.now(UTC),
+    )
+
+    with pytest.raises(TaskFactConflict) as caught:
+        _RoundHypothesisReviewer._supplied_input(
+            request,
+            open_hypothesis=hypothesis_record(),
+            specialist_results=(),
+            round_number=4,
+        )
+    assert caught.value.code == "hypothesis_review_scope_invalid"
 
 
 @pytest.mark.parametrize(

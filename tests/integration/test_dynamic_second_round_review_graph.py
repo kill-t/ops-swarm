@@ -431,7 +431,7 @@ async def test_second_round_review_rejects_multiple_successful_calls_in_same_slo
             model_input=model_input,
             prompt_version=manifest.prompt_version,
             context_manifest=manifest,
-            invocation_index=2,
+            invocation_index=3,
         )
     assert invalid_slot.value.code == "hypothesis_review_invocation_invalid"
     grant = await calls.reserve(

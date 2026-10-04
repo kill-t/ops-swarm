@@ -1,4 +1,4 @@
-"""根据持久运行契约装配 v3 工作流的十三个已发布图版本。"""
+"""根据持久运行契约装配 v3 工作流的十四个已发布图版本。"""
 
 from collections.abc import Callable
 from datetime import datetime
@@ -29,6 +29,7 @@ from opsswarm.investigation.dynamic_third_round_graph import DynamicThirdRoundGr
 from opsswarm.investigation.dynamic_third_round_planning_graph import (
     DynamicThirdRoundPlanningGraph,
 )
+from opsswarm.investigation.dynamic_third_round_review_graph import DynamicThirdRoundReviewGraph
 from opsswarm.investigation.dynamic_third_round_synthesis_graph import (
     DynamicThirdRoundSynthesisGraph,
 )
@@ -43,6 +44,7 @@ from opsswarm.investigation.models import InvestigationDataSourceMode, Investiga
 from opsswarm.investigation.review.service import (
     IndependentHypothesisReviewer,
     SecondRoundHypothesisReviewer,
+    ThirdRoundHypothesisReviewer,
 )
 from opsswarm.investigation.review_routing.service import (
     ReviewRoutingService,
@@ -72,6 +74,7 @@ from opsswarm.investigation.workflow_versions import (
     LEGACY_DYNAMIC_SYNTHESIS_GRAPH_VERSION,
     LEGACY_DYNAMIC_THIRD_ROUND_GRAPH_VERSION,
     LEGACY_DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSION,
+    LEGACY_DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSION,
     WorkflowVersion,
 )
 from opsswarm.worker.runner import ProcessorContext
@@ -1554,9 +1557,9 @@ class DynamicThirdRoundSynthesisGraphFactory:
     def __call__(self, context: ProcessorContext) -> DynamicThirdRoundSynthesisGraph:
         if (
             context.workflow_version is not WorkflowVersion.V3
-            or context.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or context.graph_version != LEGACY_DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSION
         ):
-            raise ValueError("第三轮综合图只接受当前图版本的 v3 调查")
+            raise ValueError("第三轮综合图只接受图 v13 的 v3 调查")
         if (
             context.mode is not InvestigationMode.MULTI_AGENT
             or context.data_source_mode is not InvestigationDataSourceMode.FROZEN
@@ -1681,6 +1684,177 @@ class DynamicThirdRoundSynthesisGraphFactory:
                 clock=self._clock,
             ),
             third_round_synthesizer=ThirdRoundSynthesizer(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                model=self._model,
+                policy=context.model_budget,
+                runner=runner,
+                clock=self._clock,
+            ),
+            checkpointer=self._checkpointer,
+        )
+
+
+class DynamicThirdRoundReviewGraphFactory:
+    """按图 v14 装配第三轮独立审查与恢复。"""
+
+    def __init__(
+        self,
+        *,
+        session_factory: async_sessionmaker[AsyncSession],
+        data_source: FrozenScenarioDataSource,
+        model: ChatOpenAI,
+        checkpointer: BaseCheckpointSaver[str],
+        clock: Callable[[], datetime] = utc_now,
+    ) -> None:
+        if not isinstance(data_source, FrozenScenarioDataSource):
+            raise ValueError("v3 第三轮审查图需要冻结场景数据源")
+        self._session_factory = session_factory
+        self._source = data_source
+        self._model = model
+        self._checkpointer = checkpointer
+        self._clock = clock
+
+    def __call__(self, context: ProcessorContext) -> DynamicThirdRoundReviewGraph:
+        if (
+            context.workflow_version is not WorkflowVersion.V3
+            or context.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+        ):
+            raise ValueError("第三轮审查图只接受当前图版本的 v3 调查")
+        if (
+            context.mode is not InvestigationMode.MULTI_AGENT
+            or context.data_source_mode is not InvestigationDataSourceMode.FROZEN
+            or context.investigation_run_id is None
+            or context.lease_token is None
+            or context.graph_thread_id is None
+            or context.graph_thread_id != build_graph_thread_id(context.investigation_run_id)
+            or context.coordination_policy is None
+            or context.call_budget is None
+            or context.model_budget is None
+            or context.context_policy_version != "summary-context-v1"
+            or context.evidence_policy_version != "task-evidence-v1"
+            or context.observation_cutoff_at is not None
+        ):
+            raise ValueError("v3 第三轮审查图缺少完整的冻结运行契约")
+        profile = context.model_budget.profile
+        if (
+            profile.structured_output_method != "function_calling"
+            or self._model.model_name != profile.model_name
+            or self._model.max_retries != 0
+            or self._model.n != 1
+        ):
+            raise CallBudgetExceeded("model_budget_profile_mismatch")
+        runner = BudgetedCallRunner(
+            run_id=context.investigation_run_id,
+            lease_token=context.lease_token,
+            store=CallBudgetStore(self._session_factory, clock=self._clock),
+        )
+        runtime = DynamicTaskRuntime(
+            run_id=context.investigation_run_id,
+            lease_token=context.lease_token,
+            store=InvestigationTaskStore(self._session_factory, clock=self._clock),
+            queries=CollaborationQueries(self._session_factory),
+            snapshot_id=self._source.snapshot_id,
+            snapshot_time=self._source.snapshot_time,
+            data_source_mode="frozen",
+            call_runner=runner,
+            model_input_budget=True,
+            evidence_store=TaskEvidenceStore(self._session_factory, clock=self._clock),
+        )
+        synthesizer = FirstRoundSynthesizer(
+            self._session_factory,
+            run_id=context.investigation_run_id,
+            lease_token=context.lease_token,
+            model=self._model,
+            policy=context.model_budget,
+            runner=runner,
+            clock=self._clock,
+        )
+        reviewer = IndependentHypothesisReviewer(
+            self._session_factory,
+            run_id=context.investigation_run_id,
+            lease_token=context.lease_token,
+            model=self._model,
+            policy=context.model_budget,
+            runner=runner,
+            clock=self._clock,
+        )
+        router = ReviewRoutingService(
+            self._session_factory,
+            run_id=context.investigation_run_id,
+            lease_token=context.lease_token,
+            clock=self._clock,
+        )
+        return DynamicThirdRoundReviewGraph(
+            run_id=context.investigation_run_id,
+            planner=CoordinationPlanner(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                model=self._model,
+                clock=self._clock,
+            ),
+            policy=context.coordination_policy,
+            observation_cutoff_at=self._source.snapshot_time,
+            evidence_snapshot_id=self._source.snapshot_id,
+            data_source=self._source,
+            analyst=EvidenceLoopAnalyst(
+                self._model,
+                policy=context.model_budget,
+                runner=runner,
+                service=EvidenceLoopService(self._session_factory, context.investigation_run_id),
+            ),
+            task_runtime=runtime,
+            synthesizer=synthesizer,
+            reviewer=reviewer,
+            router=router,
+            follow_up_planner=FollowUpPlanService(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                clock=self._clock,
+            ),
+            follow_up_synthesizer=SecondRoundSynthesizer(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                model=self._model,
+                policy=context.model_budget,
+                runner=runner,
+                clock=self._clock,
+            ),
+            follow_up_reviewer=SecondRoundHypothesisReviewer(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                model=self._model,
+                policy=context.model_budget,
+                runner=runner,
+                clock=self._clock,
+            ),
+            follow_up_router=SecondRoundReviewRoutingService(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                clock=self._clock,
+            ),
+            third_round_planner=ThirdRoundPlanService(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                clock=self._clock,
+            ),
+            third_round_synthesizer=ThirdRoundSynthesizer(
+                self._session_factory,
+                run_id=context.investigation_run_id,
+                lease_token=context.lease_token,
+                model=self._model,
+                policy=context.model_budget,
+                runner=runner,
+                clock=self._clock,
+            ),
+            third_round_reviewer=ThirdRoundHypothesisReviewer(
                 self._session_factory,
                 run_id=context.investigation_run_id,
                 lease_token=context.lease_token,

@@ -22,6 +22,7 @@ from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.context.prompts import (
     FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT,
     HYPOTHESIS_REVIEW_PROMPT,
+    THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT,
 )
 from opsswarm.investigation.context.validation import validate_context
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
@@ -32,6 +33,19 @@ REVIEW_PROMPT_VERSION: Literal["open-hypothesis-review-v1"] = "open-hypothesis-r
 FOLLOW_UP_REVIEW_PROMPT_VERSION: Literal["follow-up-open-hypothesis-review-v1"] = (
     "follow-up-open-hypothesis-review-v1"
 )
+THIRD_ROUND_REVIEW_PROMPT_VERSION: Literal["third-round-open-hypothesis-review-v1"] = (
+    "third-round-open-hypothesis-review-v1"
+)
+ReviewPromptVersion = Literal[
+    "open-hypothesis-review-v1",
+    "follow-up-open-hypothesis-review-v1",
+    "third-round-open-hypothesis-review-v1",
+]
+ReviewRoleVersion = Literal[
+    "independent-review-v1",
+    "independent-follow-up-review-v1",
+    "independent-third-round-review-v1",
+]
 
 
 class ReviewContextBuilder:
@@ -50,7 +64,7 @@ class ReviewContextBuilder:
             or operation != CallOperation.REVIEW
             or sources.open_hypothesis is None
             or sources.source_synthesis_manifest is None
-            or sources.round_number not in (1, 2)
+            or sources.round_number not in (1, 2, 3)
         ):
             raise TaskFactConflict("context_operation_invalid", "独立审查缺少固定的假设来源")
         hypothesis = OpenHypothesisRecord.model_validate(
@@ -168,9 +182,22 @@ class ReviewContextBuilder:
         )
         if len(serialized.encode("utf-8")) > 262144:
             raise CallBudgetExceeded("model_input_too_large")
-        follow_up = sources.round_number == 2
-        prompt = FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT if follow_up else HYPOTHESIS_REVIEW_PROMPT
-        prompt_version = FOLLOW_UP_REVIEW_PROMPT_VERSION if follow_up else REVIEW_PROMPT_VERSION
+        prompt_version: ReviewPromptVersion
+        role_version: ReviewRoleVersion
+        if sources.round_number == 1:
+            prompt = HYPOTHESIS_REVIEW_PROMPT
+            prompt_version = REVIEW_PROMPT_VERSION
+            role_version = "independent-review-v1"
+        elif sources.round_number == 2:
+            prompt = FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT
+            prompt_version = FOLLOW_UP_REVIEW_PROMPT_VERSION
+            role_version = "independent-follow-up-review-v1"
+        elif sources.round_number == 3:
+            prompt = THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT
+            prompt_version = THIRD_ROUND_REVIEW_PROMPT_VERSION
+            role_version = "independent-third-round-review-v1"
+        else:
+            raise TaskFactConflict("context_operation_invalid", "独立审查轮次不受支持")
         model_input = ModelInput(
             messages=(
                 TextModelMessage(role="system", content=prompt),
@@ -196,9 +223,7 @@ class ReviewContextBuilder:
                 investigation_run_id=sources.run_id,
                 task_id=None,
                 role="reviewer",
-                role_version=(
-                    "independent-follow-up-review-v1" if follow_up else "independent-review-v1"
-                ),
+                role_version=role_version,
                 workflow_version="v3",
                 prompt_version=prompt_version,
                 evidence_policy_version=sources.evidence_policy_version,

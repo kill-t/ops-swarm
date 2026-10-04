@@ -245,5 +245,5 @@ async def test_downgrade_refuses_coordination_call_or_plan_source(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0055_third_round_synthesis"
+            == "0056_third_round_review"
         )

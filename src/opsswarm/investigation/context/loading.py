@@ -29,6 +29,7 @@ from opsswarm.investigation.workflow_versions import (
     DYNAMIC_REVIEW_GRAPH_VERSIONS,
     DYNAMIC_SECOND_ROUND_REVIEW_GRAPH_VERSIONS,
     DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
+    DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS,
     DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSIONS,
 )
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
@@ -97,9 +98,16 @@ async def load_sources(
                 )
         elif operation == CallOperation.REVIEW:
             round_number = invocation_index + 1
-            if round_number not in (1, 2) or (
-                round_number == 2
-                and run.graph_version not in DYNAMIC_SECOND_ROUND_REVIEW_GRAPH_VERSIONS
+            if (
+                round_number not in (1, 2, 3)
+                or (
+                    round_number == 2
+                    and run.graph_version not in DYNAMIC_SECOND_ROUND_REVIEW_GRAPH_VERSIONS
+                )
+                or (
+                    round_number == 3
+                    and run.graph_version not in DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS
+                )
             ):
                 raise TaskFactConflict(
                     "context_scope_mismatch", "动态审查调用序号没有对应的受支持业务轮次"

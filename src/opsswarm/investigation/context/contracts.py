@@ -67,6 +67,7 @@ class ContextManifest(TaskModel):
         "dynamic-third-round-synthesis-v1",
         "independent-review-v1",
         "independent-follow-up-review-v1",
+        "independent-third-round-review-v1",
     ] = "fixed-roles-v1"
     workflow_version: Literal["v2", "v3"] = "v2"
     prompt_version: Literal[
@@ -79,6 +80,7 @@ class ContextManifest(TaskModel):
         "third-round-open-hypothesis-synthesis-v1",
         "open-hypothesis-review-v1",
         "follow-up-open-hypothesis-review-v1",
+        "third-round-open-hypothesis-review-v1",
     ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=2, max_length=11)
@@ -136,6 +138,10 @@ class ContextManifest(TaskModel):
                 (
                     "independent-follow-up-review-v1",
                     "follow-up-open-hypothesis-review-v1",
+                ),
+                (
+                    "independent-third-round-review-v1",
+                    "third-round-open-hypothesis-review-v1",
                 ),
             )
             if (

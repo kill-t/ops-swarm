@@ -27,7 +27,10 @@ from opsswarm.investigation.synthesis.persistence import validated_open_hypothes
 from opsswarm.investigation.synthesis.tables import InvestigationOpenHypothesisRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.tables import InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_REVIEW_GRAPH_VERSIONS
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_REVIEW_GRAPH_VERSIONS,
+    DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS,
+)
 
 
 def utc_now() -> datetime:
@@ -63,7 +66,12 @@ async def validated_review_call(
         or row.context_manifest is None
         or row.call_result is None
         or row.finished_at is None
+        or row.invocation_index not in (0, 1, 2)
         or (expected_round_number is not None and row.invocation_index != expected_round_number - 1)
+        or (
+            row.invocation_index == 2
+            and run.graph_version not in DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS
+        )
     ):
         raise TaskFactConflict("hypothesis_review_call_invalid", "独立审查缺少有效的成功模型调用")
     try:
@@ -117,7 +125,9 @@ async def validated_hypothesis_review(
             InvestigationRoundRow.investigation_run_id == row.investigation_run_id,
         )
     )
-    if round_number not in (1, 2):
+    if round_number not in (1, 2, 3) or (
+        round_number == 3 and run.graph_version not in DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS
+    ):
         raise TaskFactConflict("hypothesis_review_source_invalid", "独立审查轮次不受支持")
     successful_call_ids = tuple(
         await session.scalars(
@@ -215,7 +225,10 @@ class HypothesisReviewStore:
                     InvestigationRoundRow.investigation_run_id == run_id,
                 )
             )
-            if round_number not in (1, 2):
+            if round_number not in (1, 2, 3) or (
+                round_number == 3
+                and run.graph_version not in DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS
+            ):
                 raise TaskFactConflict("hypothesis_review_source_invalid", "独立审查轮次不受支持")
             _, called, manifest = await validated_review_call(
                 session,

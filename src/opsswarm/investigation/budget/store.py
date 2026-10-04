@@ -123,9 +123,9 @@ class CallBudgetStore:
             raise TaskFactConflict(
                 "coordination_invocation_invalid", "首轮协调调用的调用序号必须为零"
             )
-        if operation == CallOperation.REVIEW and invocation_index not in (0, 1):
+        if operation == CallOperation.REVIEW and invocation_index not in (0, 1, 2):
             raise TaskFactConflict(
-                "hypothesis_review_invocation_invalid", "独立审查调用的调用序号必须为零或一"
+                "hypothesis_review_invocation_invalid", "独立审查调用的调用序号必须为零、一或二"
             )
         async with active_investigation_transaction(
             self._factory, run_id, lease_token, self._clock

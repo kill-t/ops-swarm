@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 99 步增量见 [v3 第三轮开放假设独立审查与恢复](99-third-round-review.md)：迁移 `0056_third_round_review` 只把 `investigation_runs.graph_version` 约束扩展到图 v14，并把根级 `review` 合法槽位扩展为 `0、1、2`，不新增业务表、字段或公开 API。现有审查表保存绑定第三轮假设和槽位 2 成功调用的新审查；存在图 v14、槽位 2 及以后审查调用或第 3 轮及以后审查事实时拒绝降级到 `0055`。
+
 第 98 步增量见 [v3 第三轮综合与开放假设恢复](98-third-round-synthesis.md)：迁移 `0055_third_round_synthesis` 只把 `investigation_runs.graph_version` 约束扩展到图 v13，不新增业务表、字段或公开 API。现有开放假设、调用账本和上下文清单保存绑定第 3 轮计划与槽位 2 成功综合调用的新假设；存在图 v13、槽位 2 及以后综合调用或第 3 轮及以后开放假设时拒绝降级到 `0054`。
 
 第 97 步增量见 [v3 第三轮专业任务执行与恢复](97-third-round-investigation.md)：迁移 `0054_third_round_investigation` 只把 `investigation_runs.graph_version` 约束扩展到图 v12，不新增业务表、字段或公开 API。图 v12 复用既有第 3 轮计划、任务、尝试、证据、调用、结果、工作摘要和事件；存在图 v12 运行或第 3 轮及以后任务尝试时拒绝降级到 `0053`，避免改写运行图版本后丢失执行事实保护。

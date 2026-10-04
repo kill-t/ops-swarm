@@ -19,11 +19,17 @@ from opsswarm.investigation.context.dispatch import build_context
 from opsswarm.investigation.context.prompts import (
     FOLLOW_UP_OPEN_HYPOTHESIS_PROMPT,
     OPEN_HYPOTHESIS_PROMPT,
+    THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT,
     THIRD_ROUND_OPEN_HYPOTHESIS_PROMPT,
 )
 from opsswarm.investigation.context.summary_builder import SummaryContextBuilder
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
-from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
+from opsswarm.investigation.review.contracts import HypothesisReviewProposal
+from opsswarm.investigation.synthesis.contracts import (
+    OpenHypothesis,
+    OpenHypothesisProposal,
+    OpenHypothesisRecord,
+)
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.results import SpecialistTaskResult, TaskResultRecord
 from opsswarm.investigation.working_summary.contracts import (
@@ -148,6 +154,73 @@ def dynamic_supplied_input(material) -> ModelInput:
     )
 
 
+def third_round_review_sources():
+    material = replace(summary_sources(), workflow_version="v3", round_number=3)
+    synthesis = build_context(
+        dynamic_supplied_input(material), material, CallOperation.SYNTHESIZE, policy()
+    )
+    proposal = OpenHypothesisProposal(
+        statement="第三轮日志与指标共同指向连接池耗尽",
+        confidence=0.8,
+        supporting_evidence_ids=("log-0",),
+        counter_evidence_ids=("metric-0",),
+        unresolved_questions=("连接池上限是否在事故前变更？",),
+    )
+    hypothesis = OpenHypothesis.from_proposal(proposal)
+    record = OpenHypothesisRecord(
+        id=uuid4(),
+        investigation_run_id=material.run_id,
+        round_id=uuid4(),
+        investigation_attempt_id=uuid4(),
+        source_call_id=uuid4(),
+        version=hypothesis.version,
+        status=hypothesis.status,
+        hypothesis=hypothesis,
+        content_sha256=content_hash(hypothesis),
+        created_at=material.tasks[0].evidence.created_at,
+    )
+    return (
+        replace(
+            material,
+            open_hypothesis=record,
+            source_synthesis_manifest=synthesis.manifest,
+        ),
+        synthesis,
+        record,
+    )
+
+
+def third_round_review_input(material, hypothesis) -> ModelInput:
+    evidence = sorted(
+        (item for task in material.tasks for item in task.evidence.snapshot.evidence),
+        key=lambda item: item.evidence_id,
+    )
+    reports = sorted(
+        (task.result.result.report for task in material.tasks),
+        key=lambda item: item.specialist.value,
+    )
+    payload = {
+        "incident": material.request.model_dump(mode="json"),
+        "evidence": [item.model_dump(mode="json") for item in evidence],
+        "reports": [item.model_dump(mode="json") for item in reports],
+        "open_hypothesis": hypothesis.model_dump(mode="json"),
+    }
+    return ModelInput(
+        messages=(
+            TextModelMessage(role="system", content=THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT),
+            TextModelMessage(
+                role="user",
+                content=json.dumps(
+                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ),
+            ),
+        ),
+        output_schema=HypothesisReviewProposal.model_json_schema(),
+        tool_schema=convert_to_openai_tool(HypothesisReviewProposal),
+        structured_output_method="json_schema",
+    )
+
+
 def test_summary_context_keeps_complete_evidence_and_rebuilds_exact_input():
     material = summary_sources()
     packet = build_context(supplied_input(material), material, CallOperation.SYNTHESIZE, policy())
@@ -221,6 +294,54 @@ def test_dynamic_synthesis_manifest_rejects_mixed_third_round_versions():
             packet.manifest.model_dump()
             | {"prompt_version": "follow-up-open-hypothesis-synthesis-v1"}
         )
+
+
+def test_third_round_review_context_uses_only_source_synthesis_materials():
+    material, synthesis, hypothesis = third_round_review_sources()
+
+    packet = build_context(
+        third_round_review_input(material, hypothesis),
+        material,
+        CallOperation.REVIEW,
+        policy(),
+    )
+
+    assert packet.model_input.messages[0].content == THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT
+    assert packet.manifest.role_version == "independent-third-round-review-v1"
+    assert packet.manifest.prompt_version == "third-round-open-hypothesis-review-v1"
+    assert packet.manifest.materials[:-1] == synthesis.manifest.materials
+    assert packet.manifest.materials[-1].kind == "open_hypothesis"
+    assert packet.manifest.materials[-1].material_id == hypothesis.id
+    assert packet.manifest.tool_names == ()
+
+
+def test_third_round_review_manifest_rejects_mixed_prompt_version():
+    material, _, hypothesis = third_round_review_sources()
+    packet = build_context(
+        third_round_review_input(material, hypothesis),
+        material,
+        CallOperation.REVIEW,
+        policy(),
+    )
+
+    with pytest.raises(ValidationError):
+        ContextManifest.model_validate(
+            packet.manifest.model_dump() | {"prompt_version": "follow-up-open-hypothesis-review-v1"}
+        )
+
+
+def test_review_context_rejects_unknown_round_instead_of_using_first_round_prompt():
+    material, _, hypothesis = third_round_review_sources()
+    unsupported = replace(material, round_number=4)
+
+    with pytest.raises(TaskFactConflict) as caught:
+        build_context(
+            third_round_review_input(unsupported, hypothesis),
+            unsupported,
+            CallOperation.REVIEW,
+            policy(),
+        )
+    assert caught.value.code == "context_operation_invalid"
 
 
 @pytest.mark.parametrize("change", ["missing", "hash", "result", "catalog", "attempt"])

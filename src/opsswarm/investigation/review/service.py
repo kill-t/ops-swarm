@@ -24,11 +24,13 @@ from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.prompts import (
     FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT,
     HYPOTHESIS_REVIEW_PROMPT,
+    THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT,
 )
 from opsswarm.investigation.context.service import TaskContextService
 from opsswarm.investigation.dynamic_contracts import (
     FirstRoundSynthesisResult,
     SecondRoundSynthesisResult,
+    ThirdRoundSynthesisResult,
 )
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
@@ -167,9 +169,14 @@ class _RoundHypothesisReviewer:
             "reports": [item.model_dump(mode="json") for item in reports],
             "open_hypothesis": open_hypothesis.model_dump(mode="json"),
         }
-        prompt = (
-            FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT if round_number == 2 else HYPOTHESIS_REVIEW_PROMPT
-        )
+        if round_number == 1:
+            prompt = HYPOTHESIS_REVIEW_PROMPT
+        elif round_number == 2:
+            prompt = FOLLOW_UP_HYPOTHESIS_REVIEW_PROMPT
+        elif round_number == 3:
+            prompt = THIRD_ROUND_HYPOTHESIS_REVIEW_PROMPT
+        else:
+            raise TaskFactConflict("hypothesis_review_scope_invalid", "独立审查轮次不受支持")
         messages: list[SystemMessage | HumanMessage] = [
             SystemMessage(content=prompt),
             HumanMessage(
@@ -289,4 +296,35 @@ class SecondRoundHypothesisReviewer(_RoundHypothesisReviewer):
         )
 
     async def get_completed(self, result: SecondRoundSynthesisResult) -> HypothesisReviewRecord:
+        return await self._get_completed(self._hypothesis(result))
+
+
+class ThirdRoundHypothesisReviewer(_RoundHypothesisReviewer):
+    """只审查第三轮补查材料形成的新开放假设。"""
+
+    @staticmethod
+    def _hypothesis(result: ThirdRoundSynthesisResult) -> OpenHypothesisRecord:
+        if (
+            result.third_round_plan is None
+            or result.third_round_hypothesis is None
+            or result.third_round_plan.plan.assignment.round_number != 3
+        ):
+            raise TaskFactConflict(
+                "third_round_review_scope_invalid", "第三轮审查缺少已完成的第三轮综合事实"
+            )
+        return result.third_round_hypothesis
+
+    async def review(
+        self,
+        request: InvestigationRequest,
+        result: ThirdRoundSynthesisResult,
+    ) -> HypothesisReviewRecord:
+        return await self._review_round(
+            request,
+            open_hypothesis=self._hypothesis(result),
+            specialist_results=result.third_round_results,
+            round_number=3,
+        )
+
+    async def get_completed(self, result: ThirdRoundSynthesisResult) -> HypothesisReviewRecord:
         return await self._get_completed(self._hypothesis(result))

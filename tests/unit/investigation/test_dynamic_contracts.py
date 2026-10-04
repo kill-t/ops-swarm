@@ -21,6 +21,7 @@ from opsswarm.investigation.dynamic_contracts import (
     SecondRoundSynthesisResult,
     ThirdRoundExecutionResult,
     ThirdRoundPlanningResult,
+    ThirdRoundReviewResult,
     ThirdRoundSynthesisResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
@@ -708,3 +709,60 @@ def test_missing_third_round_plan_rejects_hypothesis() -> None:
 
     with pytest.raises(ValidationError, match="没有第三轮计划"):
         ThirdRoundSynthesisResult(**payload, third_round_hypothesis=hypothesis)
+
+
+def _third_round_review_payload() -> dict[str, object]:
+    payload = _third_round_hypothesis_payload()
+    hypothesis = payload["third_round_hypothesis"]
+    review = payload["hypothesis_review"]
+    assert isinstance(hypothesis, OpenHypothesisRecord)
+    assert isinstance(review, HypothesisReviewRecord)
+    payload["third_round_hypothesis_review"] = review.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": hypothesis.round_id,
+            "open_hypothesis_id": hypothesis.id,
+            "investigation_attempt_id": uuid4(),
+            "source_call_id": uuid4(),
+        }
+    )
+    return payload
+
+
+def test_third_round_review_requires_review_bound_to_hypothesis() -> None:
+    payload = _third_round_review_payload()
+    result = ThirdRoundReviewResult(**payload)
+
+    assert result.third_round_hypothesis is not None
+    assert result.third_round_hypothesis_review is not None
+    assert (
+        result.third_round_hypothesis_review.open_hypothesis_id == result.third_round_hypothesis.id
+    )
+
+    review = result.third_round_hypothesis_review
+    for change in (
+        None,
+        review.model_copy(update={"investigation_run_id": uuid4()}),
+        review.model_copy(update={"round_id": uuid4()}),
+        review.model_copy(update={"open_hypothesis_id": uuid4()}),
+    ):
+        with pytest.raises(ValidationError, match="第三轮独立审查"):
+            ThirdRoundReviewResult(**(payload | {"third_round_hypothesis_review": change}))
+
+
+def test_missing_third_round_plan_rejects_review() -> None:
+    payload = _valid_payload()
+    payload["follow_up_plan"] = None
+    payload["follow_up_results"] = ()
+    route = payload["review_route"]
+    assert isinstance(route, ReviewRoutingRecord)
+    decision = route.decision.model_copy(
+        update={"route": "candidate_evaluation", "follow_up_suggestions": ()}
+    )
+    payload["review_route"] = route.model_copy(
+        update={"decision": decision, "content_sha256": content_hash(decision)}
+    )
+    review = _third_round_review_payload()["third_round_hypothesis_review"]
+
+    with pytest.raises(ValidationError, match="没有第三轮计划"):
+        ThirdRoundReviewResult(**payload, third_round_hypothesis_review=review)

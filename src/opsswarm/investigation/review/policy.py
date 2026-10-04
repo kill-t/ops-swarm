@@ -24,5 +24,5 @@ def validate_review_evidence(
     if not referenced <= set(allowed_evidence_ids):
         raise TaskFactConflict(
             "hypothesis_review_evidence_mismatch",
-            "独立审查引用了首轮已选任务之外的证据",
+            "独立审查引用了当前轮次已选任务之外的证据",
         )

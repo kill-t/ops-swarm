@@ -46,7 +46,7 @@ class CallReservationRow(Base):
         CheckConstraint(
             "invocation_index BETWEEN 0 AND 99 AND "
             "(operation <> 'coordinate' OR invocation_index = 0) AND "
-            "(operation <> 'review' OR invocation_index IN (0, 1))",
+            "(operation <> 'review' OR invocation_index IN (0, 1, 2))",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(

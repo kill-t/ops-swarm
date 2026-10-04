@@ -68,11 +68,17 @@ class ThirdRoundSynthesisReplies(SecondRoundRoutingReplies):
 
 
 async def current_v13_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v13")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v13-third-round-synthesis-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -382,7 +388,7 @@ async def test_third_round_synthesis_call_blocks_downgrade_without_v13_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0055_third_round_synthesis"
+            == "0056_third_round_review"
         )
 
 
@@ -468,7 +474,7 @@ async def test_third_round_hypothesis_blocks_downgrade_without_v13_or_slot_two(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0055_third_round_synthesis"
+            == "0056_third_round_review"
         )
 
 
