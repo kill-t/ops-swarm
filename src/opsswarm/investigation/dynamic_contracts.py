@@ -303,3 +303,34 @@ class ThirdRoundReviewResult(ThirdRoundSynthesisResult):
         ):
             raise ValueError("第三轮独立审查必须绑定第三轮开放假设")
         return self
+
+
+class ThirdRoundRoutingResult(ThirdRoundReviewResult):
+    """第三轮独立审查及其最大轮次停止路由，不执行对应后续路径。"""
+
+    third_round_review_route: ReviewRoutingRecord | None = None
+
+    @model_validator(mode="after")
+    def validate_third_round_route(self) -> Self:
+        if self.third_round_plan is None:
+            if self.third_round_review_route is not None:
+                raise ValueError("没有第三轮计划时不能携带第三轮确定性路由")
+            return self
+        review = self.third_round_hypothesis_review
+        route = self.third_round_review_route
+        if review is None:
+            # 父契约负责报告审查缺失；此处避免读取无效字段。
+            return self
+        if (
+            route is None
+            or route.investigation_run_id != review.investigation_run_id
+            or route.round_id != review.round_id
+            or route.open_hypothesis_id != review.open_hypothesis_id
+            or route.hypothesis_review_id != review.id
+            or route.review_sha256 != review.content_sha256
+            or route.decision.round_number != 3
+            or route.decision.remaining_rounds != 0
+            or route.decision.route == "follow_up"
+        ):
+            raise ValueError("第三轮确定性路由必须绑定第三轮审查并停止自动补查")
+        return self

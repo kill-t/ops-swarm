@@ -83,12 +83,18 @@ class ThirdRoundReviewReplies(ThirdRoundSynthesisReplies):
 
 
 async def current_v14_claim(database_session_factory):
-    store, _ = await started_run(
+    store, started = await started_run(
         database_session_factory,
         workflow_version=WorkflowVersion.V3,
         call_budget=CallBudgetPolicy(max_model_calls=13),
         model_budget=loop_policy(),
     )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == started.run.id)
+            .values(graph_version="dynamic-investigation-graph-v14")
+        )
     claim = await store.claim_next(
         worker_id="dynamic-v14-third-round-review-worker",
         occurred_at=BASE_TIME + timedelta(seconds=2),
@@ -388,7 +394,7 @@ async def test_third_round_review_call_blocks_downgrade_without_v14_run(
         await asyncio.to_thread(command.downgrade, migration_config(), "0055_third_round_synthesis")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0056_third_round_review"
+            "0057_third_round_routing"
         )
 
 
@@ -464,5 +470,5 @@ async def test_third_round_review_fact_blocks_downgrade_without_v14_or_slot_two(
         await asyncio.to_thread(command.downgrade, migration_config(), "0055_third_round_synthesis")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0056_third_round_review"
+            "0057_third_round_routing"
         )

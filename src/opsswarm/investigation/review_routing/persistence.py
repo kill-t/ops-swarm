@@ -31,6 +31,7 @@ from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRound
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_ROUTING_GRAPH_VERSIONS,
     DYNAMIC_SECOND_ROUND_ROUTING_GRAPH_VERSIONS,
+    DYNAMIC_THIRD_ROUND_ROUTING_GRAPH_VERSIONS,
 )
 
 
@@ -96,10 +97,15 @@ async def _validated_routing_sources(
     ) or any(item.status != "completed" for item in prior_rounds):
         raise TaskFactConflict("review_routing_source_invalid", "路由前的调查轮次未连续完成")
     if (
-        round_row.round_number > 1
+        round_row.round_number == 2
         and run.graph_version not in DYNAMIC_SECOND_ROUND_ROUTING_GRAPH_VERSIONS
     ):
         raise TaskFactConflict("review_routing_not_supported", "当前图版本不能保存第二轮确定性路由")
+    if (
+        round_row.round_number == 3
+        and run.graph_version not in DYNAMIC_THIRD_ROUND_ROUTING_GRAPH_VERSIONS
+    ):
+        raise TaskFactConflict("review_routing_not_supported", "当前图版本不能保存第三轮确定性路由")
     existing_task_count = int(
         await session.scalar(
             select(func.count(AgentTaskRow.id))

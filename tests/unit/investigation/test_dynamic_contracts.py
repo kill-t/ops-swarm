@@ -22,6 +22,7 @@ from opsswarm.investigation.dynamic_contracts import (
     ThirdRoundExecutionResult,
     ThirdRoundPlanningResult,
     ThirdRoundReviewResult,
+    ThirdRoundRoutingResult,
     ThirdRoundSynthesisResult,
 )
 from opsswarm.investigation.models import EvidenceKind, SpecialistReport
@@ -766,3 +767,114 @@ def test_missing_third_round_plan_rejects_review() -> None:
 
     with pytest.raises(ValidationError, match="没有第三轮计划"):
         ThirdRoundReviewResult(**payload, third_round_hypothesis_review=review)
+
+
+def _third_round_routing_payload() -> dict[str, object]:
+    payload = _third_round_review_payload()
+    review = payload["third_round_hypothesis_review"]
+    first_route = payload["review_route"]
+    assert isinstance(review, HypothesisReviewRecord)
+    assert isinstance(first_route, ReviewRoutingRecord)
+    decision = ReviewRoutingDecision(
+        route="await_human",
+        reason_codes=(
+            "support_insufficient",
+            "evidence_gaps_present",
+            "follow_up_suggestions_present",
+            "round_limit_reached",
+        ),
+        round_number=3,
+        existing_task_count=4,
+        max_rounds=3,
+        max_tasks_per_round=3,
+        max_total_tasks=6,
+        remaining_rounds=0,
+        remaining_task_slots=2,
+        suggested_task_count=len(review.review.follow_up_suggestions),
+        follow_up_suggestions=review.review.follow_up_suggestions,
+    )
+    payload["third_round_review_route"] = first_route.model_copy(
+        update={
+            "id": uuid4(),
+            "round_id": review.round_id,
+            "open_hypothesis_id": review.open_hypothesis_id,
+            "hypothesis_review_id": review.id,
+            "investigation_attempt_id": uuid4(),
+            "review_sha256": review.content_sha256,
+            "decision": decision,
+            "content_sha256": content_hash(decision),
+        }
+    )
+    return payload
+
+
+def test_third_round_routing_requires_bound_stopping_decision() -> None:
+    payload = _third_round_routing_payload()
+    result = ThirdRoundRoutingResult(**payload)
+
+    assert result.third_round_review_route is not None
+    assert result.third_round_review_route.decision.route == "await_human"
+    assert result.third_round_review_route.decision.remaining_rounds == 0
+
+    route = result.third_round_review_route
+    changes = (
+        None,
+        route.model_copy(update={"investigation_run_id": uuid4()}),
+        route.model_copy(update={"round_id": uuid4()}),
+        route.model_copy(update={"open_hypothesis_id": uuid4()}),
+        route.model_copy(update={"hypothesis_review_id": uuid4()}),
+        route.model_copy(update={"review_sha256": "0" * 64}),
+    )
+    for change in changes:
+        with pytest.raises(ValidationError, match="第三轮确定性路由"):
+            ThirdRoundRoutingResult(**(payload | {"third_round_review_route": change}))
+
+
+def test_third_round_routing_rejects_follow_up_decision() -> None:
+    payload = _third_round_routing_payload()
+    route = payload["third_round_review_route"]
+    assert isinstance(route, ReviewRoutingRecord)
+    review = payload["third_round_hypothesis_review"]
+    assert isinstance(review, HypothesisReviewRecord)
+    decision = ReviewRoutingDecision(
+        route="follow_up",
+        reason_codes=(
+            "support_insufficient",
+            "evidence_gaps_present",
+            "follow_up_suggestions_present",
+            "follow_up_capacity_available",
+        ),
+        round_number=2,
+        existing_task_count=4,
+        max_rounds=3,
+        max_tasks_per_round=3,
+        max_total_tasks=6,
+        remaining_rounds=1,
+        remaining_task_slots=2,
+        suggested_task_count=len(review.review.follow_up_suggestions),
+        follow_up_suggestions=review.review.follow_up_suggestions,
+    )
+    route = route.model_copy(
+        update={"decision": decision, "content_sha256": content_hash(decision)}
+    )
+
+    with pytest.raises(ValidationError, match="停止自动补查"):
+        ThirdRoundRoutingResult(**(payload | {"third_round_review_route": route}))
+
+
+def test_missing_third_round_plan_rejects_route() -> None:
+    payload = _valid_payload()
+    payload["follow_up_plan"] = None
+    payload["follow_up_results"] = ()
+    first_route = payload["review_route"]
+    assert isinstance(first_route, ReviewRoutingRecord)
+    decision = first_route.decision.model_copy(
+        update={"route": "candidate_evaluation", "follow_up_suggestions": ()}
+    )
+    payload["review_route"] = first_route.model_copy(
+        update={"decision": decision, "content_sha256": content_hash(decision)}
+    )
+    route = _third_round_routing_payload()["third_round_review_route"]
+
+    with pytest.raises(ValidationError, match="没有第三轮计划"):
+        ThirdRoundRoutingResult(**payload, third_round_review_route=route)

@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 100 步复用 `investigation_hypothesis_review_routes` 保存第三轮最大轮次停止路由，不新增表或字段。迁移 `0057_third_round_routing` 只扩展运行图约束到 v15；第三轮路由继续由既有复合外键、按审查唯一和按轮次唯一约束绑定假设、审查、运行与父尝试。降级检查图 v15 和第 3 轮及以后路由事实，不能通过改写图版本隐藏已经发生的停止决定。详细边界见 [v3 第三轮审查后的确定性最大轮次停止路由](100-third-round-terminal-routing.md)。
+
 第 99 步增量见 [v3 第三轮开放假设独立审查与恢复](99-third-round-review.md)：迁移 `0056_third_round_review` 只把 `investigation_runs.graph_version` 约束扩展到图 v14，并把根级 `review` 合法槽位扩展为 `0、1、2`，不新增业务表、字段或公开 API。现有审查表保存绑定第三轮假设和槽位 2 成功调用的新审查；存在图 v14、槽位 2 及以后审查调用或第 3 轮及以后审查事实时拒绝降级到 `0055`。
 
 第 98 步增量见 [v3 第三轮综合与开放假设恢复](98-third-round-synthesis.md)：迁移 `0055_third_round_synthesis` 只把 `investigation_runs.graph_version` 约束扩展到图 v13，不新增业务表、字段或公开 API。现有开放假设、调用账本和上下文清单保存绑定第 3 轮计划与槽位 2 成功综合调用的新假设；存在图 v13、槽位 2 及以后综合调用或第 3 轮及以后开放假设时拒绝降级到 `0054`。

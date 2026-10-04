@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-04。最新完成切片为第 99 步 v3 第三轮开放假设独立审查与恢复，基线为 main 的 `59217c2`（第 98 步）。本文随第 99 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 99 步进度记录为准。
+核对日期：2026-10-04。最新完成切片为第 100 步 v3 第三轮审查后的确定性最大轮次停止路由，基线为 main 的 `2ac9b69`（第 99 步）。本文随第 100 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 100 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 99 步设计](architecture/99-third-round-review.md) 与 [验收记录](progress/99-third-round-review.md)，再读第 85～98 步设计与记录，需要上下文前置时再读第 79～83 步。
+2. 先读 [第 100 步设计](architecture/100-third-round-terminal-routing.md) 与 [验收记录](progress/100-third-round-terminal-routing.md)，再读第 85～99 步设计与记录，需要上下文前置时再读第 79～83 步。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -18,11 +18,11 @@
 ## 3. 当前架构与技术栈
 
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
-- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v14 已按持久计划动态执行并综合三轮专业任务，三轮开放假设均形成独立审查，前两轮已有确定性路由。图 v1～v13 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
-- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合和独立审查。第三轮审查尚未进入最大轮次确定性停止路径。专业新策略只读取已保存证据，不动态查询现场遥测。
+- LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v15 已按持久计划动态执行并综合三轮专业任务，三轮开放假设均形成独立审查和确定性路由，第三轮在冻结上限停止。图 v1～v14 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
+- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。现场 v2 使用固定 UTC 窗口和受限异步执行器；尚无 telemetry-mcp 服务。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0056_third_round_review`；第 99 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0057_third_round_routing`；第 100 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -44,7 +44,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [77](progress/77-repeated-call-identity.md) | `090a44e` | 同尝试重复调用槽位、兼容旧幂等键、共享预算和迁移保护 |
 | [79](progress/79-bounded-evidence-reading.md) | `9475621` | 专业目录与受限证据读取循环、完整配对交互、逐次预算及恢复验证 |
 
-第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`，第 87 步提交为 `8eb4712`，第 88 步提交为 `956dad6`，第 89 步提交为 `3e98d7a`，第 90 步提交为 `e902e0b`，第 91 步提交为 `3e2813c`。第 92 步第二轮专业任务执行对应提交 `cdd9e0d`，第 93 步第二轮综合与开放假设恢复对应提交 `48bef25`，第 94 步第二轮独立审查对应提交 `0115537`，第 95 步第二轮确定性再次路由对应提交 `5da470d`，第 96 步第三轮计划持久化对应提交 `f4ca64c`，第 97 步第三轮专业任务执行对应提交 `7d2cb7b`，第 98 步第三轮综合对应提交 `59217c2`。第 99 步第三轮独立审查详见 [当前验收记录](progress/99-third-round-review.md)，对应本片独立提交。
+第 81 步提交为 `e744dd2`，第 82 步提交为 `d524db9`，第 83 步提交为 `5d3d702`，第 84 步提交为 `e4922d3`，第 85 步提交为 `f5287a6`，第 86 步提交为 `778e434`，第 87 步提交为 `8eb4712`，第 88 步提交为 `956dad6`，第 89 步提交为 `3e98d7a`，第 90 步提交为 `e902e0b`，第 91 步提交为 `3e2813c`。第 92 步第二轮专业任务执行对应提交 `cdd9e0d`，第 93 步第二轮综合与开放假设恢复对应提交 `48bef25`，第 94 步第二轮独立审查对应提交 `0115537`，第 95 步第二轮确定性再次路由对应提交 `5da470d`，第 96 步第三轮计划持久化对应提交 `f4ca64c`，第 97 步第三轮专业任务执行对应提交 `7d2cb7b`，第 98 步第三轮综合对应提交 `59217c2`。第 99 步第三轮独立审查对应提交 `2ac9b69`。第 100 步第三轮最大轮次停止路由详见 [当前验收记录](progress/100-third-round-terminal-routing.md)，对应本片独立提交。
 
 ## 5. 当前能力与限制
 
@@ -94,9 +94,11 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 98 步继续保留图 v1～v12，新运行固定到 `dynamic-investigation-graph-v13`。图 v13 只在第三轮任务全部完成后，使用第 3 轮已提交工作摘要和完整证据执行槽位 2 根级综合，以独立 `third_round_hypothesis` 保存绑定第三轮计划的 `pending_review` 开放假设。三轮综合分别使用槽位 0/1/2 和独立提示版本；模型成功后事实提交前与事实提交后 checkpoint 前均可跨父租约恢复。父运行仍为 `running`，通用 Worker 继续跳过 v3。
 
-第 99 步继续保留图 v1～v13，新运行固定到 `dynamic-investigation-graph-v14`。图 v14 在第三轮综合后只读取该综合的同源材料和当前开放假设，以审查槽位 2、独立提示和角色版本保存绑定第 3 轮的 `recorded` 审查事实。成功调用后事实提交前与事实提交后 checkpoint 前均可跨父租约恢复；完整三轮路径显式固定 13 次模型调用预算，既有默认 12 保持不变。父运行仍为 `running`，通用 Worker 继续跳过 v3。
+第 99 步继续保留图 v1～v13，新运行固定到 `dynamic-investigation-graph-v14`。图 v14 在第三轮综合后只读取该综合的同源材料和当前开放假设，以审查槽位 2、独立提示和角色版本保存绑定第 3 轮的 `recorded` 审查事实。成功调用后事实提交前与事实提交后 checkpoint 前均可跨父租约恢复；完整三轮路径显式固定 13 次模型调用预算，既有默认 12 保持不变。
 
-尚未完成：专业交互历史裁剪；第三轮审查后的完整有界停止路径；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。历史业务审批不等于 LangGraph interrupt/resume。
+第 100 步继续保留图 v1～v14，新运行固定到 `dynamic-investigation-graph-v15`。图 v15 复用冻结的确定性路由规则，从第三轮假设、同轮审查、运行策略和真实任务数保存第三份路由；清洁充分支持进入 `candidate_evaluation`，有异议、支持不足或轮次用尽进入 `await_human`。最大轮次仍有完整建议时保留建议并记录 `round_limit_reached`，不能保存 `follow_up` 或创建第 4 轮。路由提交前后两个窗口均可跨父租约恢复，不增加模型、工具、来源或预算调用；父运行仍为 `running`，通用 Worker 继续跳过 v3。
+
+尚未完成：专业交互历史裁剪；只读 MCP；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -115,7 +117,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [coordination/context.py](../src/opsswarm/investigation/coordination/context.py)、[coordination/planner.py](../src/opsswarm/investigation/coordination/planner.py) | 首轮最小上下文、根级共享预算调用、成功结果复用与计划提交恢复 |
 | [coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py)、[coordination/queries.py](../src/opsswarm/investigation/coordination/queries.py) | 策略、计划、业务轮次、父尝试和模型调用来源的原子写入及重建核对 |
 | [workflow_versions.py](../src/opsswarm/investigation/workflow_versions.py)、[persistence/repository.py](../src/opsswarm/investigation/persistence/repository.py) | v3 路由、启动策略原子冻结、运行查询及 Worker 支持版本领取过滤 |
-| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[dynamic_synthesis_graph.py](../src/opsswarm/investigation/dynamic_synthesis_graph.py)、[dynamic_review_graph.py](../src/opsswarm/investigation/dynamic_review_graph.py)、[dynamic_routing_graph.py](../src/opsswarm/investigation/dynamic_routing_graph.py)、[dynamic_follow_up_graph.py](../src/opsswarm/investigation/dynamic_follow_up_graph.py)、[dynamic_second_round_graph.py](../src/opsswarm/investigation/dynamic_second_round_graph.py)、[dynamic_second_round_synthesis_graph.py](../src/opsswarm/investigation/dynamic_second_round_synthesis_graph.py)、[dynamic_second_round_review_graph.py](../src/opsswarm/investigation/dynamic_second_round_review_graph.py)、[dynamic_second_round_routing_graph.py](../src/opsswarm/investigation/dynamic_second_round_routing_graph.py)、[dynamic_third_round_planning_graph.py](../src/opsswarm/investigation/dynamic_third_round_planning_graph.py)、[dynamic_third_round_graph.py](../src/opsswarm/investigation/dynamic_third_round_graph.py)、[dynamic_third_round_synthesis_graph.py](../src/opsswarm/investigation/dynamic_third_round_synthesis_graph.py)、[dynamic_third_round_review_graph.py](../src/opsswarm/investigation/dynamic_third_round_review_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1～v13 保留各阶段历史恢复语义；图 v14 审查第三轮同源材料和假设，仍不执行最大轮次停止路由或结算调查 |
+| [dynamic_graph.py](../src/opsswarm/investigation/dynamic_graph.py)、[dynamic_first_round_graph.py](../src/opsswarm/investigation/dynamic_first_round_graph.py)、[dynamic_synthesis_graph.py](../src/opsswarm/investigation/dynamic_synthesis_graph.py)、[dynamic_review_graph.py](../src/opsswarm/investigation/dynamic_review_graph.py)、[dynamic_routing_graph.py](../src/opsswarm/investigation/dynamic_routing_graph.py)、[dynamic_follow_up_graph.py](../src/opsswarm/investigation/dynamic_follow_up_graph.py)、[dynamic_second_round_graph.py](../src/opsswarm/investigation/dynamic_second_round_graph.py)、[dynamic_second_round_synthesis_graph.py](../src/opsswarm/investigation/dynamic_second_round_synthesis_graph.py)、[dynamic_second_round_review_graph.py](../src/opsswarm/investigation/dynamic_second_round_review_graph.py)、[dynamic_second_round_routing_graph.py](../src/opsswarm/investigation/dynamic_second_round_routing_graph.py)、[dynamic_third_round_planning_graph.py](../src/opsswarm/investigation/dynamic_third_round_planning_graph.py)、[dynamic_third_round_graph.py](../src/opsswarm/investigation/dynamic_third_round_graph.py)、[dynamic_third_round_synthesis_graph.py](../src/opsswarm/investigation/dynamic_third_round_synthesis_graph.py)、[dynamic_third_round_review_graph.py](../src/opsswarm/investigation/dynamic_third_round_review_graph.py)、[dynamic_third_round_routing_graph.py](../src/opsswarm/investigation/dynamic_third_round_routing_graph.py)、[worker/dynamic_graph.py](../src/opsswarm/worker/dynamic_graph.py) | 图 v1～v14 保留各阶段历史恢复语义；图 v15 保存第三轮停止路由，仍不执行人工、候选路径或结算调查 |
 | [synthesis/contracts.py](../src/opsswarm/investigation/synthesis/contracts.py)、[synthesis/persistence.py](../src/opsswarm/investigation/synthesis/persistence.py)、[synthesis/service.py](../src/opsswarm/investigation/synthesis/service.py) | 按轮开放假设契约、证据闭包、槽位隔离、成功调用复用、不可变写入和来源重建；不映射旧根因或处置资格 |
 | [review/contracts.py](../src/opsswarm/investigation/review/contracts.py)、[review/persistence.py](../src/opsswarm/investigation/review/persistence.py)、[review/service.py](../src/opsswarm/investigation/review/service.py) | 按轮独立审查契约、同源材料、槽位隔离、成功调用复用和不可变事实；建议不创建任务或授予路由与执行资格 |
 | [review_routing/contracts.py](../src/opsswarm/investigation/review_routing/contracts.py)、[review_routing/policy.py](../src/opsswarm/investigation/review_routing/policy.py)、[review_routing/persistence.py](../src/opsswarm/investigation/review_routing/persistence.py) | 按轮纯规则路由、有限原因码、冻结容量检查、不可变事实与来源重建；决定尚不执行对应路径 |
@@ -132,7 +134,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 100 步：**第三轮审查后的确定性最大轮次停止路由**。只从第三轮假设、同轮审查和冻结策略形成不可变停止决定；最大轮次不得再产生 `follow_up`。人工等待与候选结论仍只保存路由事实，不进入图内暂停、规划或父运行结算。
+第 101 步：**只读 telemetry MCP 的最小协议与本地日志查询**。先定义本地 MCP 进程边界、显式时间窗、受限参数、结构化错误和调用审计，再让一个日志专业任务通过只读 MCP 查询隔离演练环境。保留现有来源适配器和冻结回归，不接真实生产环境，不在本片同时迁移指标、变更或 Git 工具。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -140,7 +142,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；完整第 96 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，异步子进程继续参考现有线程桥接。
+使用仓库 `.venv/Scripts/`；完整第 100 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，异步子进程继续参考现有线程桥接。
 
 ```powershell
 git status --short
@@ -152,8 +154,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 99 步测试入口为 [v3 第三轮审查图](../tests/integration/test_dynamic_third_round_review_graph.py)、[阶段结果契约](../tests/unit/investigation/test_dynamic_contracts.py)、[摘要上下文](../tests/unit/investigation/test_summary_context.py) 和冻结的 [v12 第三轮执行图](../tests/integration/test_dynamic_third_round_graph.py)。冻结的第 98 步综合图由 [v3 第三轮综合图](../tests/integration/test_dynamic_third_round_synthesis_graph.py) 回归。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 100 步测试入口为 [v3 第三轮停止路由图](../tests/integration/test_dynamic_third_round_routing_graph.py)、[确定性路由](../tests/unit/investigation/test_review_routing.py) 和 [阶段结果契约](../tests/unit/investigation/test_dynamic_contracts.py)。冻结的第 99 步审查图由 [v3 第三轮审查图](../tests/integration/test_dynamic_third_round_review_graph.py) 回归。图版本迁移、v3 启动和 Worker 隔离见 [v3 迁移](../tests/integration/test_dynamic_workflow_migration.py)、[v3 启动](../tests/integration/test_dynamic_workflow_start.py) 和 [Worker 版本拒绝](../tests/unit/investigation/test_worker_routing.py)。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 99 步设计/验收，核对 Git 与实际代码。v3 图 v14 已只用第三轮综合的同源材料与假设保存绑定第 3 轮的独立审查事实；旧图 v1～v13 保留，父运行仍不结算。从第 100 步最大轮次停止路由推进，只用第三轮假设、审查和冻结策略形成不可变决定，且不得继续补查。完成真实 PostgreSQL、checkpoint 兼容回归、文档和中文独立提交。不要提前实现图内人工恢复、候选结论、规划、开放 v3 Worker 或接入 MCP。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 100 步设计/验收，核对 Git 与实际代码。v3 图 v15 已从第三轮假设、同轮审查、冻结策略和真实任务数保存终端路由，最大轮次不能继续补查；旧图 v1～v14 保留，父运行仍不结算。从第 101 步只读 telemetry MCP 的最小协议与本地日志查询推进，先完成信任边界、受限查询、结构化错误、调用审计和真实本地进程集成验证。保留现有来源适配器和冻结回归，不接生产环境，不提前迁移指标/变更/Git 工具、实现人工恢复或开放 v3 Worker。

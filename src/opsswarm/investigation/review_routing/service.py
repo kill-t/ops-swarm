@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from opsswarm.investigation.dynamic_contracts import (
     FirstRoundReviewResult,
     SecondRoundReviewResult,
+    ThirdRoundReviewResult,
 )
 from opsswarm.investigation.review.contracts import HypothesisReviewRecord
 from opsswarm.investigation.review_routing.contracts import ReviewRoutingRecord
@@ -111,4 +112,34 @@ class SecondRoundReviewRoutingService(_RoundReviewRoutingService):
         return await self._route_review(self._review(result))
 
     async def get_completed(self, result: SecondRoundReviewResult) -> ReviewRoutingRecord:
+        return await self._get_completed_review(self._review(result))
+
+
+class ThirdRoundReviewRoutingService(_RoundReviewRoutingService):
+    """只路由达到冻结最大轮次的第三轮开放假设审查。"""
+
+    @staticmethod
+    def _review(result: ThirdRoundReviewResult) -> HypothesisReviewRecord:
+        plan = result.third_round_plan
+        hypothesis = result.third_round_hypothesis
+        review = result.third_round_hypothesis_review
+        if (
+            plan is None
+            or plan.plan.assignment.round_number != 3
+            or hypothesis is None
+            or review is None
+            or hypothesis.round_id != plan.round_id
+            or review.round_id != hypothesis.round_id
+            or review.open_hypothesis_id != hypothesis.id
+        ):
+            raise TaskFactConflict(
+                "third_round_routing_scope_invalid",
+                "第三轮路由缺少已完成的第三轮审查事实",
+            )
+        return review
+
+    async def route(self, result: ThirdRoundReviewResult) -> ReviewRoutingRecord:
+        return await self._route_review(self._review(result))
+
+    async def get_completed(self, result: ThirdRoundReviewResult) -> ReviewRoutingRecord:
         return await self._get_completed_review(self._review(result))

@@ -175,6 +175,41 @@ def test_second_round_waits_for_human_when_round_capacity_is_exhausted() -> None
     assert "round_limit_reached" in decision.reason_codes
 
 
+def test_third_round_preserves_suggestions_but_stops_automatic_follow_up() -> None:
+    review = insufficient_review(roles=("log", "metric"))
+
+    decision = compile_decision(
+        review,
+        round_number=3,
+        existing_task_count=4,
+    )
+
+    assert decision.route == "await_human"
+    assert decision.remaining_rounds == 0
+    assert decision.follow_up_suggestions == review.follow_up_suggestions
+    assert decision.reason_codes == (
+        "support_insufficient",
+        "evidence_gaps_present",
+        "follow_up_suggestions_present",
+        "round_limit_reached",
+    )
+
+
+def test_third_round_clean_support_can_enter_candidate_evaluation() -> None:
+    decision = compile_decision(
+        sufficient_review(),
+        round_number=3,
+        existing_task_count=4,
+    )
+
+    assert decision.route == "candidate_evaluation"
+    assert decision.remaining_rounds == 0
+    assert decision.reason_codes == (
+        "support_sufficient",
+        "candidate_requirements_satisfied",
+    )
+
+
 def test_second_round_waits_for_human_when_total_task_capacity_is_exhausted() -> None:
     review = insufficient_review(roles=("log", "metric"))
 
