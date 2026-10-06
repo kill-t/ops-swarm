@@ -130,6 +130,20 @@ async def mark_run_as_legacy_live(
         )
 
 
+async def mark_run_as_mcp_log_live(
+    factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+) -> None:
+    """测试夹具显式模拟 0059 之前已经持久化的日志 MCP 运行。"""
+
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == run_id)
+            .values(evidence_policy_version="task-evidence-live-mcp-log-v1")
+        )
+
+
 def assignment(*, round_number: int = 1, max_attempts: int = 3, count: int = 1) -> RoundAssignment:
     return RoundAssignment(
         round_number=round_number,

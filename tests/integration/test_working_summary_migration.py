@@ -89,7 +89,7 @@ async def test_downgrade_refuses_policy_or_saved_material(database_session_facto
     async with db() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0058_telemetry_mcp_log_policy"
+            == "0059_telemetry_mcp_metric_policy"
         )
 
 

@@ -20,9 +20,18 @@ from opsswarm.telemetry_mcp.client import (
     TelemetryMcpClientSettings,
     TelemetryMcpLogDataSource,
 )
+from opsswarm.telemetry_metrics_mcp.client import (
+    TelemetryMcpMetricDataSource,
+    TelemetryMetricsMcpClientSettings,
+)
 from tests.integration.test_live_task_graph import run_live_worker
 from tests.live_task_helpers import LiveHttpFixture
-from tests.task_facts_helpers import TaskClock, mark_run_as_legacy_live, started_run
+from tests.task_facts_helpers import (
+    TaskClock,
+    mark_run_as_legacy_live,
+    mark_run_as_mcp_log_live,
+    started_run,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 LIVE = InvestigationDataSourceMode.LIVE
@@ -91,6 +100,166 @@ def mcp_source() -> TelemetryMcpLogDataSource:
     )
 
 
+@contextmanager
+def telemetry_metrics_mcp_process():
+    """启动不含业务凭据的真实指标 MCP 测试进程。"""
+
+    allowed = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper()
+        in {
+            "PATH",
+            "PATHEXT",
+            "SYSTEMDRIVE",
+            "SYSTEMROOT",
+            "TEMP",
+            "TMP",
+            "WINDIR",
+            "PYTHONPATH",
+        }
+    }
+    process = subprocess.Popen(
+        [sys.executable, "tests/telemetry_metrics_mcp_process.py"],
+        cwd=os.getcwd(),
+        env=allowed,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError("测试指标 MCP 进程提前退出")
+            try:
+                with socket.create_connection(("127.0.0.1", 18005), timeout=0.1):
+                    break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            raise RuntimeError("测试指标 MCP 进程未按时启动")
+        yield
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def metric_mcp_source() -> TelemetryMcpMetricDataSource:
+    return TelemetryMcpMetricDataSource(
+        TelemetryMetricsMcpClientSettings(
+            endpoint_url="http://127.0.0.1:18005/mcp",
+            request_timeout_seconds=1,
+        )
+    )
+
+
+async def test_new_live_worker_reads_logs_and_metrics_from_real_mcp_processes(
+    database_session_factory,
+    checkpoint_database_url,
+) -> None:
+    await initialize_checkpoint_schema(checkpoint_database_url)
+    store, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V2,
+        data_source_mode=LIVE,
+    )
+    clock = TaskClock(started.run.observation_cutoff_at)
+    fixture = LiveHttpFixture(
+        started.run.observation_cutoff_at,
+        clock,
+        mcp_logs=mcp_source(),
+        mcp_metrics=metric_mcp_source(),
+    )
+
+    with telemetry_mcp_process(), telemetry_metrics_mcp_process():
+        assert await run_live_worker(
+            database_session_factory,
+            checkpoint_database_url,
+            store,
+            clock,
+            fixture.source,
+        )
+
+    run = await store.get_run(started.run.id)
+    assert run.status == "succeeded"
+    assert run.evidence_policy_version == "task-evidence-live-mcp-v1"
+    assert {kind for kind, _ in fixture.requests} == {"change"}
+    tasks = (
+        (await CollaborationQueries(database_session_factory).get_snapshot(run.id)).rounds[0].tasks
+    )
+    telemetry_tasks = [
+        task for task in tasks if task.assignment.role in {EvidenceKind.LOG, EvidenceKind.METRIC}
+    ]
+    saved = [
+        await CollaborationQueries(database_session_factory).get_evidence(run.id, task.id)
+        for task in telemetry_tasks
+    ]
+    assert all(record is not None for record in saved)
+    assert {record.snapshot.version for record in saved if record is not None} == {
+        "task-evidence-live-mcp-v1"
+    }
+    assert {record.snapshot.evidence[0].source for record in saved if record is not None} == {
+        "loki-fault-lab",
+        "prometheus-fault-lab",
+    }
+    budget = await CallBudgetQueries(database_session_factory).get_snapshot(run.id)
+    telemetry_calls = [
+        call for call in budget.calls if call.operation in {"query_logs", "query_metrics"}
+    ]
+    assert {call.operation for call in telemetry_calls if call.status == "succeeded"} == {
+        "query_logs",
+        "query_metrics",
+    }
+
+
+async def test_metric_mcp_unavailable_fails_without_direct_fallback(
+    database_session_factory,
+    checkpoint_database_url,
+) -> None:
+    await initialize_checkpoint_schema(checkpoint_database_url)
+    store, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V2,
+        data_source_mode=LIVE,
+        max_attempts=1,
+    )
+    clock = TaskClock(started.run.observation_cutoff_at)
+    fixture = LiveHttpFixture(
+        started.run.observation_cutoff_at,
+        clock,
+        mcp_logs=mcp_source(),
+        mcp_metrics=metric_mcp_source(),
+    )
+
+    with telemetry_mcp_process():
+        assert await run_live_worker(
+            database_session_factory,
+            checkpoint_database_url,
+            store,
+            clock,
+            fixture.source,
+        )
+
+    run = await store.get_run(started.run.id)
+    assert run.status == "failed" and run.result is None
+    assert "metric" not in {kind for kind, _ in fixture.requests}
+    tasks = (
+        (await CollaborationQueries(database_session_factory).get_snapshot(run.id)).rounds[0].tasks
+    )
+    metric = next(task for task in tasks if task.assignment.role is EvidenceKind.METRIC)
+    assert (
+        await CollaborationQueries(database_session_factory).get_evidence(run.id, metric.id) is None
+    )
+    budget = await CallBudgetQueries(database_session_factory).get_snapshot(run.id)
+    metric_call = next(call for call in budget.calls if call.operation == "query_metrics")
+    assert metric_call.status == "failed"
+    assert metric_call.error_code == "telemetry_mcp_timeout"
+
+
 async def test_live_worker_persists_log_evidence_from_real_mcp_process(
     database_session_factory,
     checkpoint_database_url,
@@ -101,6 +270,7 @@ async def test_live_worker_persists_log_evidence_from_real_mcp_process(
         workflow_version=WorkflowVersion.V2,
         data_source_mode=LIVE,
     )
+    await mark_run_as_mcp_log_live(database_session_factory, started.run.id)
     clock = TaskClock(started.run.observation_cutoff_at)
     fixture = LiveHttpFixture(
         started.run.observation_cutoff_at,
@@ -145,6 +315,7 @@ async def test_mcp_handshake_timeout_fails_without_direct_or_frozen_fallback(
         data_source_mode=LIVE,
         max_attempts=1,
     )
+    await mark_run_as_mcp_log_live(database_session_factory, started.run.id)
     clock = TaskClock(started.run.observation_cutoff_at)
     fixture = LiveHttpFixture(
         started.run.observation_cutoff_at,

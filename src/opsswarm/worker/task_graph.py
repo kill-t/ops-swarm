@@ -80,7 +80,11 @@ class TaskGraphFactory:
                 not isinstance(self._source, LiveInvestigationDataSource)
                 or context.observation_cutoff_at is None
                 or context.evidence_policy_version
-                not in ("task-evidence-live-v1", "task-evidence-live-mcp-log-v1")
+                not in (
+                    "task-evidence-live-v1",
+                    "task-evidence-live-mcp-log-v1",
+                    "task-evidence-live-mcp-v1",
+                )
                 or context.call_budget is None
             ):
                 raise UnsupportedLiveTaskSource("现场 v2 缺少匹配的来源、窗口或取证预算策略")

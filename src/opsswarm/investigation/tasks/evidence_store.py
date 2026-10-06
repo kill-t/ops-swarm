@@ -135,6 +135,7 @@ async def _current_assignment(
         ("task-evidence-v1", "frozen"),
         ("task-evidence-live-v1", "live"),
         ("task-evidence-live-mcp-log-v1", "live"),
+        ("task-evidence-live-mcp-v1", "live"),
     ):
         raise TaskFactConflict("task_evidence_policy_mismatch", "运行未启用受支持的取证策略")
     task = await session.get(AgentTaskRow, task_id)

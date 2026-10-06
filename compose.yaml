@@ -406,6 +406,7 @@ services:
       start_period: 5s
     networks:
       - lab
+      - telemetry
 
   loki:
     image: grafana/loki:3.7.7
@@ -497,6 +498,41 @@ services:
     networks:
       - telemetry
 
+  telemetry-metrics-mcp:
+    <<: *opsswarm-runtime
+    init: true
+    command:
+      - python
+      - -m
+      - opsswarm.telemetry_metrics_mcp
+    environment:
+      OPSSWARM_INVESTIGATION_PROMETHEUS_BASE_URL: http://prometheus:9090
+      OPSSWARM_INVESTIGATION_REQUEST_TIMEOUT_SECONDS: ${OPSSWARM_INVESTIGATION_REQUEST_TIMEOUT_SECONDS:-3}
+      OPSSWARM_TELEMETRY_METRICS_MCP_HOST: 0.0.0.0
+      OPSSWARM_TELEMETRY_METRICS_MCP_PORT: 8000
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=2).close()"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - telemetry
+
   investigation-worker-frozen:
     <<: *investigation-worker
     environment:
@@ -515,6 +551,8 @@ services:
       OPSSWARM_INVESTIGATION_RUNTIME_BASE_URL: http://order-service:8000
       OPSSWARM_TELEMETRY_MCP_ENDPOINT_URL: http://telemetry-mcp:8000/mcp
       OPSSWARM_TELEMETRY_MCP_REQUEST_TIMEOUT_SECONDS: ${OPSSWARM_TELEMETRY_MCP_REQUEST_TIMEOUT_SECONDS:-3}
+      OPSSWARM_TELEMETRY_METRICS_MCP_ENDPOINT_URL: http://telemetry-metrics-mcp:8000/mcp
+      OPSSWARM_TELEMETRY_METRICS_MCP_REQUEST_TIMEOUT_SECONDS: ${OPSSWARM_TELEMETRY_METRICS_MCP_REQUEST_TIMEOUT_SECONDS:-3}
       OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
       OPSSWARM_INVESTIGATION_CHANGE_PROVIDER: ${OPSSWARM_INVESTIGATION_CHANGE_PROVIDER:-simulator}
       OPSSWARM_GITHUB_REPOSITORY: ${OPSSWARM_GITHUB_REPOSITORY:-}

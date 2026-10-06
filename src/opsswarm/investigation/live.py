@@ -17,6 +17,7 @@ from opsswarm.investigation.live_window import (
     UnsupportedLiveTaskSource,
     WindowBoundLiveDataSource,
     WindowedLogDataSource,
+    WindowedMetricDataSource,
 )
 from opsswarm.investigation.loki import LokiOnlyInvestigationDataSource
 from opsswarm.investigation.models import EvidenceObservation
@@ -26,6 +27,7 @@ from opsswarm.investigation.tools import InvestigationDataSource
 
 if TYPE_CHECKING:
     from opsswarm.telemetry_mcp.client import TelemetryMcpClientSettings
+    from opsswarm.telemetry_metrics_mcp.client import TelemetryMetricsMcpClientSettings
 
 
 class LiveChangeProvider(StrEnum):
@@ -58,11 +60,13 @@ class LiveInvestigationDataSource:
         *,
         logs: InvestigationDataSource | None = None,
         mcp_logs: WindowedLogDataSource | None = None,
+        mcp_metrics: WindowedMetricDataSource | None = None,
         metrics: InvestigationDataSource | None = None,
         changes: InvestigationDataSource | None = None,
     ) -> None:
         self._logs = logs if logs is not None else LokiOnlyInvestigationDataSource()
         self._mcp_logs = mcp_logs
+        self._mcp_metrics = mcp_metrics
         self._metrics = metrics if metrics is not None else PrometheusOnlyInvestigationDataSource()
         self._changes = changes if changes is not None else ChangeApiOnlyInvestigationDataSource()
 
@@ -81,15 +85,22 @@ class LiveInvestigationDataSource:
             raise UnsupportedLiveTaskSource("现场 v2 仅支持 Loki、Prometheus 和本地历史变更源")
         if evidence_policy_version == "task-evidence-live-v1":
             logs: WindowedLogDataSource = self._logs
+            metrics: WindowedMetricDataSource = self._metrics
         elif evidence_policy_version == "task-evidence-live-mcp-log-v1":
             if self._mcp_logs is None:
                 raise UnsupportedLiveTaskSource("现场 v2 的日志 MCP 来源未配置")
             logs = self._mcp_logs
+            metrics = self._metrics
+        elif evidence_policy_version == "task-evidence-live-mcp-v1":
+            if self._mcp_logs is None or self._mcp_metrics is None:
+                raise UnsupportedLiveTaskSource("现场 v2 的遥测 MCP 来源未完整配置")
+            logs = self._mcp_logs
+            metrics = self._mcp_metrics
         else:
             raise UnsupportedLiveTaskSource("现场 v2 的取证策略不受支持")
         return WindowBoundLiveDataSource(
             logs=logs,
-            metrics=self._metrics,
+            metrics=metrics,
             changes=self._changes,
             service_name=service_name,
             cutoff=cutoff,
@@ -134,12 +145,17 @@ def create_live_investigation_data_source(
     *,
     github_settings: GitHubChangeSettings | None = None,
     telemetry_mcp_settings: "TelemetryMcpClientSettings | None" = None,
+    telemetry_metrics_mcp_settings: "TelemetryMetricsMcpClientSettings | None" = None,
 ) -> LiveInvestigationDataSource:
     """按显式配置组装现场来源，GitHub 模式缺少仓库配置时直接失败。"""
 
     from opsswarm.telemetry_mcp.client import (
         TelemetryMcpClientSettings,
         TelemetryMcpLogDataSource,
+    )
+    from opsswarm.telemetry_metrics_mcp.client import (
+        TelemetryMcpMetricDataSource,
+        TelemetryMetricsMcpClientSettings,
     )
 
     simulator = ChangeApiOnlyInvestigationDataSource()
@@ -154,4 +170,7 @@ def create_live_investigation_data_source(
     return LiveInvestigationDataSource(
         changes=changes,
         mcp_logs=TelemetryMcpLogDataSource(telemetry_mcp_settings or TelemetryMcpClientSettings()),
+        mcp_metrics=TelemetryMcpMetricDataSource(
+            telemetry_metrics_mcp_settings or TelemetryMetricsMcpClientSettings()
+        ),
     )

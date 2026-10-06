@@ -97,7 +97,7 @@ async def test_live_worker_pins_scope_and_recovers_saved_evidence(
     tasks = (await queries.get_snapshot(started.run.id)).rounds[0].tasks
     saved = [await queries.get_evidence(started.run.id, t.id) for t in tasks]
     assert all(r.snapshot.data_source_mode == "live" for r in saved)
-    assert all(r.snapshot.version == "task-evidence-live-mcp-log-v1" for r in saved)
+    assert all(r.snapshot.version == "task-evidence-live-mcp-v1" for r in saved)
     assert all(t.assignment.window_end == cutoff for t in tasks)
     if fail_model:
         assert (await store.get_run(started.run.id)).status == "queued"

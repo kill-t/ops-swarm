@@ -20,6 +20,8 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 101 步交付 [只读 telemetry MCP 日志查询](docs/architecture/101-telemetry-mcp-log-query.md)：新建现场 v2 的日志专业任务通过独立 Streamable HTTP MCP 服务读取本地 Loki，运行固定新取证策略，历史运行继续直连恢复。服务只暴露固定服务与显式 UTC 窗口，不接收 URL、LogQL、业务身份或写权限；指标与变更仍沿用原适配器，MCP 失败不会回退冻结证据。验证见 [第 101 步记录](docs/progress/101-telemetry-mcp-log-query.md)。
 
+第 102 步交付 [只读 telemetry MCP 指标查询](docs/architecture/102-telemetry-mcp-metric-query.md)：新建现场 v2 的指标专业任务通过独立单工具 MCP 服务读取本地 Prometheus，日志继续使用冻结的第 101 步 MCP 协议。新组合固定为 `task-evidence-live-mcp-v1`，两种历史现场策略仍按原路径恢复；指标工具不接受 URL、PromQL、指标名或查询控制参数，MCP 失败不会回退直连或冻结材料。验证见 [第 102 步记录](docs/progress/102-telemetry-mcp-metric-query.md)。
+
 第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
 
 第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；该步尚未接入的专业按需读取由第 79 步独立策略交付，工作摘要材料由第 80 步交付，第 81 步通过独立策略接入综合消费。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。
@@ -323,7 +325,7 @@ $env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main --once
 ```
 
-任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志来源由 `LiveInvestigationDataSource` 委托独立 telemetry MCP，指标和变更仍分别委托 Prometheus 与变更适配器，任一来源失败都会进入既有任务重试，不回退为冻结证据。历史 `task-evidence-live-v1` 运行恢复时仍直连 Loki。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
+任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 
 每次领取都创建 `investigation_attempts`，成功、失败或租约过期后结算。只读查询：
 
@@ -634,7 +636,7 @@ docker compose ps -a
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。完整页面位于 `http://127.0.0.1:5173`，接口文档位于 `http://127.0.0.1:8000/docs`。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；`control-api`、冻结/现场调查 Worker、`telemetry-mcp` 和 `verification-worker` 作为独立容器运行。`telemetry-mcp` 不发布宿主端口，只在隔离 `telemetry` 网络读取 Loki；现场 Worker 通过固定地址调用它。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。完整页面位于 `http://127.0.0.1:5173`，接口文档位于 `http://127.0.0.1:8000/docs`。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；`control-api`、冻结/现场调查 Worker、日志和指标 MCP、`verification-worker` 作为独立容器运行。两个 MCP 均不发布宿主端口，只在隔离 `telemetry` 网络分别读取 Loki 和 Prometheus；现场 Worker 通过固定地址调用它们。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 需要演示完整事故闭环时执行以下命令。它会使用 `.env` 中配置的真实模型并产生小额费用，没有显式开关时脚本会拒绝运行：
 

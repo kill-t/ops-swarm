@@ -58,7 +58,8 @@ class InvestigationRunRow(Base):
             "(workflow_version = 'v2' AND data_source_mode = 'live' AND "
             "observation_cutoff_at IS NOT NULL AND evidence_policy_version IS NOT NULL AND "
             "evidence_policy_version IN "
-            "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1') AND "
+            "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1', "
+            "'task-evidence-live-mcp-v1') AND "
             "observation_cutoff_at = date_trunc('second', observation_cutoff_at) AND "
             "observation_cutoff_at <= created_at AND "
             "observation_cutoff_at >= TIMESTAMPTZ '1970-01-01 06:00:00+00') OR "
@@ -71,7 +72,8 @@ class InvestigationRunRow(Base):
             "AND call_budget IS NOT NULL AND ((evidence_policy_version = 'task-evidence-v1' "
             "AND data_source_mode = 'frozen') OR "
             "(evidence_policy_version IN "
-            "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1') "
+            "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1', "
+            "'task-evidence-live-mcp-v1') "
             "AND data_source_mode = 'live')))",
             name="ck_investigation_runs_evidence_policy",
         ),

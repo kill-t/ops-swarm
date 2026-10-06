@@ -16,9 +16,12 @@ EvidencePolicyVersion = Literal[
     "task-evidence-v1",
     "task-evidence-live-v1",
     "task-evidence-live-mcp-log-v1",
+    "task-evidence-live-mcp-v1",
 ]
 
-LIVE_EVIDENCE_POLICIES = frozenset({"task-evidence-live-v1", "task-evidence-live-mcp-log-v1"})
+LIVE_EVIDENCE_POLICIES = frozenset(
+    {"task-evidence-live-v1", "task-evidence-live-mcp-log-v1", "task-evidence-live-mcp-v1"}
+)
 
 
 def live_snapshot_id(run_id: UUID, cutoff: datetime) -> str:

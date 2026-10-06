@@ -10,10 +10,10 @@
 | --- | --- |
 | 已有运行交付 | 第 63 步 MVP 发布已验收，见 [发布记录](63-mvp-compose-release.md)；历史测试结果不是本轮重新执行的结果 |
 | 最新文档切片 | 第 78 步开发交接已验收，见 [切片记录](78-development-handoff.md)；以 [项目状态](../PROJECT_STATE.md) 为新会话入口，原第 65 篇仍为架构事实来源 |
-| 最新实现切片 | 第 101 步只读 telemetry MCP 日志查询已验收，见 [切片记录](101-telemetry-mcp-log-query.md)；新建现场 v2 的日志任务经独立 MCP，历史策略仍直连恢复，指标尚未迁移 |
+| 最新实现切片 | 第 102 步只读 telemetry MCP 指标查询已验收，见 [切片记录](102-telemetry-mcp-metric-query.md)；新建现场 v2 的日志与指标任务均经独立单工具 MCP，两种历史现场策略仍按原路径恢复 |
 | 当前架构来源 | [第 64 篇总路线](../architecture/64-full-multi-agent-roadmap.md) + [第 65 篇专项设计](../architecture/65-agent-system-design.md) |
-| 待开发能力 | 完整 Harness、专业交互历史裁剪、v3 通用 Worker 接管、指标 MCP、经验、图内人工介入和多步骤处置 |
-| 下一切片 | 第 102 步：在既有 telemetry MCP 信任边界内增加受限指标查询，并让新现场 v2 的指标专业任务通过 MCP；变更和 Git 工具继续后置 |
+| 待开发能力 | 完整 Harness、专业交互历史裁剪、v3 通用 Worker 接管、调查手册、可信身份、经验、图内人工介入和多步骤处置 |
+| 下一切片 | 第 103 步：为明确事故场景增加 Git 管理的版本化调查手册最小读取链路，并把实际读取材料纳入可追溯上下文 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。
 
@@ -157,3 +157,4 @@
 - [99 - v3 第三轮开放假设独立审查与恢复](99-third-round-review.md)
 - [100 - v3 第三轮审查后的确定性最大轮次停止路由](100-third-round-terminal-routing.md)
 - [101 - 只读 telemetry MCP 日志查询](101-telemetry-mcp-log-query.md)
+- [102 - 只读 telemetry MCP 指标查询](102-telemetry-mcp-metric-query.md)

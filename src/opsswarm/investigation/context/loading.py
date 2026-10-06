@@ -58,6 +58,7 @@ async def load_sources(
         "task-evidence-v1",
         "task-evidence-live-v1",
         "task-evidence-live-mcp-log-v1",
+        "task-evidence-live-mcp-v1",
     ):
         raise TaskFactConflict("context_policy_mismatch", "运行没有受支持的上下文策略")
     if (

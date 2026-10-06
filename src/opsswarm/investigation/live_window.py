@@ -6,7 +6,6 @@ from typing import Protocol
 
 from opsswarm.investigation.changes import ChangeApiOnlyInvestigationDataSource
 from opsswarm.investigation.models import EvidenceObservation
-from opsswarm.investigation.prometheus import PrometheusOnlyInvestigationDataSource
 from opsswarm.observation_window import ObservationWindow
 
 
@@ -22,6 +21,14 @@ class WindowedLogDataSource(Protocol):
     ) -> Sequence[EvidenceObservation]: ...
 
 
+class WindowedMetricDataSource(Protocol):
+    """指标来源只能读取调用方给定的完整窗口。"""
+
+    def query_metrics_in_window(
+        self, *, service_name: str, window: ObservationWindow
+    ) -> Sequence[EvidenceObservation]: ...
+
+
 class WindowBoundLiveDataSource:
     """只绑定查询参数；网络与领域校验仍由原适配器负责。"""
 
@@ -29,7 +36,7 @@ class WindowBoundLiveDataSource:
         self,
         *,
         logs: WindowedLogDataSource,
-        metrics: PrometheusOnlyInvestigationDataSource,
+        metrics: WindowedMetricDataSource,
         changes: ChangeApiOnlyInvestigationDataSource,
         service_name: str,
         cutoff: datetime,

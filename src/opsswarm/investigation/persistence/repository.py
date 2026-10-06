@@ -174,7 +174,7 @@ class InvestigationStore:
                 and data_source_mode is InvestigationDataSourceMode.LIVE
             )
             if live_v2:
-                resolved_evidence_policy = "task-evidence-live-mcp-log-v1"
+                resolved_evidence_policy = "task-evidence-live-mcp-v1"
             elif workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
                 resolved_evidence_policy = "task-evidence-v1"
             else:
