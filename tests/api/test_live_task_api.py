@@ -52,7 +52,9 @@ async def test_live_v2_window_is_server_owned_and_evidence_is_readable(
         run = response.json()["investigation"]
         cutoff = datetime.fromisoformat(run["observation_cutoff_at"])
         assert cutoff == datetime.fromisoformat(run["created_at"]).replace(microsecond=0)
-        assert run["evidence_policy_version"] == "task-evidence-live-v1" and run["call_budget"]
+        assert (
+            run["evidence_policy_version"] == "task-evidence-live-mcp-log-v1" and run["call_budget"]
+        )
         run_url = f"/api/v1/investigations/{run['id']}"
         assert (await client.post(url, json=body)).status_code == 409
         assert (await client.get(run_url)).json() == run

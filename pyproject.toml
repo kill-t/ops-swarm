@@ -27,6 +27,7 @@ dependencies = [
     "uvicorn[standard]>=0.35,<1",
     "structlog>=26.1,<27",
     "cryptography>=45,<48",
+    "mcp>=2.2,<3",
 ]
 
 [dependency-groups]

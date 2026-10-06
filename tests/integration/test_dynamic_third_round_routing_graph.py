@@ -339,15 +339,18 @@ async def test_v14_cannot_save_third_round_route_outside_graph(
         ).route(result)
     assert caught.value.code == "review_routing_not_supported"
     assert len(await ReviewRoutingQueries(database_session_factory).list_for_run(claim.run.id)) == 2
-    await asyncio.to_thread(
-        command.downgrade,
-        migration_config(),
-        "0056_third_round_review",
-    )
-    async with database_session_factory() as session:
-        assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0056_third_round_review"
+    try:
+        await asyncio.to_thread(
+            command.downgrade,
+            migration_config(),
+            "0056_third_round_review",
         )
+        async with database_session_factory() as session:
+            assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
+                "0056_third_round_review"
+            )
+    finally:
+        await asyncio.to_thread(command.upgrade, migration_config(), "head")
 
 
 async def test_third_round_route_fact_blocks_downgrade_without_v15_run(
@@ -387,5 +390,5 @@ async def test_third_round_route_fact_blocks_downgrade_without_v15_run(
         )
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0057_third_round_routing"
+            "0058_telemetry_mcp_log_policy"
         )

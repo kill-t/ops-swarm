@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents import ActorType, AlertSubmission, IncidentActor, IncidentSeverity
@@ -22,6 +23,7 @@ from opsswarm.investigation.persistence import (
     InvestigationStore,
     StartedInvestigation,
 )
+from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.contracts import RoundAssignment, TaskAssignment
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 
@@ -112,6 +114,20 @@ async def started_run(
         coordination_policy=coordination_policy,
     )
     return store, started
+
+
+async def mark_run_as_legacy_live(
+    factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+) -> None:
+    """测试夹具显式模拟 0058 之前已经持久化的现场运行。"""
+
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(InvestigationRunRow)
+            .where(InvestigationRunRow.id == run_id)
+            .values(evidence_policy_version="task-evidence-live-v1")
+        )
 
 
 def assignment(*, round_number: int = 1, max_attempts: int = 3, count: int = 1) -> RoundAssignment:

@@ -79,14 +79,17 @@ class TaskGraphFactory:
             if (
                 not isinstance(self._source, LiveInvestigationDataSource)
                 or context.observation_cutoff_at is None
-                or context.evidence_policy_version != "task-evidence-live-v1"
+                or context.evidence_policy_version
+                not in ("task-evidence-live-v1", "task-evidence-live-mcp-log-v1")
                 or context.call_budget is None
             ):
                 raise UnsupportedLiveTaskSource("现场 v2 缺少匹配的来源、窗口或取证预算策略")
             snapshot_time = context.observation_cutoff_at
             snapshot_id = live_snapshot_id(context.investigation_run_id, snapshot_time)
             source = self._source.bind_window(
-                service_name=context.request.service_name, cutoff=snapshot_time
+                service_name=context.request.service_name,
+                cutoff=snapshot_time,
+                evidence_policy_version=context.evidence_policy_version,
             )
         else:
             if (

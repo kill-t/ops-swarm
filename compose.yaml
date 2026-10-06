@@ -433,7 +433,7 @@ services:
       retries: 10
       start_period: 5s
     networks:
-      - lab
+      - telemetry
 
   alloy:
     image: grafana/alloy:v1.19.2
@@ -460,7 +460,42 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - lab
+      - telemetry
+
+  telemetry-mcp:
+    <<: *opsswarm-runtime
+    init: true
+    command:
+      - python
+      - -m
+      - opsswarm.telemetry_mcp
+    environment:
+      OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
+      OPSSWARM_INVESTIGATION_REQUEST_TIMEOUT_SECONDS: ${OPSSWARM_INVESTIGATION_REQUEST_TIMEOUT_SECONDS:-3}
+      OPSSWARM_TELEMETRY_MCP_HOST: 0.0.0.0
+      OPSSWARM_TELEMETRY_MCP_PORT: 8000
+    depends_on:
+      loki:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=2).close()"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - telemetry
 
   investigation-worker-frozen:
     <<: *investigation-worker
@@ -476,9 +511,11 @@ services:
       <<: *investigation-worker-environment
       OPSSWARM_WORKER_DATA_SOURCE_MODE: live
       OPSSWARM_INVESTIGATION_PROMETHEUS_BASE_URL: http://prometheus:9090
-      OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
       OPSSWARM_INVESTIGATION_CHANGE_BASE_URL: http://change-service:8000
       OPSSWARM_INVESTIGATION_RUNTIME_BASE_URL: http://order-service:8000
+      OPSSWARM_TELEMETRY_MCP_ENDPOINT_URL: http://telemetry-mcp:8000/mcp
+      OPSSWARM_TELEMETRY_MCP_REQUEST_TIMEOUT_SECONDS: ${OPSSWARM_TELEMETRY_MCP_REQUEST_TIMEOUT_SECONDS:-3}
+      OPSSWARM_INVESTIGATION_LOKI_BASE_URL: http://loki:3100
       OPSSWARM_INVESTIGATION_CHANGE_PROVIDER: ${OPSSWARM_INVESTIGATION_CHANGE_PROVIDER:-simulator}
       OPSSWARM_GITHUB_REPOSITORY: ${OPSSWARM_GITHUB_REPOSITORY:-}
       OPSSWARM_GITHUB_TOKEN: ${OPSSWARM_GITHUB_TOKEN:-}
@@ -497,6 +534,7 @@ services:
     networks:
       - control
       - lab
+      - telemetry
 
   verification-worker:
     <<: *opsswarm-runtime
@@ -535,6 +573,8 @@ networks:
   control:
     driver: bridge
   lab:
+    driver: bridge
+  telemetry:
     driver: bridge
 
 volumes:

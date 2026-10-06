@@ -23,6 +23,8 @@
 
 第 74 步 [冻结身份兼容](74-stable-frozen-identity.md) 保持接口及字段不变；新冻结任务的范围 ID 带 `frozen-v2:` 前缀，旧任务仍返回持久化的原身份，不自动改写历史响应。
 
+第 101 步 [只读 telemetry MCP 日志查询](101-telemetry-mcp-log-query.md) 不新增公开 API。新建 `multi_agent + live + v2` 运行响应中的服务器策略变为 `task-evidence-live-mcp-log-v1`；启动请求仍不能提交策略、MCP 地址或查询表达式。历史运行继续返回原策略并按原路径恢复。
+
 第 73 步 [现场 v2 持久任务取证](73-live-task-evidence.md) 开放 `multi_agent + live + v2`，运行响应增加服务端固定的 `observation_cutoff_at`，通过既有协作 API 读取现场快照；默认仍为 v1。以下第 67—72 步不开放现场 v2 的表述是历史边界。
 
 第 72 步为独立变更服务增加显式历史窗口查询，见 [现场观测窗口](72-explicit-observation-windows.md)。原相对查询保持兼容，新端点区分事件窗口、入库截止和本次响应生成时间；本片不开放现场 v2 启动。

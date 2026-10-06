@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,11 +13,19 @@ from opsswarm.investigation.github_changes import (
     GitHubChangeSettings,
     GitHubEnrichedChangeDataSource,
 )
-from opsswarm.investigation.live_window import UnsupportedLiveTaskSource, WindowBoundLiveDataSource
+from opsswarm.investigation.live_window import (
+    UnsupportedLiveTaskSource,
+    WindowBoundLiveDataSource,
+    WindowedLogDataSource,
+)
 from opsswarm.investigation.loki import LokiOnlyInvestigationDataSource
 from opsswarm.investigation.models import EvidenceObservation
 from opsswarm.investigation.prometheus import PrometheusOnlyInvestigationDataSource
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tools import InvestigationDataSource
+
+if TYPE_CHECKING:
+    from opsswarm.telemetry_mcp.client import TelemetryMcpClientSettings
 
 
 class LiveChangeProvider(StrEnum):
@@ -49,22 +57,38 @@ class LiveInvestigationDataSource:
         self,
         *,
         logs: InvestigationDataSource | None = None,
+        mcp_logs: WindowedLogDataSource | None = None,
         metrics: InvestigationDataSource | None = None,
         changes: InvestigationDataSource | None = None,
     ) -> None:
         self._logs = logs if logs is not None else LokiOnlyInvestigationDataSource()
+        self._mcp_logs = mcp_logs
         self._metrics = metrics if metrics is not None else PrometheusOnlyInvestigationDataSource()
         self._changes = changes if changes is not None else ChangeApiOnlyInvestigationDataSource()
 
-    def bind_window(self, *, service_name: str, cutoff: datetime) -> WindowBoundLiveDataSource:
+    def bind_window(
+        self,
+        *,
+        service_name: str,
+        cutoff: datetime,
+        evidence_policy_version: EvidencePolicyVersion = "task-evidence-live-v1",
+    ) -> WindowBoundLiveDataSource:
         if not (
             isinstance(self._logs, LokiOnlyInvestigationDataSource)
             and isinstance(self._metrics, PrometheusOnlyInvestigationDataSource)
             and isinstance(self._changes, ChangeApiOnlyInvestigationDataSource)
         ):
             raise UnsupportedLiveTaskSource("现场 v2 仅支持 Loki、Prometheus 和本地历史变更源")
+        if evidence_policy_version == "task-evidence-live-v1":
+            logs: WindowedLogDataSource = self._logs
+        elif evidence_policy_version == "task-evidence-live-mcp-log-v1":
+            if self._mcp_logs is None:
+                raise UnsupportedLiveTaskSource("现场 v2 的日志 MCP 来源未配置")
+            logs = self._mcp_logs
+        else:
+            raise UnsupportedLiveTaskSource("现场 v2 的取证策略不受支持")
         return WindowBoundLiveDataSource(
-            logs=self._logs,
+            logs=logs,
             metrics=self._metrics,
             changes=self._changes,
             service_name=service_name,
@@ -109,8 +133,14 @@ def create_live_investigation_data_source(
     settings: LiveInvestigationSettings,
     *,
     github_settings: GitHubChangeSettings | None = None,
+    telemetry_mcp_settings: "TelemetryMcpClientSettings | None" = None,
 ) -> LiveInvestigationDataSource:
     """按显式配置组装现场来源，GitHub 模式缺少仓库配置时直接失败。"""
+
+    from opsswarm.telemetry_mcp.client import (
+        TelemetryMcpClientSettings,
+        TelemetryMcpLogDataSource,
+    )
 
     simulator = ChangeApiOnlyInvestigationDataSource()
     changes: InvestigationDataSource = simulator
@@ -121,4 +151,7 @@ def create_live_investigation_data_source(
             simulator,
             GitHubChangeOnlyInvestigationDataSource(github_settings),
         )
-    return LiveInvestigationDataSource(changes=changes)
+    return LiveInvestigationDataSource(
+        changes=changes,
+        mcp_logs=TelemetryMcpLogDataSource(telemetry_mcp_settings or TelemetryMcpClientSettings()),
+    )

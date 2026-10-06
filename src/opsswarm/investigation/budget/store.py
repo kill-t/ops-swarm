@@ -11,6 +11,7 @@ from sqlalchemy.orm import defer
 
 from opsswarm.investigation.budget.contracts import (
     CallBudgetPolicy,
+    CallErrorCode,
     CallGrant,
     CallOperation,
     CallReservationRecord,
@@ -270,8 +271,7 @@ class CallBudgetStore:
         *,
         lease_token: UUID,
         status: Literal["succeeded", "failed", "unknown"],
-        error_code: Literal["operation_failed", "operation_cancelled", "run_deadline_exceeded"]
-        | None = None,
+        error_code: CallErrorCode | None = None,
         model_usage: ReportedModelUsage | None = None,
         call_result: CallResult | None = None,
     ) -> CallReservationRecord:

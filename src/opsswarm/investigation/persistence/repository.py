@@ -173,6 +173,12 @@ class InvestigationStore:
                 workflow_version is WorkflowVersion.V2
                 and data_source_mode is InvestigationDataSourceMode.LIVE
             )
+            if live_v2:
+                resolved_evidence_policy = "task-evidence-live-mcp-log-v1"
+            elif workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
+                resolved_evidence_policy = "task-evidence-v1"
+            else:
+                resolved_evidence_policy = None
             run_row = InvestigationRunRow(
                 id=run_id,
                 incident_id=incident_id,
@@ -199,11 +205,7 @@ class InvestigationStore:
                 if context_policy_version in ("evidence-read-v1", "summary-context-v1")
                 else None,
                 observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
-                evidence_policy_version="task-evidence-live-v1"
-                if live_v2
-                else "task-evidence-v1"
-                if workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3)
-                else None,
+                evidence_policy_version=resolved_evidence_policy,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None
                 ),

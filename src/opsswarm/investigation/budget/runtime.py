@@ -6,13 +6,23 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from uuid import UUID
 
-from opsswarm.investigation.budget.contracts import CallOperation
+from opsswarm.investigation.budget.contracts import CallErrorCode, CallOperation
 from opsswarm.investigation.budget.model_contracts import ReportedModelUsage
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.context.contracts import ContextManifest
+from opsswarm.investigation.errors import InvestigationDataSourceFailure
 from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, EvidenceToolRequest
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+
+_AUDITED_SOURCE_ERROR_CODES: dict[str, CallErrorCode] = {
+    "telemetry_mcp_invalid_request": "telemetry_mcp_invalid_request",
+    "telemetry_mcp_timeout": "telemetry_mcp_timeout",
+    "telemetry_mcp_unavailable": "telemetry_mcp_unavailable",
+    "telemetry_mcp_protocol_error": "telemetry_mcp_protocol_error",
+    "telemetry_mcp_invalid_result": "telemetry_mcp_invalid_result",
+    "telemetry_mcp_tool_error": "telemetry_mcp_tool_error",
+}
 
 
 class BudgetedCallRunner:
@@ -105,13 +115,13 @@ class BudgetedCallRunner:
                 call_result=result_reader(),
             )
             raise
-        except Exception:
+        except Exception as error:
             await self._store.settle(
                 self._run_id,
                 grant.record.id,
                 lease_token=self._lease_token,
                 status="failed",
-                error_code="operation_failed",
+                error_code=_audit_error_code(error),
                 model_usage=usage_reader(),
                 call_result=result_reader(),
             )
@@ -127,3 +137,14 @@ class BudgetedCallRunner:
         )
         await self.check()
         return result
+
+
+def _audit_error_code(error: Exception) -> CallErrorCode:
+    """只允许项目固定的来源错误码进入审计账本。"""
+
+    if (
+        isinstance(error, InvestigationDataSourceFailure)
+        and error.error_code in _AUDITED_SOURCE_ERROR_CODES
+    ):
+        return _AUDITED_SOURCE_ERROR_CODES[error.error_code]
+    return "operation_failed"

@@ -2,9 +2,9 @@
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import Protocol
 
 from opsswarm.investigation.changes import ChangeApiOnlyInvestigationDataSource
-from opsswarm.investigation.loki import LokiOnlyInvestigationDataSource
 from opsswarm.investigation.models import EvidenceObservation
 from opsswarm.investigation.prometheus import PrometheusOnlyInvestigationDataSource
 from opsswarm.observation_window import ObservationWindow
@@ -14,13 +14,21 @@ class UnsupportedLiveTaskSource(ValueError):
     """运行配置不支持固定现场取证，重试不能改变来源策略。"""
 
 
+class WindowedLogDataSource(Protocol):
+    """日志来源只能读取调用方给定的完整窗口。"""
+
+    def query_logs_in_window(
+        self, *, service_name: str, window: ObservationWindow
+    ) -> Sequence[EvidenceObservation]: ...
+
+
 class WindowBoundLiveDataSource:
     """只绑定查询参数；网络与领域校验仍由原适配器负责。"""
 
     def __init__(
         self,
         *,
-        logs: LokiOnlyInvestigationDataSource,
+        logs: WindowedLogDataSource,
         metrics: PrometheusOnlyInvestigationDataSource,
         changes: ChangeApiOnlyInvestigationDataSource,
         service_name: str,

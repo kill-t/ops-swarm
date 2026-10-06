@@ -12,7 +12,13 @@ from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
 from opsswarm.investigation.tasks.contracts import TaskAssignment, TaskModel
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
-EvidencePolicyVersion = Literal["task-evidence-v1", "task-evidence-live-v1"]
+EvidencePolicyVersion = Literal[
+    "task-evidence-v1",
+    "task-evidence-live-v1",
+    "task-evidence-live-mcp-log-v1",
+]
+
+LIVE_EVIDENCE_POLICIES = frozenset({"task-evidence-live-v1", "task-evidence-live-mcp-log-v1"})
 
 
 def live_snapshot_id(run_id: UUID, cutoff: datetime) -> str:
@@ -36,7 +42,7 @@ class TaskEvidenceSnapshot(TaskModel):
 
     @model_validator(mode="after")
     def validate_material(self) -> Self:
-        if (self.version == "task-evidence-live-v1") != (self.data_source_mode == "live"):
+        if (self.version in LIVE_EVIDENCE_POLICIES) != (self.data_source_mode == "live"):
             raise ValueError("取证策略与数据来源模式不一致")
         if not timedelta(0) < self.window_end - self.window_start <= timedelta(days=1):
             raise ValueError("取证时间窗必须为正且不超过一天")

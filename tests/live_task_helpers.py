@@ -15,17 +15,20 @@ from tests.unit.investigation import test_prometheus as prom
 
 
 class LiveHttpFixture:
-    def __init__(self, cutoff, clock, *, concurrent=False, failure=None):
+    def __init__(self, cutoff, clock, *, concurrent=False, failure=None, mcp_logs=None):
         self.requests = []
         self.thread_ids = set()
         self.failure = failure
         self.barrier = Barrier(3) if concurrent else None
         self.entered = set()
         self.cutoff, self.clock = cutoff, clock
+        logs = LokiOnlyInvestigationDataSource(
+            transport=httpx2.MockTransport(self.logs), clock=lambda: clock().timestamp()
+        )
         self.source = LiveInvestigationDataSource(
-            logs=LokiOnlyInvestigationDataSource(
-                transport=httpx2.MockTransport(self.logs), clock=lambda: clock().timestamp()
-            ),
+            logs=logs,
+            # 既有端到端测试在进程内验证任务恢复；第 101 步另以真实 MCP 进程覆盖传输。
+            mcp_logs=mcp_logs if mcp_logs is not None else logs,
             metrics=PrometheusOnlyInvestigationDataSource(
                 transport=httpx2.MockTransport(self.metrics), clock=lambda: clock().timestamp()
             ),

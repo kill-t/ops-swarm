@@ -40,6 +40,7 @@ from opsswarm.investigation.settings import (
 )
 from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.observability import create_tracing_runtime
+from opsswarm.telemetry_mcp.client import TelemetryMcpClientSettings
 from opsswarm.worker.processor import (
     LangChainInvestigationProcessor,
     LangGraphMultiAgentProcessor,
@@ -110,6 +111,7 @@ async def run(*, once: bool) -> bool | None:
             data_source = create_live_investigation_data_source(
                 live_settings,
                 github_settings=github_settings,
+                telemetry_mcp_settings=TelemetryMcpClientSettings.from_dotenv(),
             )
             evaluation_scenario = None
         else:

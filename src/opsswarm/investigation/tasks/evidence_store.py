@@ -16,6 +16,7 @@ from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.evidence import (
+    LIVE_EVIDENCE_POLICIES,
     EvidencePolicyVersion,
     TaskEvidenceRecord,
     TaskEvidenceSnapshot,
@@ -133,6 +134,7 @@ async def _current_assignment(
     if (run.evidence_policy_version, run.data_source_mode) not in (
         ("task-evidence-v1", "frozen"),
         ("task-evidence-live-v1", "live"),
+        ("task-evidence-live-mcp-log-v1", "live"),
     ):
         raise TaskFactConflict("task_evidence_policy_mismatch", "运行未启用受支持的取证策略")
     task = await session.get(AgentTaskRow, task_id)
@@ -164,7 +166,7 @@ def require_run_assignment(run: InvestigationRunRow, assignment: TaskAssignment)
         timedelta(hours=6) if assignment.role is EvidenceKind.CHANGE else timedelta(minutes=15)
     )
     if (
-        run.evidence_policy_version != "task-evidence-live-v1"
+        run.evidence_policy_version not in LIVE_EVIDENCE_POLICIES
         or cutoff is None
         or assignment.window_end != cutoff
         or assignment.window_start != cutoff - duration

@@ -16,6 +16,18 @@ from opsswarm.investigation.budget.model_contracts import (
 )
 from opsswarm.investigation.tasks.contracts import TaskModel
 
+CallErrorCode = Literal[
+    "operation_failed",
+    "operation_cancelled",
+    "run_deadline_exceeded",
+    "telemetry_mcp_invalid_request",
+    "telemetry_mcp_timeout",
+    "telemetry_mcp_unavailable",
+    "telemetry_mcp_protocol_error",
+    "telemetry_mcp_invalid_result",
+    "telemetry_mcp_tool_error",
+]
+
 
 class CallBudgetPolicy(TaskModel):
     version: Literal["call-count-v1"] = "call-count-v1"

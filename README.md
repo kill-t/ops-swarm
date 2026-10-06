@@ -16,7 +16,9 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 72 步增加 [显式观测窗口](docs/architecture/72-explicit-observation-windows.md)：日志、指标和本地变更适配器可按传入的固定 UTC 范围查询；历史变更按发生时间和记录截止过滤，不请求当前运行清单。原相对查询兼容保留。来源侧能力与验证见 [第 72 步记录](docs/progress/72-explicit-observation-windows.md)，现场任务接入由第 73 步完成。
 
-第 73 步接入 [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)：创建时固定 UTC 截止时间，日志、指标回看 15 分钟，历史变更回看 6 小时；并行查询经过共享预算，模型失败和 Worker 重启后复用同任务已提交材料。现场证据严格校验来源与范围，验证见 [第 73 步记录](docs/progress/73-live-task-evidence.md)。当前使用直接只读适配器，MCP 按后续阶段替换日志和指标入口。
+第 73 步接入 [现场 v2 持久任务取证](docs/architecture/73-live-task-evidence.md)：创建时固定 UTC 截止时间，日志、指标回看 15 分钟，历史变更回看 6 小时；并行查询经过共享预算，模型失败和 Worker 重启后复用同任务已提交材料。现场证据严格校验来源与范围，验证见 [第 73 步记录](docs/progress/73-live-task-evidence.md)。该步验收时使用直接只读适配器，后续由第 101 步开始迁移 MCP。
+
+第 101 步交付 [只读 telemetry MCP 日志查询](docs/architecture/101-telemetry-mcp-log-query.md)：新建现场 v2 的日志专业任务通过独立 Streamable HTTP MCP 服务读取本地 Loki，运行固定新取证策略，历史运行继续直连恢复。服务只暴露固定服务与显式 UTC 窗口，不接收 URL、LogQL、业务身份或写权限；指标与变更仍沿用原适配器，MCP 失败不会回退冻结证据。验证见 [第 101 步记录](docs/progress/101-telemetry-mcp-log-query.md)。
 
 第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
 
@@ -321,7 +323,7 @@ $env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main --once
 ```
 
-任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；`live` 由 `LiveInvestigationDataSource` 分别委托 Loki、Prometheus 和变更来源，任一来源失败都会进入既有任务重试，不回退为冻结证据。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
+任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志来源由 `LiveInvestigationDataSource` 委托独立 telemetry MCP，指标和变更仍分别委托 Prometheus 与变更适配器，任一来源失败都会进入既有任务重试，不回退为冻结证据。历史 `task-evidence-live-v1` 运行恢复时仍直连 Loki。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 
 每次领取都创建 `investigation_attempts`，成功、失败或租约过期后结算。只读查询：
 
@@ -387,7 +389,7 @@ $env:OPSSWARM_OTEL_ENABLED = "true"
 $env:OPSSWARM_OTEL_TRACES_ENDPOINT = "http://127.0.0.1:14318/v1/traces"
 ```
 
-控制面返回 `X-Trace-ID`，开始调查时只把 W3C `traceparent`/`tracestate` 保存到 `work_items.trace_context`，不保存 baggage。Worker 每次尝试作为原 API span 的子跨度；模型 HTTP、LangGraph 节点和三个只读工具继续形成子跨度。追踪只记录有限标识、模式、计数和稳定错误类型，不记录密钥、提示词、模型响应或原始证据。Jaeger 当前使用内存存储，容器重启会丢失 trace，这是可观测数据而不是业务事实。
+控制面返回 `X-Trace-ID`，开始调查时只把 W3C `traceparent`/`tracestate` 保存到 `work_items.trace_context`，不保存 baggage。Worker 每次尝试作为原 API span 的子跨度；模型 HTTP、LangGraph 节点和三个只读工具继续形成子跨度。日志 MCP 失败码也只以固定枚举写入调用账本，不保存地址、响应体或 traceback。追踪只记录有限标识、模式、计数和稳定错误类型，不记录密钥、提示词、模型响应或原始证据。Jaeger 当前使用内存存储，容器重启会丢失 trace，这是可观测数据而不是业务事实。
 
 ## Evidence Board
 
@@ -632,7 +634,7 @@ docker compose ps -a
 docker compose stop
 ```
 
-运行前需确保 Docker Desktop 的 Linux Engine 已启动。完整页面位于 `http://127.0.0.1:5173`，接口文档位于 `http://127.0.0.1:8000/docs`。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；`control-api`、冻结/现场调查 Worker 和 `verification-worker` 作为独立容器运行。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
+运行前需确保 Docker Desktop 的 Linux Engine 已启动。完整页面位于 `http://127.0.0.1:5173`，接口文档位于 `http://127.0.0.1:8000/docs`。`control-migrate` 会在数据库健康后执行 Alembic 并正常退出；`control-api`、冻结/现场调查 Worker、`telemetry-mcp` 和 `verification-worker` 作为独立容器运行。`telemetry-mcp` 不发布宿主端口，只在隔离 `telemetry` 网络读取 Loki；现场 Worker 通过固定地址调用它。`lab-redis` 是真实缓存依赖，`redis-proxy` 提供固定目标的受控断连，`prometheus` 每 2 秒抓取订单服务并保留一天时间序列，`alloy` 从项目专用只读日志卷采集到保留 24 小时的 `loki`。日常停止使用 `docker compose stop`，下次用 `docker compose start` 复用项目容器；只有需要重建 Compose 资源时才使用 `docker compose down`，不要使用会删除 PostgreSQL、Prometheus、Loki 和 Alloy 位置数据命名卷的 `docker compose down -v`。版本故障默认关闭，连接池容量默认恢复为安全值 `50`，Redis 代理默认可用；三种故障状态都在对应服务重启后回到安全默认值。管理与查询接口只绑定 localhost 和 Compose 演练网络，不具备生产鉴权能力。
 
 需要演示完整事故闭环时执行以下命令。它会使用 `.env` 中配置的真实模型并产生小额费用，没有显式开关时脚本会拒绝运行：
 

@@ -15,7 +15,7 @@ from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from tests.task_evidence_helpers import evidence_attempt, save_evidence
-from tests.task_facts_helpers import started_run
+from tests.task_facts_helpers import mark_run_as_legacy_live, started_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -26,6 +26,7 @@ async def test_downgrade_preserves_live_cutoff(database_session_factory):
         workflow_version=WorkflowVersion.V2,
         data_source_mode=InvestigationDataSourceMode.LIVE,
     )
+    await mark_run_as_legacy_live(database_session_factory, started.run.id)
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     with pytest.raises(DBAPIError, match="不能删除已固定的现场取证窗口"):
         await asyncio.to_thread(command.downgrade, config, "0034_task_evidence_snapshot")
@@ -35,7 +36,7 @@ async def test_downgrade_preserves_live_cutoff(database_session_factory):
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0057_third_round_routing"
+            == "0058_telemetry_mcp_log_policy"
         )
 
 
