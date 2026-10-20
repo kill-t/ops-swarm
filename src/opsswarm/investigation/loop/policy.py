@@ -11,6 +11,7 @@ from opsswarm.investigation.loop.contracts import (
     ToolMessage,
 )
 from opsswarm.investigation.models import SpecialistReport
+from opsswarm.investigation.runbooks.contracts import ReadRunbookArguments
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 
@@ -31,7 +32,11 @@ def require_result_size(result: CallResult) -> None:
 
 
 def validate_model_result(
-    result: LoopModelResult, role: str, history: tuple[AssistantMessage | ToolMessage, ...]
+    result: LoopModelResult,
+    role: str,
+    history: tuple[AssistantMessage | ToolMessage, ...],
+    *,
+    allow_runbook: bool = False,
 ) -> None:
     assistant = result.messages[0]
     if not isinstance(assistant, AssistantMessage) or len(assistant.tool_calls) != 1:
@@ -44,6 +49,12 @@ def validate_model_result(
         raise conflict("同一尝试不能复用工具调用 ID")
     if call.name == "read_evidence":
         ReadEvidenceArguments.model_validate(call.args)
+        if len(result.messages) != 1:
+            raise conflict("业务工具响应必须由独立读取调用保存")
+    elif call.name == "read_runbook":
+        if not allow_runbook:
+            raise conflict("当前任务没有可读取的调查手册")
+        ReadRunbookArguments.model_validate(call.args)
         if len(result.messages) != 1:
             raise conflict("业务工具响应必须由独立读取调用保存")
     elif call.name == "SpecialistReport":

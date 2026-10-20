@@ -23,7 +23,8 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
-            "((operation IN ('read_log_evidence','read_metric_evidence','read_change_evidence')) "
+            "((operation IN ('read_log_evidence','read_metric_evidence','read_change_evidence',"
+            "'read_log_runbook','read_metric_runbook','read_change_runbook')) "
             "= (tool_request IS NOT NULL)) AND "
             "(tool_request IS NULL OR (jsonb_typeof(tool_request) = 'object' AND "
             "octet_length(tool_request::text) <= 8192)) AND "
@@ -39,8 +40,9 @@ class CallReservationRow(Base):
             "(operation = 'review' AND NOT (model_input ? 'version') AND "
             "COALESCE(call_result ->> 'version', '') = 'hypothesis-review-result-v1') OR "
             "(operation NOT IN ('coordinate', 'synthesize', 'review') AND "
-            "COALESCE(model_input ->> 'version', '') = "
-            "'evidence-loop-input-v1'))) OR (kind = 'tool' AND tool_request IS NOT NULL))))",
+            "COALESCE(model_input ->> 'version', '') IN "
+            "('evidence-loop-input-v1','runbook-loop-input-v1')))) OR "
+            "(kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),
         CheckConstraint(
@@ -115,7 +117,8 @@ class CallReservationRow(Base):
         ),
         CheckConstraint(
             "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence', "
-            "'read_metric_evidence', 'read_change_evidence') AND kind = 'tool') OR "
+            "'read_metric_evidence', 'read_change_evidence', 'read_log_runbook', "
+            "'read_metric_runbook', 'read_change_runbook') AND kind = 'tool') OR "
             "(operation IN ('coordinate', 'analyze_log', 'analyze_metric', 'analyze_change', "
             "'synthesize', 'review') "
             "AND kind = 'model')",

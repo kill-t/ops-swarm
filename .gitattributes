@@ -5,6 +5,7 @@
 *.ini text eol=lf
 *.mako text eol=lf
 *.yaml text eol=lf
+src/opsswarm/investigation/runbooks/content/*.json text eol=lf
 *.Dockerfile text eol=lf
 .gitignore text eol=lf
 .dockerignore text eol=lf

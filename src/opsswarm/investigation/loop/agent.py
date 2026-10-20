@@ -16,7 +16,7 @@ from opsswarm.investigation.loop.messages import to_langchain
 from opsswarm.investigation.loop.middleware import EvidenceLoopMiddleware, UsageCapture
 from opsswarm.investigation.loop.policy import conflict
 from opsswarm.investigation.loop.service import EvidenceLoopService
-from opsswarm.investigation.loop.tools import evidence_tool
+from opsswarm.investigation.loop.tools import evidence_tool, runbook_tool
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -69,9 +69,12 @@ class EvidenceLoopAnalyst:
             or any(e.kind != specialist for e in evidence)
         ):
             raise conflict("图输入与专业持久目录不一致")
+        tools = [evidence_tool(middleware.read_evidence)]
+        if "read_runbook" in packet.manifest.tool_names:
+            tools.append(runbook_tool(middleware.read_runbook))
         graph = create_agent(
             model=self._model,
-            tools=[evidence_tool(middleware.read_evidence)],
+            tools=tools,
             response_format=ToolStrategy(SpecialistReport, handle_errors=False),
             middleware=[middleware],
             # 内部循环不接入外层 checkpoint；技术重试使用新的任务尝试。

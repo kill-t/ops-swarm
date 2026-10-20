@@ -37,7 +37,7 @@ from opsswarm.investigation.budget.policy import (
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.reservation import validate_context_reservation
-from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, EvidenceToolRequest
+from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, ToolRequest
 from opsswarm.investigation.loop.ledger import validate_call_result, validate_tool_request
 from opsswarm.investigation.persistence.lease import (
     active_investigation_transaction,
@@ -118,7 +118,7 @@ class CallBudgetStore:
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
         invocation_index: int = 0,
-        tool_request: EvidenceToolRequest | None = None,
+        tool_request: ToolRequest | None = None,
     ) -> CallGrant:
         if operation == CallOperation.COORDINATE and invocation_index != 0:
             raise TaskFactConflict(

@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-06。最新完成切片为第 102 步只读 telemetry MCP 指标查询，基线为 main 的 `2bbd48f`（第 101 步）。本文随第 102 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 102 步进度记录为准。
+核对日期：2026-10-20。最新完成切片为第 103 步版本化调查手册最小读取链路，基线为 main 的 `5249c05`（第 102 步）。本文随第 103 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 103 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 102 步设计](architecture/102-telemetry-mcp-metric-query.md) 与 [验收记录](progress/102-telemetry-mcp-metric-query.md)，再读第 101 步和第 64～65 步中 MCP、手册与经验章节，需要动态图上下文时再读第 85～100 步。
+2. 先读 [第 103 步设计](architecture/103-versioned-runbook-read.md) 与 [验收记录](progress/103-versioned-runbook-read.md)，再读第 79～81 步的专业循环与上下文、第 101～102 步的 MCP 现状及第 64～65 步中手册与经验章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -19,10 +19,10 @@
 
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
 - LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v15 已按持久计划动态执行并综合三轮专业任务，三轮开放假设均形成独立审查和确定性路由，第三轮在冻结上限停止。图 v1～v14 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
-- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据，不动态查询现场遥测。
+- v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。没有新增页面或前端策略选择器。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0059_telemetry_mcp_metric_policy`；第 102 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0060_versioned_runbook_read`；第 103 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -102,7 +102,9 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 102 步新增独立 `telemetry-metrics-mcp` 进程和唯一只读 `query_service_metrics` 工具。新建现场 v2 固定 `task-evidence-live-mcp-v1`，日志继续走第 101 步 MCP，指标通过固定 Streamable HTTP 地址查询本地 Prometheus；客户端与服务端限制固定服务、UTC 窗口、Schema、来源、值域和样本数。原日志 MCP 的身份、端点和唯一工具不变，`task-evidence-live-v1` 与 `task-evidence-live-mcp-log-v1` 均按原路径恢复，变更和 Git 路径未迁移。
 
-尚未完成：专业交互历史裁剪；Git 调查手册；可信身份与经验提取、审核、停用；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
+第 103 步新增显式 `runbook-read-v1` 上下文策略和 `read_runbook` 专业工具。首个 Git 管理手册只在 `order-service` 变更任务具有事故开始前一小时内的已完成部署事实时进入目录；模型只能提交手册 ID、版本与内容散列。成功读取的完整正文作为配对工具结果保存，后续模型调用清单追加实际正文的稳定材料 ID、版本与散列。手册不属于现场证据，不能被专业报告引用，也不授予审批或执行权限。历史上下文策略保持原语义，v3 尚未接入手册。
+
+尚未完成：专业交互历史裁剪；可信身份与经验提取、审核、停用；更多场景手册与 v3 接入；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -112,6 +114,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [loop/agent.py](../src/opsswarm/investigation/loop/agent.py)、[loop/middleware.py](../src/opsswarm/investigation/loop/middleware.py) | create_agent/ToolStrategy 原生循环及每次请求的预算、返回审计；每个专业尝试独立 middleware |
 | [loop/contracts.py](../src/opsswarm/investigation/loop/contracts.py)、[loop/messages.py](../src/opsswarm/investigation/loop/messages.py) | 新输入版本、消息适配与配对，旧 ModelInput 未改变序列化 |
 | [loop/context.py](../src/opsswarm/investigation/loop/context.py)、[loop/ledger.py](../src/opsswarm/investigation/loop/ledger.py) | 首轮目录、成功历史、报告读取资格、参数/来源/结果复核；历史重建抽至 loop/history.py 供摘要共用 |
+| [runbooks/registry.py](../src/opsswarm/investigation/runbooks/registry.py)、[runbooks/reader.py](../src/opsswarm/investigation/runbooks/reader.py) | Git 手册注册、确定性场景选择、正文编码/大小/散列校验与受限读取；不接受调用方路径 |
 | [context/catalog.py](../src/opsswarm/investigation/context/catalog.py)、[context/evidence_reader.py](../src/opsswarm/investigation/context/evidence_reader.py) | 新旧入口共用目录投影；详情仍绑定真实保存的模型 call_id |
 | [context/selection.py](../src/opsswarm/investigation/context/selection.py)、[context/reservation.py](../src/opsswarm/investigation/context/reservation.py) | 启动策略选择及预留事务内按版本重建输入，按策略选择旧报告或新摘要综合输入 |
 | [budget/store.py](../src/opsswarm/investigation/budget/store.py)、[budget/runtime.py](../src/opsswarm/investigation/budget/runtime.py) | 有效父租约、原子预留、共享额度、结算幂等与迟到阻断；相同预留不能重发外部请求 |
@@ -140,7 +143,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 103 步：**版本化调查手册最小读取链路**。为一个明确事故场景定义 Git 管理的不可变手册版本、严格元数据与受限 `read_runbook` 应用服务，先完成确定性选择、内容边界和材料追溯；不提前开放经验审核，可信身份仍须先于后续经验确认接口。
+第 104 步：**可信操作者身份与最小权限模型**。先让需要人工确认的服务端入口从可信认证结果获得操作者身份与权限范围，并保存可审计主体；不把调用方自填 `actor_id` 当成认证结果，也不在本片提前开放经验确认、拒绝、停用或替代接口。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -148,20 +151,20 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；完整第 102 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
+使用仓库 `.venv/Scripts/`；完整第 103 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
 
 ```powershell
 git status --short
 git log -5 --oneline
 .venv/Scripts/python.exe -m alembic heads
-.venv/Scripts/ruff.exe check .
-.venv/Scripts/ruff.exe format --check .
+.venv/Scripts/ruff.exe check src tests alembic
+.venv/Scripts/ruff.exe format --check src tests alembic
 .venv/Scripts/mypy.exe src
 git diff --check
 ```
 
-第 102 步测试入口为 [指标 MCP 协议单测](../tests/unit/telemetry_metrics_mcp)、[真实 MCP 进程与现场 Worker](../tests/integration/test_telemetry_mcp_live_worker.py) 和 [策略迁移](../tests/integration/test_telemetry_mcp_policy_migration.py)。既有日志 MCP、现场窗口、提交边界、预算与 API 同时回归。旧模型预算测试刻意清空上下文策略，不要删除这些历史契约覆盖。正式配置见 README/Compose/变量示例，不读取或提交真实 .env、个人配置和令牌。
+第 103 步测试入口为 [手册领域单测](../tests/unit/investigation/test_runbooks.py)、[专业工具循环](../tests/integration/test_runbook_loop.py)、[固定 v2 完整图](../tests/integration/test_loop_graph.py) 和 [策略迁移](../tests/integration/test_runbook_migration.py)。既有专业循环、账本、上下文预留、API 与旧迁移同时回归。`output/` 是未跟踪用户目录，不属于本切片静态检查或提交范围。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 102 步设计/验收，核对 Git 与实际代码。新建现场 v2 的日志与指标任务已分别通过独立只读 MCP 查询本地 Loki 和 Prometheus，两种历史现场策略按原路径恢复，MCP 失败不回退；变更仍直连。从第 103 步版本化调查手册最小读取链路推进，先定义一个明确事故场景的不可变手册版本、严格元数据、受限读取和上下文材料追溯。保留历史运行和冻结回归，不接生产环境，不提前开放经验审核、人工恢复或 v3 Worker。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 103 步设计/验收，核对 Git 与实际代码。固定 v2 已通过独立 `runbook-read-v1` 策略按需读取首个 Git 版本化调查手册，并把实际正文版本和散列纳入后续调用清单；手册不是现场证据、审批或执行授权，历史策略与 v3 保持原语义。从第 104 步可信操作者身份与最小权限模型推进，为后续经验审核建立服务端可信主体；不接生产环境，不提前开放经验生命周期或图内人工恢复。

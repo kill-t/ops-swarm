@@ -14,9 +14,13 @@ from opsswarm.investigation.workflow_versions import WorkflowVersion
 from tests.task_facts_helpers import TaskClock, claimed_run
 
 
-def material():
+def material(role=EvidenceKind.LOG):
     source = FrozenScenarioDataSource(RELEASE_500_SCENARIO)
-    return source.query_logs(service_name="order-service", lookback_minutes=15)
+    if role is EvidenceKind.LOG:
+        return source.query_logs(service_name="order-service", lookback_minutes=15)
+    if role is EvidenceKind.METRIC:
+        return source.query_metrics(service_name="order-service", lookback_minutes=15)
+    return source.list_recent_changes(service_name="order-service", lookback_hours=6)
 
 
 def professional_result(assignment, evidence=None):
@@ -35,7 +39,13 @@ def professional_result(assignment, evidence=None):
 
 
 async def evidence_attempt(
-    db, *, call_status="succeeded", model_budget=None, context_policy_version=None, call_budget=None
+    db,
+    *,
+    call_status="succeeded",
+    model_budget=None,
+    context_policy_version=None,
+    call_budget=None,
+    role=EvidenceKind.LOG,
 ):
     parent, claim = await claimed_run(
         db,
@@ -59,7 +69,7 @@ async def evidence_attempt(
     task = next(
         t
         for t in (await queries.get_snapshot(claim.run.id)).rounds[0].tasks
-        if t.assignment.role is EvidenceKind.LOG
+        if t.assignment.role is role
     )
     started = await tasks.begin_attempt(
         claim.run.id,
@@ -71,7 +81,11 @@ async def evidence_attempt(
     grant = await budget.reserve(
         claim.run.id,
         lease_token=claim.work_item.lease_token,
-        operation=CallOperation.QUERY_LOGS,
+        operation={
+            EvidenceKind.LOG: CallOperation.QUERY_LOGS,
+            EvidenceKind.METRIC: CallOperation.QUERY_METRICS,
+            EvidenceKind.CHANGE: CallOperation.LIST_CHANGES,
+        }[role],
         task_id=task.id,
         task_attempt_id=started.attempt.id,
     )
@@ -93,7 +107,7 @@ async def save_evidence(prepared, evidence=None):
         task.id,
         attempt.id,
         lease_token=claim.work_item.lease_token,
-        evidence=material() if evidence is None else evidence,
+        evidence=material(task.assignment.role) if evidence is None else evidence,
     )
 
 

@@ -6,6 +6,8 @@
 
 第 102 步增量见 [只读 telemetry MCP 指标查询](102-telemetry-mcp-metric-query.md)：迁移 `0059_telemetry_mcp_metric_policy` 不新增列或表，只把 `task-evidence-live-mcp-v1` 加入既有现场策略与截止时间约束。新建现场 v2 固定该策略，历史 `task-evidence-live-v1` 与 `task-evidence-live-mcp-log-v1` 不回填并按原路径恢复；存在新策略运行时拒绝降级到 `0058`。
 
+第 103 步增量见 [版本化调查手册最小读取链路](103-versioned-runbook-read.md)：迁移 `0060_versioned_runbook_read` 不新增列或表，只把 `runbook-read-v1` 加入既有 v2 上下文策略约束，把 `runbook-loop-input-v1` 加入专业模型输入约束，并增加 `read_log_runbook`、`read_metric_runbook`、`read_change_runbook` 三个任务范围工具操作。请求和结果继续保存在 `investigation_call_reservations.tool_request`、`call_result`，后续模型调用的 `context_manifest` 保存实际读取正文的材料 ID、版本与 SHA-256；Markdown 正文由 Git 管理，不复制进新的业务表。历史策略和调用不回填；存在新策略、输入或手册读取事实时拒绝降级到 `0059`。
+
 第 99 步增量见 [v3 第三轮开放假设独立审查与恢复](99-third-round-review.md)：迁移 `0056_third_round_review` 只把 `investigation_runs.graph_version` 约束扩展到图 v14，并把根级 `review` 合法槽位扩展为 `0、1、2`，不新增业务表、字段或公开 API。现有审查表保存绑定第三轮假设和槽位 2 成功调用的新审查；存在图 v14、槽位 2 及以后审查调用或第 3 轮及以后审查事实时拒绝降级到 `0055`。
 
 第 98 步增量见 [v3 第三轮综合与开放假设恢复](98-third-round-synthesis.md)：迁移 `0055_third_round_synthesis` 只把 `investigation_runs.graph_version` 约束扩展到图 v13，不新增业务表、字段或公开 API。现有开放假设、调用账本和上下文清单保存绑定第 3 轮计划与槽位 2 成功综合调用的新假设；存在图 v13、槽位 2 及以后综合调用或第 3 轮及以后开放假设时拒绝降级到 `0054`。

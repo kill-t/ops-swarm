@@ -13,29 +13,42 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationModelResult,
 )
 from opsswarm.investigation.loop.contracts import (
+    TOOL_REQUEST_ADAPTER,
     AssistantMessage,
     CallResult,
     EvidenceToolRequest,
-    EvidenceToolResult,
     LoopModelResult,
+    LoopToolResult,
     ReadEvidenceArguments,
+    RunbookToolRequest,
+    ToolRequest,
 )
 from opsswarm.investigation.loop.history import saved_history as saved_history
 from opsswarm.investigation.loop.policy import conflict, require_result_size, validate_model_result
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.contracts import ReviewModelResult
 from opsswarm.investigation.review.policy import validate_review_evidence
+from opsswarm.investigation.runbooks.contracts import RunbookReadDetail
+from opsswarm.investigation.runbooks.reader import RunbookReader
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.synthesis.policy import validate_proposal_evidence
 from opsswarm.investigation.tasks.tables import AgentTaskAttemptRow, AgentTaskRow
 
-READ_OPERATIONS = frozenset(
+EVIDENCE_READ_OPERATIONS = frozenset(
     (
         CallOperation.READ_LOG_EVIDENCE,
         CallOperation.READ_METRIC_EVIDENCE,
         CallOperation.READ_CHANGE_EVIDENCE,
     )
 )
+RUNBOOK_READ_OPERATIONS = frozenset(
+    (
+        CallOperation.READ_LOG_RUNBOOK,
+        CallOperation.READ_METRIC_RUNBOOK,
+        CallOperation.READ_CHANGE_RUNBOOK,
+    )
+)
+READ_OPERATIONS = EVIDENCE_READ_OPERATIONS | RUNBOOK_READ_OPERATIONS
 
 
 async def validate_tool_request(
@@ -45,17 +58,26 @@ async def validate_tool_request(
     attempt_id: UUID | None,
     operation: CallOperation,
     invocation_index: int,
-    request: EvidenceToolRequest | None,
+    request: ToolRequest | None,
 ) -> None:
     if operation not in READ_OPERATIONS:
         if request is not None:
             raise conflict("该操作不接受证据读取参数")
         return
-    if request is None or run.context_policy_version not in (
-        "evidence-read-v1",
-        "summary-context-v1",
+    if request is None:
+        raise conflict("受限读取缺少参数")
+    evidence_read = operation in EVIDENCE_READ_OPERATIONS
+    if evidence_read and (
+        not isinstance(request, EvidenceToolRequest)
+        or run.context_policy_version
+        not in ("evidence-read-v1", "summary-context-v1", "runbook-read-v1")
     ):
         raise conflict("证据读取缺少受支持策略或参数")
+    if not evidence_read and (
+        not isinstance(request, RunbookToolRequest)
+        or run.context_policy_version != "runbook-read-v1"
+    ):
+        raise conflict("手册读取缺少受支持策略或参数")
     source = await session.get(CallReservationRow, request.source_call_id)
     if (
         source is None
@@ -73,19 +95,26 @@ async def validate_tool_request(
     if len(result.messages) != 1 or not isinstance(message, AssistantMessage):
         raise conflict("模型返回不是证据读取请求")
     call = message.tool_calls[0]
-    if (
-        call.name != "read_evidence"
-        or call.id != request.tool_call_id
-        or ReadEvidenceArguments.model_validate(call.args) != request.arguments
-    ):
+    if call.id != request.tool_call_id:
         raise conflict("工具参数与持久模型请求不一致")
     sources = await load_sources(session, run, operation, task_id)
     record = sources.tasks[0].evidence
-    if (
-        request.arguments.snapshot_sha256 != record.content_sha256
-        or request.arguments.evidence_id not in {e.evidence_id for e in record.snapshot.evidence}
-    ):
-        raise conflict("读取超出本任务目录或快照版本不一致")
+    if isinstance(request, EvidenceToolRequest):
+        if (
+            call.name != "read_evidence"
+            or ReadEvidenceArguments.model_validate(call.args) != request.arguments
+            or request.arguments.snapshot_sha256 != record.content_sha256
+            or request.arguments.evidence_id
+            not in {e.evidence_id for e in record.snapshot.evidence}
+        ):
+            raise conflict("读取超出本任务目录或快照版本不一致")
+    else:
+        if call.name != "read_runbook" or call.args != request.arguments.model_dump(mode="json"):
+            raise conflict("手册参数与持久模型请求不一致")
+        RunbookReader(
+            request=sources.request,
+            task_evidence_record=record,
+        ).read(request.arguments)
 
 
 async def validate_call_result(
@@ -185,8 +214,9 @@ async def validate_call_result(
         elif result is not None:
             raise conflict("失败或未知独立审查调用不能保存成功提案")
         return
-    loop_model = (
-        row.model_input is not None and row.model_input.get("version") == "evidence-loop-input-v1"
+    loop_model = row.model_input is not None and row.model_input.get("version") in (
+        "evidence-loop-input-v1",
+        "runbook-loop-input-v1",
     )
     if not loop_model and row.tool_request is None:
         if result is not None:
@@ -205,11 +235,25 @@ async def validate_call_result(
             raise conflict("模型成功结算必须保存返回")
         assert row.task_attempt_id is not None
         history = await saved_history(session, run.id, row.task_attempt_id, row.invocation_index)
-        validate_model_result(result, task.assignment["role"], history)
+        sources = await load_sources(session, run, CallOperation(row.operation), row.task_id)
+        allow_runbook = False
+        if run.context_policy_version == "runbook-read-v1":
+            allow_runbook = bool(
+                RunbookReader(
+                    request=sources.request,
+                    task_evidence_record=sources.tasks[0].evidence,
+                ).catalog.entries
+            )
+        validate_model_result(
+            result,
+            task.assignment["role"],
+            history,
+            allow_runbook=allow_runbook,
+        )
     else:
-        if not isinstance(result, EvidenceToolResult):
+        if not isinstance(result, LoopToolResult):
             raise conflict("工具成功结算必须保存配对响应")
-        request = EvidenceToolRequest.model_validate(row.tool_request)
+        request = TOOL_REQUEST_ADAPTER.validate_python(row.tool_request)
         await validate_tool_request(
             session,
             run,
@@ -221,21 +265,39 @@ async def validate_call_result(
         )
         sources = await load_sources(session, run, CallOperation(row.operation), row.task_id)
         record = sources.tasks[0].evidence
-        evidence = next(
-            e for e in record.snapshot.evidence if e.evidence_id == request.arguments.evidence_id
-        )
-        expected = ContextEvidenceDetail(
-            investigation_run_id=run.id,
-            call_id=request.source_call_id,
-            task_id=record.task_id,
-            version=record.snapshot.version,
-            snapshot_id=record.snapshot.evidence_snapshot_id,
-            snapshot_sha256=record.content_sha256,
-            evidence=evidence,
-        )
-        if (
-            result.message.tool_call_id != request.tool_call_id
-            or result.message.name != "read_evidence"
-            or ContextEvidenceDetail.model_validate_json(result.message.content) != expected
-        ):
-            raise conflict("工具返回与已提交证据、请求不一致")
+        if isinstance(request, EvidenceToolRequest):
+            evidence = next(
+                e
+                for e in record.snapshot.evidence
+                if e.evidence_id == request.arguments.evidence_id
+            )
+            expected = ContextEvidenceDetail(
+                investigation_run_id=run.id,
+                call_id=request.source_call_id,
+                task_id=record.task_id,
+                version=record.snapshot.version,
+                snapshot_id=record.snapshot.evidence_snapshot_id,
+                snapshot_sha256=record.content_sha256,
+                evidence=evidence,
+            )
+            matches = (
+                result.message.name == "read_evidence"
+                and ContextEvidenceDetail.model_validate_json(result.message.content) == expected
+            )
+        else:
+            document = RunbookReader(
+                request=sources.request,
+                task_evidence_record=record,
+            ).read(request.arguments)
+            expected_detail = RunbookReadDetail(
+                investigation_run_id=run.id,
+                call_id=request.source_call_id,
+                task_id=record.task_id,
+                document=document,
+            )
+            matches = (
+                result.message.name == "read_runbook"
+                and RunbookReadDetail.model_validate_json(result.message.content) == expected_detail
+            )
+        if result.message.tool_call_id != request.tool_call_id or not matches:
+            raise conflict("工具返回与已提交材料、请求不一致")

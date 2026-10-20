@@ -12,7 +12,7 @@ from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.errors import InvestigationDataSourceFailure
-from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, EvidenceToolRequest
+from opsswarm.investigation.loop.contracts import AnyModelInput, CallResult, ToolRequest
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 _AUDITED_SOURCE_ERROR_CODES: dict[str, CallErrorCode] = {
@@ -64,7 +64,7 @@ class BudgetedCallRunner:
         prompt_version: str | None = None,
         context_manifest: ContextManifest | None = None,
         invocation_index: int = 0,
-        tool_request: EvidenceToolRequest | None = None,
+        tool_request: ToolRequest | None = None,
         result_reader: Callable[[], CallResult | None] = lambda: None,
         reservation_observer: Callable[[UUID], None] = lambda _: None,
         usage_reader: Callable[[], ReportedModelUsage | None] = lambda: None,

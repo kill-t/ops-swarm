@@ -24,10 +24,14 @@ from opsswarm.investigation.loop.contracts import (
     ToolCall,
     ToolMessage,
 )
+from opsswarm.investigation.runbooks.contracts import ReadRunbookArguments
 
 READ_EVIDENCE_TOOL_NAME = "read_evidence"
+READ_RUNBOOK_TOOL_NAME = "read_runbook"
 SPECIALIST_REPORT_TOOL_NAME = "SpecialistReport"
-ALLOWED_TOOL_NAMES = frozenset({READ_EVIDENCE_TOOL_NAME, SPECIALIST_REPORT_TOOL_NAME})
+ALLOWED_TOOL_NAMES = frozenset(
+    {READ_EVIDENCE_TOOL_NAME, READ_RUNBOOK_TOOL_NAME, SPECIALIST_REPORT_TOOL_NAME}
+)
 
 
 def to_langchain(messages: Sequence[LoopMessage]) -> list[AnyMessage]:
@@ -86,8 +90,8 @@ def model_result(messages: Sequence[BaseMessage]) -> LoopModelResult:
         raise ValueError("模型结果必须以唯一工具调用的 assistant 消息开始")
     call = assistant.tool_calls[0]
     if len(converted) == 1:
-        if call.name != READ_EVIDENCE_TOOL_NAME:
-            raise ValueError("未配对的模型结果只能请求读取证据")
+        if call.name not in (READ_EVIDENCE_TOOL_NAME, READ_RUNBOOK_TOOL_NAME):
+            raise ValueError("未配对的模型结果只能请求受限读取")
         return LoopModelResult(messages=(assistant,))
     else:
         response = converted[1]
@@ -184,6 +188,8 @@ def _normalize_tool_call(call: Mapping[str, Any]) -> ToolCall:
     _require_allowed_tool_name(name)
     if name == READ_EVIDENCE_TOOL_NAME:
         normalized_args = ReadEvidenceArguments.model_validate(args).model_dump(mode="json")
+    elif name == READ_RUNBOOK_TOOL_NAME:
+        normalized_args = ReadRunbookArguments.model_validate(args).model_dump(mode="json")
     else:
         # 最终输出的具体 Schema 由持久化服务按运行固定契约校验。
         normalized_args = args
@@ -204,6 +210,8 @@ def _validate_call_args(call: ToolCall) -> None:
     _require_allowed_tool_name(call.name)
     if call.name == READ_EVIDENCE_TOOL_NAME:
         ReadEvidenceArguments.model_validate(call.args)
+    elif call.name == READ_RUNBOOK_TOOL_NAME:
+        ReadRunbookArguments.model_validate(call.args)
 
 
 def _text_content(message: BaseMessage) -> str:

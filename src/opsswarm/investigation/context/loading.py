@@ -54,6 +54,7 @@ async def load_sources(
         "task-context-v1",
         "evidence-read-v1",
         "summary-context-v1",
+        "runbook-read-v1",
     ) or run.evidence_policy_version not in (
         "task-evidence-v1",
         "task-evidence-live-v1",

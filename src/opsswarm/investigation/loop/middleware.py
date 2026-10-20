@@ -18,11 +18,13 @@ from opsswarm.investigation.budget.runtime import BudgetedCallRunner
 from opsswarm.investigation.loop.contracts import (
     AssistantMessage,
     EvidenceToolRequest,
-    EvidenceToolResult,
     LoopModelInput,
     LoopModelResult,
+    LoopToolResult,
     ReadEvidenceArguments,
+    RunbookToolRequest,
     ToolMessage,
+    ToolRequest,
 )
 from opsswarm.investigation.loop.messages import (
     from_langchain,
@@ -32,6 +34,7 @@ from opsswarm.investigation.loop.messages import (
 )
 from opsswarm.investigation.loop.policy import conflict, require_result_size, validate_model_result
 from opsswarm.investigation.loop.service import EvidenceLoopService
+from opsswarm.investigation.runbooks.contracts import ReadRunbookArguments
 
 
 class UsageCapture(AsyncCallbackHandler):
@@ -110,7 +113,12 @@ class EvidenceLoopMiddleware(AgentMiddleware):
             history = tuple(
                 m for m in inputs.messages if isinstance(m, (AssistantMessage, ToolMessage))
             )
-            validate_model_result(normalized, self.role, history)
+            validate_model_result(
+                normalized,
+                self.role,
+                history,
+                allow_runbook="read_runbook" in packet.manifest.tool_names,
+            )
             require_result_size(normalized)
             result = normalized
             return response
@@ -144,25 +152,51 @@ class EvidenceLoopMiddleware(AgentMiddleware):
             ),
         )
 
+    async def read_runbook(self, runbook_id: str, version: str, content_sha256: str) -> str:
+        if self.source_call_id is None:
+            raise conflict("手册读取缺少已保存的模型来源")
+        return await self.service.read_runbook(
+            self.source_call_id,
+            self.task_id,
+            self.attempt_id,
+            ReadRunbookArguments(
+                runbook_id=runbook_id,
+                version=version,
+                content_sha256=content_sha256,
+            ),
+        )
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[LangChainToolMessage | Command[Any]]],
     ) -> LangChainToolMessage:
+        tool_name = request.tool_call["name"]
         if (
             request.tool is None
-            or request.tool_call["name"] != "read_evidence"
+            or tool_name not in ("read_evidence", "read_runbook")
             or request.tool_call["id"] is None
             or self.source_call_id is None
         ):
             raise conflict("未授权的业务工具")
-        arguments = ReadEvidenceArguments.model_validate(request.tool_call["args"])
-        tool_request = EvidenceToolRequest(
-            source_call_id=self.source_call_id,
-            tool_call_id=request.tool_call["id"],
-            arguments=arguments,
-        )
-        result: EvidenceToolResult | None = None
+        tool_request: ToolRequest
+        if tool_name == "read_evidence":
+            arguments = ReadEvidenceArguments.model_validate(request.tool_call["args"])
+            tool_request = EvidenceToolRequest(
+                source_call_id=self.source_call_id,
+                tool_call_id=request.tool_call["id"],
+                arguments=arguments,
+            )
+            operation = CallOperation(f"read_{self.role}_evidence")
+        else:
+            runbook_arguments = ReadRunbookArguments.model_validate(request.tool_call["args"])
+            tool_request = RunbookToolRequest(
+                source_call_id=self.source_call_id,
+                tool_call_id=request.tool_call["id"],
+                arguments=runbook_arguments,
+            )
+            operation = CallOperation(f"read_{self.role}_runbook")
+        result: LoopToolResult | None = None
 
         async def invoke() -> LangChainToolMessage:
             nonlocal result
@@ -172,13 +206,13 @@ class EvidenceLoopMiddleware(AgentMiddleware):
             normalized = from_langchain([response])[0]
             if not isinstance(normalized, ToolMessage):
                 raise conflict("证据读取没有返回工具消息")
-            validated = EvidenceToolResult(message=normalized)
+            validated = LoopToolResult(message=normalized)
             require_result_size(validated)
             result = validated
             return response
 
         return await self.runner.execute(
-            CallOperation(f"read_{self.role}_evidence"),
+            operation,
             invoke,
             invocation_index=self.index - 1,
             tool_request=tool_request,

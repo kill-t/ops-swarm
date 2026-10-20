@@ -8,8 +8,10 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from sqlalchemy import update
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
+from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.budget.store import CallBudgetStore
 from opsswarm.investigation.loop.contracts import EvidenceToolResult, LoopModelResult
@@ -94,6 +96,76 @@ class LoopReplies:
                 "specialist": role,
                 "summary": "完成有界调查",
                 "findings": ["读取了所属专业证据"],
+                "evidence_ids": [detail["evidence"]["evidence_id"]],
+                "confidence": 0.8,
+            },
+            call_id=f"{role}-report",
+        )
+
+
+class RunbookLoopReplies:
+    def __init__(self, db):
+        self.calls = CallBudgetQueries(db)
+        self.seen = defaultdict(list)
+
+    async def __call__(self, request):
+        payload = json.loads(request.content)
+        data = json.loads(payload["messages"][1]["content"])
+        run_id = UUID(data["task_context"]["investigation_run_id"])
+        role = data.get("specialist", "synthesis")
+        self.seen[run_id].append(role)
+        budget = await self.calls.get_snapshot(run_id)
+        call = next(
+            item
+            for item in budget.calls
+            if item.status == "reserved"
+            and item.operation == ("synthesize" if role == "synthesis" else f"analyze_{role}")
+        )
+        manifest = await self.calls.get_context_manifest(run_id, call.id)
+        assert manifest is not None
+        if role == "synthesis":
+            assert manifest.version == "runbook-read-v1"
+            assert manifest.tool_names == () and len(data["reports"]) == 3
+            result = await ConclusionSynthesizerStub().synthesize(
+                request=InvestigationRequest.model_validate(data["incident"]),
+                evidence=[EvidenceObservation.model_validate(item) for item in data["evidence"]],
+                reports=[SpecialistReport.model_validate(item) for item in data["reports"]],
+            )
+            return sdk_response(payload, result.model_dump(mode="json"))
+        catalog = data["evidence_catalog"]
+        if role == "change" and len(payload["messages"]) == 2:
+            runbook = data["runbook_catalog"]["entries"][0]
+            assert manifest.tool_names == ("read_evidence", "read_runbook")
+            return tool_response(
+                "read_runbook",
+                {
+                    "runbook_id": runbook["runbook_id"],
+                    "version": runbook["version"],
+                    "content_sha256": runbook["content_sha256"],
+                },
+                call_id="change-runbook",
+            )
+        tool_details = [
+            json.loads(item["content"]) for item in payload["messages"] if item["role"] == "tool"
+        ]
+        evidence_details = [item for item in tool_details if "evidence" in item]
+        if not evidence_details:
+            entry = catalog["entries"][0]
+            return tool_response(
+                "read_evidence",
+                {
+                    "evidence_id": entry["evidence_id"],
+                    "snapshot_sha256": catalog["snapshot_sha256"],
+                },
+                call_id=f"{role}-evidence",
+            )
+        detail = evidence_details[-1]
+        return tool_response(
+            "SpecialistReport",
+            {
+                "specialist": role,
+                "summary": "完成版本化手册策略下的专业调查",
+                "findings": ["只引用已读取的现场证据"],
                 "evidence_ids": [detail["evidence"]["evidence_id"]],
                 "confidence": 0.8,
             },
@@ -204,6 +276,68 @@ async def test_two_incidents_complete_separate_loop_contexts(
             assert summary.investigation_run_id == run.id
             assert summary.task_id == task.id
             assert all(c.attempt_id == summary.attempt_id for c in summary.summary.calls)
+
+
+async def test_runbook_policy_completes_fixed_v2_without_working_summary(
+    database_session_factory,
+    checkpoint_database_url,
+):
+    await initialize_checkpoint_schema(checkpoint_database_url)
+    parent, started = await started_run(
+        database_session_factory,
+        workflow_version=WorkflowVersion.V2,
+        model_budget=loop_policy(),
+        context_policy_version="runbook-read-v1",
+    )
+    async with database_session_factory() as session, session.begin():
+        await session.execute(
+            update(IncidentRow)
+            .where(IncidentRow.id == started.run.incident_id)
+            .values(started_at=RELEASE_500_SCENARIO.request.started_at)
+        )
+    clock = TaskClock(BASE_TIME + timedelta(seconds=2))
+    reply = RunbookLoopReplies(database_session_factory)
+    await run_workers(
+        database_session_factory,
+        checkpoint_database_url,
+        parent,
+        clock,
+        CountingDataSource(),
+        reply,
+    )
+
+    run = await parent.get_run(started.run.id)
+    budget = await reply.calls.get_snapshot(run.id)
+    facts = CollaborationQueries(database_session_factory)
+    task_snapshot = await facts.get_snapshot(run.id)
+    assert run.status == "succeeded", (
+        run.last_error,
+        reply.seen[run.id],
+        [(item.operation, item.status, item.error_code) for item in budget.calls],
+        [
+            (
+                task.assignment.role,
+                task.status,
+                [(attempt.status, attempt.outcome) for attempt in task.attempts],
+            )
+            for task in task_snapshot.rounds[0].tasks
+        ],
+    )
+    assert run.working_summary_policy_version is None
+    assert sorted(reply.seen[run.id]) == [
+        "change",
+        "change",
+        "change",
+        "log",
+        "log",
+        "metric",
+        "metric",
+        "synthesis",
+    ]
+    assert budget.reserved_model_calls == 8
+    assert budget.reserved_tool_calls == 7
+    for task in (await facts.get_snapshot(run.id)).rounds[0].tasks:
+        assert await facts.get_working_summary(run.id, task.id) is None
 
 
 @pytest.mark.parametrize(

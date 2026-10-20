@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 103 步新增显式 `context_policy_version=runbook-read-v1`，要求固定 v2、多 Agent 与 function_calling 模型预算；省略字段和历史策略行为不变。该策略复用既有 `/model-input`、`/context-manifest`、`/interaction` 与 `/call-budget` 只读查询，不新增公开手册端点：专业输入使用 `runbook-loop-input-v1`，目录由服务端根据已持久化任务事实确定；仅命中的任务清单包含 `read_runbook`。模型请求只保存手册 ID、版本和散列，成功工具结果保存完整正文，后续模型清单追加实际读取正文的稳定材料引用。客户端不能提交路径、运行、任务、尝试、角色或授权范围。详见 [版本化调查手册最小读取链路](103-versioned-runbook-read.md)。
+
 第 85 步开放隔离的 v3 启动契约，详见 [独立动态工作流版本与运行策略冻结](85-dynamic-workflow-start.md)。原启动端点接受 `workflow_version=v3`、`mode=multi_agent`、`data_source_mode=frozen`、必填 function_calling `model_budget` 和可选 `coordination_policy`；上下文固定为 `summary-context-v1`，调用预算和协调策略省略时使用受限默认值。运行响应新增只读 `graph_version`、`coordination_policy_version` 和复核后的完整 `coordination_policy`；旧 v1/v2 返回空。v3 当前只会创建 queued 运行，现有 Worker 不领取，不能据此宣称动态图已执行。
 
 第 81 步新增显式 `context_policy_version=summary-context-v1`，要求 v2 与 function_calling 模型预算；默认请求行为不变。综合实际输入以三份 `working_summaries` 替代独立 reports，完整证据保留；调用清单包含摘要 ID、版本与散列，新综合提示为 summary-context-v1。摘要缺失或来源冲突拒绝预留，无新增写接口。详见 [摘要上下文](81-summary-context.md)。

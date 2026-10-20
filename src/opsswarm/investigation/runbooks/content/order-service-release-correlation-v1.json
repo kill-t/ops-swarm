@@ -1,0 +1,15 @@
+{
+  "schema_version": "runbook-metadata-v1",
+  "runbook_id": "order-service-release-correlation",
+  "version": "v1",
+  "title": "order-service 近期发布相关性核查",
+  "summary": "核对近期完成的部署与故障时间线、版本身份、反证和证据缺口，不把时间相邻直接解释为发布回归。",
+  "locale": "zh-CN",
+  "authority": "guidance_only",
+  "service_name": "order-service",
+  "role": "change",
+  "selector_version": "order-service-recent-completed-deployment-v1",
+  "content_file": "order-service-release-correlation-v1.md",
+  "content_sha256": "11c3ce5bc5f3a49321ed7d95b789a97206770d47a2acc981ba0bb8ab686306c4",
+  "content_bytes": 2323
+}

@@ -57,7 +57,9 @@ def test_explicit_fixed_policy_requires_v2_and_model_budget():
         )
 
 
-@pytest.mark.parametrize("context_policy", ["evidence-read-v1", "summary-context-v1"])
+@pytest.mark.parametrize(
+    "context_policy", ["evidence-read-v1", "summary-context-v1", "runbook-read-v1"]
+)
 def test_loop_policy_requires_function_calling_profile(context_policy):
     assert (
         request(

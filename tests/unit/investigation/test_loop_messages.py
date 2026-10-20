@@ -8,7 +8,12 @@ from langchain_core.messages import ToolMessage as LangChainToolMessage
 from pydantic import ValidationError
 
 from opsswarm.investigation.budget.model_contracts import TextModelMessage
-from opsswarm.investigation.loop.contracts import AssistantMessage, ToolCall, ToolMessage
+from opsswarm.investigation.loop.contracts import (
+    AssistantMessage,
+    LoopModelResult,
+    ToolCall,
+    ToolMessage,
+)
 from opsswarm.investigation.loop.messages import (
     from_langchain,
     model_result,
@@ -16,9 +21,16 @@ from opsswarm.investigation.loop.messages import (
     to_langchain,
     validate_history,
 )
+from opsswarm.investigation.loop.policy import validate_model_result
+from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 SNAPSHOT_SHA256 = "a" * 64
 READ_ARGS = {"evidence_id": "log-1", "snapshot_sha256": SNAPSHOT_SHA256}
+RUNBOOK_ARGS = {
+    "runbook_id": "order-service-release-correlation",
+    "version": "v1",
+    "content_sha256": SNAPSHOT_SHA256,
+}
 REPORT_ARGS = {
     "specialist": "log",
     "summary": "日志异常与发布窗口一致。",
@@ -69,6 +81,52 @@ def test_model_result_accepts_read_request_and_final_output_pair() -> None:
     assert request.messages[0].tool_calls[0].name == "read_evidence"
     assert len(final.messages) == 2
     assert final.messages[0].tool_calls[0].args["specialist"] == "log"
+
+
+def test_model_result_accepts_strict_runbook_request_without_scope_fields() -> None:
+    request = model_result([_ai_call("read_runbook", RUNBOOK_ARGS, "runbook-1")])
+
+    assert request.messages[0].tool_calls[0].args == RUNBOOK_ARGS
+    with pytest.raises(ValidationError):
+        model_result(
+            [
+                _ai_call(
+                    "read_runbook",
+                    {**RUNBOOK_ARGS, "path": "../../AGENTS.md"},
+                    "runbook-2",
+                )
+            ]
+        )
+
+
+def test_runbook_material_never_grants_evidence_citation() -> None:
+    history = (
+        AssistantMessage(
+            content="",
+            tool_calls=(ToolCall(id="runbook-1", name="read_runbook", args=RUNBOOK_ARGS),),
+        ),
+        ToolMessage(content="{}", tool_call_id="runbook-1", name="read_runbook"),
+    )
+    report = {
+        **REPORT_ARGS,
+        "evidence_ids": [RUNBOOK_ARGS["runbook_id"]],
+    }
+    result = LoopModelResult(
+        messages=(
+            AssistantMessage(
+                content="",
+                tool_calls=(ToolCall(id="report-2", name="SpecialistReport", args=report),),
+            ),
+            ToolMessage(
+                content="Returning structured response",
+                tool_call_id="report-2",
+                name="SpecialistReport",
+            ),
+        )
+    )
+
+    with pytest.raises(TaskFactConflict, match="只能引用"):
+        validate_model_result(result, "log", history, allow_runbook=True)
 
 
 @pytest.mark.parametrize(

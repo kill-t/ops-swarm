@@ -11,11 +11,14 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationModelResult,
 )
 from opsswarm.investigation.review.contracts import ReviewModelResult
+from opsswarm.investigation.runbooks.contracts import ReadRunbookArguments
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
 from opsswarm.investigation.tasks.contracts import TaskModel
 
 LOOP_POLICY_VERSION: Literal["evidence-read-v1"] = "evidence-read-v1"
 LOOP_PROMPT_VERSION: Literal["evidence-read-v1"] = "evidence-read-v1"
+RUNBOOK_POLICY_VERSION: Literal["runbook-read-v1"] = "runbook-read-v1"
+RUNBOOK_PROMPT_VERSION: Literal["runbook-read-v1"] = "runbook-read-v1"
 
 
 class ReadEvidenceArguments(TaskModel):
@@ -50,7 +53,7 @@ LoopMessage = TextModelMessage | AssistantMessage | ToolMessage
 
 
 class LoopModelInput(TaskModel):
-    version: Literal["evidence-loop-input-v1"] = "evidence-loop-input-v1"
+    version: Literal["evidence-loop-input-v1", "runbook-loop-input-v1"] = "evidence-loop-input-v1"
     messages: tuple[LoopMessage, ...] = Field(min_length=2, max_length=14)
     output_schema: dict[str, JsonValue]
     tool_schema: dict[str, JsonValue]
@@ -67,19 +70,33 @@ class EvidenceToolRequest(TaskModel):
     arguments: ReadEvidenceArguments
 
 
+class RunbookToolRequest(TaskModel):
+    source_call_id: UUID
+    tool_call_id: str = Field(min_length=1, max_length=100)
+    arguments: ReadRunbookArguments
+
+
+ToolRequest = EvidenceToolRequest | RunbookToolRequest
+TOOL_REQUEST_ADAPTER: TypeAdapter[ToolRequest] = TypeAdapter(ToolRequest)
+
+
 class LoopModelResult(TaskModel):
     kind: Literal["model"] = "model"
     messages: tuple[AssistantMessage | ToolMessage, ...] = Field(min_length=1, max_length=2)
 
 
-class EvidenceToolResult(TaskModel):
+class LoopToolResult(TaskModel):
     kind: Literal["tool"] = "tool"
     message: ToolMessage
 
 
+# 保留公开名称，历史调用方和已保存 JSON 无需迁移。
+EvidenceToolResult = LoopToolResult
+
+
 CallResult = (
     LoopModelResult
-    | EvidenceToolResult
+    | LoopToolResult
     | CoordinationModelResult
     | SynthesisModelResult
     | ReviewModelResult
@@ -90,5 +107,5 @@ CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 class CallInteraction(TaskModel):
     investigation_run_id: UUID
     call_id: UUID
-    tool_request: EvidenceToolRequest | None
+    tool_request: ToolRequest | None
     result: CallResult | None

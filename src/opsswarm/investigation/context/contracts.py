@@ -24,7 +24,12 @@ if TYPE_CHECKING:
     from opsswarm.investigation.synthesis.contracts import OpenHypothesisRecord
     from opsswarm.investigation.working_summary.contracts import WorkingSummaryRecord
 
-ContextPolicyVersion = Literal["task-context-v1", "evidence-read-v1", "summary-context-v1"]
+ContextPolicyVersion = Literal[
+    "task-context-v1",
+    "evidence-read-v1",
+    "summary-context-v1",
+    "runbook-read-v1",
+]
 CONTEXT_POLICY_VERSION: ContextPolicyVersion = "task-context-v1"
 CONTEXT_PROMPT_VERSION: Literal["fixed-task-context-v1"] = "fixed-task-context-v1"
 
@@ -47,6 +52,8 @@ class ContextMaterial(TaskModel):
         "task_result",
         "task_working_summary",
         "open_hypothesis",
+        "runbook_catalog",
+        "runbook_content",
     ]
     material_id: UUID
     version: str = Field(min_length=1, max_length=100)
@@ -74,6 +81,7 @@ class ContextManifest(TaskModel):
         "fixed-task-context-v1",
         "evidence-read-v1",
         "summary-context-v1",
+        "runbook-read-v1",
         "coordination-plan-v1",
         "open-hypothesis-synthesis-v1",
         "follow-up-open-hypothesis-synthesis-v1",
@@ -84,7 +92,7 @@ class ContextManifest(TaskModel):
     ] = CONTEXT_PROMPT_VERSION
     evidence_policy_version: EvidencePolicyVersion
     materials: tuple[ContextMaterial, ...] = Field(min_length=2, max_length=11)
-    tool_names: tuple[str, ...] = Field(default=(), max_length=1)
+    tool_names: tuple[str, ...] = Field(default=(), max_length=2)
     trimming: tuple[str, ...] = Field(default=(), max_length=0)
     allocation: ModelAllocation
 
@@ -164,10 +172,18 @@ class ContextManifest(TaskModel):
         ):
             raise ValueError("任务上下文策略、角色版本或材料不匹配")
         loop = (
-            self.version in ("evidence-read-v1", "summary-context-v1") and self.role != "synthesis"
+            self.version
+            in (
+                "evidence-read-v1",
+                "summary-context-v1",
+                "runbook-read-v1",
+            )
+            and self.role != "synthesis"
         )
         prompt = (
-            "evidence-read-v1"
+            "runbook-read-v1"
+            if self.version == "runbook-read-v1" and loop
+            else "evidence-read-v1"
             if loop
             else (
                 "summary-context-v1"
@@ -175,7 +191,29 @@ class ContextManifest(TaskModel):
                 else "fixed-task-context-v1"
             )
         )
-        if self.tool_names != (("read_evidence",) if loop else ()) or self.prompt_version != prompt:
+        expected_tools = ("read_evidence",) if loop else ()
+        tools_valid = self.tool_names == expected_tools
+        if self.version == "runbook-read-v1" and self.role != "synthesis":
+            tools_valid = self.tool_names in (
+                ("read_evidence",),
+                ("read_evidence", "read_runbook"),
+            )
+        runbook_kinds = tuple(
+            item.kind
+            for item in self.materials
+            if item.kind in ("runbook_catalog", "runbook_content")
+        )
+        runbook_materials_valid = (
+            runbook_kinds.count("runbook_catalog") == 1
+            if self.version == "runbook-read-v1" and self.role != "synthesis"
+            else not runbook_kinds
+        )
+        if (
+            not tools_valid
+            or self.prompt_version != prompt
+            or not runbook_materials_valid
+            or (self.version == "runbook-read-v1" and self.workflow_version != "v2")
+        ):
             raise ValueError("上下文策略与提示、工具集合不匹配")
         return self
 

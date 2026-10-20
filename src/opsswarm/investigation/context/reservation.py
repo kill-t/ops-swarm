@@ -14,7 +14,7 @@ from opsswarm.investigation.coordination.context import validate_coordination_co
 from opsswarm.investigation.coordination.contracts import CoordinationModelInput
 from opsswarm.investigation.loop.context import build_loop_context
 from opsswarm.investigation.loop.contracts import AnyModelInput, LoopModelInput
-from opsswarm.investigation.loop.ledger import saved_history
+from opsswarm.investigation.loop.history import saved_history, saved_runbook_catalog
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
@@ -45,7 +45,8 @@ async def validate_context_reservation(
         await validate_coordination_context(session, run, model_input, manifest)
         return
     if isinstance(model_input, LoopModelInput) and (
-        run.context_policy_version not in ("evidence-read-v1", "summary-context-v1")
+        run.context_policy_version
+        not in ("evidence-read-v1", "summary-context-v1", "runbook-read-v1")
         or task_id is None
     ):
         raise TaskFactConflict("context_policy_mismatch", "循环输入仅支持新策略的专业任务")
@@ -60,13 +61,23 @@ async def validate_context_reservation(
     )
     policy = ModelBudgetPolicy.model_validate(run.model_budget)
     if (
-        run.context_policy_version in ("evidence-read-v1", "summary-context-v1")
+        run.context_policy_version in ("evidence-read-v1", "summary-context-v1", "runbook-read-v1")
         and task_id is not None
     ):
         if not isinstance(model_input, LoopModelInput) or task_attempt_id is None:
             raise TaskFactConflict("context_required", "新策略专业模型必须提供完整循环输入")
         history = await saved_history(session, run.id, task_attempt_id, invocation_index)
-        expected = build_loop_context(sources, policy, history)
+        fixed_catalog = (
+            await saved_runbook_catalog(session, run.id, task_id)
+            if run.context_policy_version == "runbook-read-v1"
+            else None
+        )
+        expected = build_loop_context(
+            sources,
+            policy,
+            history,
+            fixed_runbook_catalog=fixed_catalog,
+        )
     else:
         if not isinstance(model_input, ModelInput):
             raise TaskFactConflict("context_policy_mismatch", "当前角色只接受原文本输入")

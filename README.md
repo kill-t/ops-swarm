@@ -22,6 +22,8 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 第 102 步交付 [只读 telemetry MCP 指标查询](docs/architecture/102-telemetry-mcp-metric-query.md)：新建现场 v2 的指标专业任务通过独立单工具 MCP 服务读取本地 Prometheus，日志继续使用冻结的第 101 步 MCP 协议。新组合固定为 `task-evidence-live-mcp-v1`，两种历史现场策略仍按原路径恢复；指标工具不接受 URL、PromQL、指标名或查询控制参数，MCP 失败不会回退直连或冻结材料。验证见 [第 102 步记录](docs/progress/102-telemetry-mcp-metric-query.md)。
 
+第 103 步交付 [版本化调查手册最小读取链路](docs/architecture/103-versioned-runbook-read.md)：固定 v2 可通过独立 `runbook-read-v1` 策略，为具有近期已完成部署事实的 `order-service` 变更任务提供首个 Git 管理手册。模型只能按 ID、版本和内容散列读取；成功正文进入配对工具结果，后续调用清单记录实际读取的材料版本与散列。手册不属于现场证据，不授予审批或执行权限；历史策略和 v3 不变。验证见 [第 103 步记录](docs/progress/103-versioned-runbook-read.md)。
+
 第 74 步修复 [冻结场景身份与历史兼容](docs/architecture/74-stable-frozen-identity.md)：新任务使用确定性内容身份，旧任务经已发布版本兼容表核对后沿用原 ID、材料散列和预算。不同哈希种子的独立 Worker 进程用于验证恢复，详见 [第 74 步记录](docs/progress/74-stable-frozen-identity.md)。
 
 第 75 步接入 [最小 ContextBuilder](docs/architecture/75-task-context-builder.md)：专业节点按任务组装目标、时间窗和持久证据，综合节点读取已提交报告；实际模型输入、材料 ID/版本/散列清单及预算预留一起保存。新建且启用 `model_budget` 的 v2 固定 `context_policy_version=task-context-v1`，历史运行保持原输入策略；该步尚未接入的专业按需读取由第 79 步独立策略交付，工作摘要材料由第 80 步交付，第 81 步通过独立策略接入综合消费。验证见 [第 75 步记录](docs/progress/75-task-context-builder.md)。

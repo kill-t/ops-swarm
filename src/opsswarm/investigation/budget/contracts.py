@@ -50,6 +50,9 @@ class CallOperation(StrEnum):
     READ_LOG_EVIDENCE = "read_log_evidence"
     READ_METRIC_EVIDENCE = "read_metric_evidence"
     READ_CHANGE_EVIDENCE = "read_change_evidence"
+    READ_LOG_RUNBOOK = "read_log_runbook"
+    READ_METRIC_RUNBOOK = "read_metric_runbook"
+    READ_CHANGE_RUNBOOK = "read_change_runbook"
 
 
 class CallReservationRecord(TaskModel):
