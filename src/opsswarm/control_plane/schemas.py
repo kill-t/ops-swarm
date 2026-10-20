@@ -192,7 +192,7 @@ class StartInvestigationRequest(StrictApiModel):
     """开始调查动作的乐观锁与审计信息。"""
 
     expected_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
     mode: InvestigationMode = InvestigationMode.SINGLE_AGENT
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
@@ -228,7 +228,7 @@ class CloseIncidentRequest(StrictApiModel):
     """工程师确认关闭事故所需的乐观锁和审计信息。"""
 
     expected_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
 
 
@@ -512,7 +512,7 @@ class CreateApprovalRequest(StrictApiModel):
     """提交计划审批时的乐观锁与人工审计信息。"""
 
     expected_incident_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
 
 
@@ -606,7 +606,7 @@ class DecideApprovalRequest(StrictApiModel):
     """人工决定使用的 Incident 乐观锁和审计信息。"""
 
     expected_incident_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
     reason: str = Field(min_length=1, max_length=500)
 
 
@@ -1037,7 +1037,7 @@ class CreateIncidentReportRequest(StrictApiModel):
     """生成复盘快照时使用的乐观锁版本和人工身份。"""
 
     expected_incident_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class IncidentReportResponse(StrictApiModel):
@@ -1082,14 +1082,14 @@ class CreateReportActionItemRequest(StrictApiModel):
     description: str = Field(min_length=1, max_length=1000)
     owner_id: str = Field(min_length=1, max_length=100)
     due_at: datetime
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class CompleteReportActionItemRequest(StrictApiModel):
     """完成行动项时提交乐观锁版本和不可变审计说明。"""
 
     expected_version: int = Field(ge=1)
-    actor_id: str = Field(min_length=1, max_length=100)
+    actor_id: str | None = Field(default=None, min_length=1, max_length=100)
     completion_note: str = Field(min_length=1, max_length=500)
 
 

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import JsonValue
@@ -58,6 +58,10 @@ from opsswarm.follow_up import (
     ReportActionItemVersionConflict,
 )
 from opsswarm.follow_up.persistence import ReportActionItemStore
+from opsswarm.identity.api import authorize_control_request, create_identity_router
+from opsswarm.identity.models import OperatorAccessError
+from opsswarm.identity.settings import OperatorAuthSettings
+from opsswarm.identity.store import OperatorAuthorizationStore
 from opsswarm.incidents import (
     IncidentDomainError,
     IncidentNotFound,
@@ -136,12 +140,17 @@ def create_app(
     collaboration_queries: CollaborationQueries | None = None,
     call_budget_queries: CallBudgetQueries | None = None,
     database_settings: DatabaseSettings | None = None,
+    operator_auth_settings: OperatorAuthSettings | None = None,
+    operator_authorization_store: OperatorAuthorizationStore | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
     """创建生产可管理数据库资源、测试可注入仓储的控制面应用。"""
 
     selected_tracing_runtime = tracing_runtime or create_tracing_runtime("opsswarm-control-plane")
+    selected_auth_settings = (
+        operator_auth_settings if operator_auth_settings is not None else OperatorAuthSettings()
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -191,6 +200,9 @@ def create_app(
         settings = database_settings if database_settings is not None else DatabaseSettings()
         database = Database(settings.database_url)
         application.state.database = database
+        application.state.operator_authorization_store = OperatorAuthorizationStore(
+            database.session_factory
+        )
         application.state.incident_store = IncidentStore(database.session_factory)
         application.state.investigation_store = InvestigationStore(database.session_factory)
         application.state.action_plan_store = ActionPlanStore(database.session_factory)
@@ -227,6 +239,12 @@ def create_app(
         version=__version__,
         description="事故接收、调查状态与不可变时间线控制面。仅限本地 MVP 演练环境。",
         lifespan=lifespan,
+        dependencies=[Depends(authorize_control_request)],
+        responses={
+            401: {"model": ApiErrorResponse, "description": "需要有效操作者认证"},
+            403: {"model": ApiErrorResponse, "description": "操作者越权或身份声明不符"},
+            503: {"model": ApiErrorResponse, "description": "授权审计不可用，命令未执行"},
+        },
     )
     app.state.incident_store = incident_store
     app.state.investigation_store = investigation_store
@@ -240,6 +258,10 @@ def create_app(
     app.state.report_action_item_store = report_action_item_store
     app.state.collaboration_queries = collaboration_queries
     app.state.call_budget_queries = call_budget_queries
+    app.state.operator_auth_settings = selected_auth_settings
+    app.state.operator_clock = clock
+    app.state.operator_authorization_store = operator_authorization_store
+    app.include_router(create_identity_router())
     app.include_router(create_router(clock))
     app.include_router(create_collaboration_router())
     app.include_router(create_call_budget_router())
@@ -253,12 +275,27 @@ def create_app(
         """追踪开启时让调用方能用响应头定位 Jaeger trace。"""
 
         response = await call_next(request)
+        authorization_id = getattr(request.state, "authorization_id", None)
+        if authorization_id is not None:
+            response.headers["X-Authorization-ID"] = str(authorization_id)
         trace_id = current_trace_id_hex()
         if trace_id is not None:
             response.headers["X-Trace-ID"] = trace_id
         return response
 
     selected_tracing_runtime.instrument_fastapi(app)
+
+    @app.exception_handler(OperatorAccessError)
+    async def handle_operator_access_error(
+        _: Request,
+        error: OperatorAccessError,
+    ) -> JSONResponse:
+        response = ApiErrorResponse(error_code=error.code, message=str(error))
+        return JSONResponse(
+            status_code=error.status_code,
+            content=response.model_dump(mode="json"),
+            headers={"WWW-Authenticate": "Bearer"} if error.status_code == 401 else None,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation_error(

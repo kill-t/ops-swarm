@@ -115,6 +115,8 @@ services:
     environment:
       OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
       OPSSWARM_EXECUTOR_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_OPERATOR_AUTH_MODE: ${OPSSWARM_OPERATOR_AUTH_MODE:-legacy_local}
+      OPSSWARM_OPERATOR_AUTH_CREDENTIALS: ${OPSSWARM_OPERATOR_AUTH_CREDENTIALS:-[]}
       OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
       OPSSWARM_VERIFIER_PROMETHEUS_BASE_URL: http://prometheus:9090
       OPSSWARM_OTEL_ENABLED: ${OPSSWARM_OTEL_ENABLED:-false}

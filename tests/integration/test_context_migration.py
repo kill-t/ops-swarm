@@ -54,5 +54,5 @@ async def test_downgrade_cannot_erase_context_audit(database_session_factory, au
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0059_telemetry_mcp_metric_policy"
+            == "0061_trusted_operator_identity"
         )

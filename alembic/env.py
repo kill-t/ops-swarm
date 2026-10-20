@@ -16,6 +16,7 @@ from opsswarm.database.settings import DatabaseSettings
 from opsswarm.evaluation.persistence import tables as evaluation_tables  # noqa: F401
 from opsswarm.execution.persistence import tables as execution_tables  # noqa: F401
 from opsswarm.follow_up.persistence import tables as follow_up_tables  # noqa: F401
+from opsswarm.identity import tables as operator_identity_tables  # noqa: F401
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.budget import tables as investigation_budget_tables  # noqa: F401
 from opsswarm.investigation.coordination import tables as coordination_tables  # noqa: F401

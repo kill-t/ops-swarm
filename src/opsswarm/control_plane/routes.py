@@ -67,6 +67,7 @@ from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import ExecutionStatus, OperationExecutionFailed
 from opsswarm.execution.service import OperationExecutionService
 from opsswarm.follow_up.persistence import ReportActionItemStore
+from opsswarm.identity.api import HumanActorDependency
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.persistence import InvestigationStore
@@ -377,6 +378,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["事故复盘"],
     )
     async def create_incident_report(
+        actor_id: HumanActorDependency,
         incident_id: UUID,
         request: CreateIncidentReportRequest,
         response: Response,
@@ -387,7 +389,7 @@ def create_router(clock: Clock) -> APIRouter:
         creation = await store.create(
             incident_id,
             expected_incident_version=request.expected_incident_version,
-            generated_by_id=request.actor_id,
+            generated_by_id=actor_id,
             occurred_at=clock(),
         )
         if not creation.created:
@@ -423,6 +425,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["事故复盘"],
     )
     async def create_report_action_item(
+        actor_id: HumanActorDependency,
         report_id: UUID,
         request: CreateReportActionItemRequest,
         response: Response,
@@ -437,7 +440,7 @@ def create_router(clock: Clock) -> APIRouter:
             description=request.description,
             owner_id=request.owner_id,
             due_at=request.due_at,
-            created_by_id=request.actor_id,
+            created_by_id=actor_id,
             occurred_at=clock(),
         )
         if not creation.created:
@@ -493,6 +496,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["事故复盘"],
     )
     async def complete_report_action_item(
+        actor_id: HumanActorDependency,
         item_id: UUID,
         request: CompleteReportActionItemRequest,
         store: ReportActionItemStoreDependency,
@@ -503,7 +507,7 @@ def create_router(clock: Clock) -> APIRouter:
             await store.complete(
                 item_id,
                 expected_version=request.expected_version,
-                completed_by_id=request.actor_id,
+                completed_by_id=actor_id,
                 completion_note=request.completion_note,
                 occurred_at=clock(),
             )
@@ -537,6 +541,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["事故动作"],
     )
     async def close_incident(
+        actor_id: HumanActorDependency,
         incident_id: UUID,
         request: CloseIncidentRequest,
         store: IncidentStoreDependency,
@@ -548,7 +553,7 @@ def create_router(clock: Clock) -> APIRouter:
             action=IncidentAction.CLOSE,
             expected_version=request.expected_version,
             occurred_at=clock(),
-            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=actor_id),
             reason=request.reason,
         )
         return IncidentResponse.from_stored(stored)
@@ -563,6 +568,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["事故动作"],
     )
     async def start_investigation(
+        actor_id: HumanActorDependency,
         incident_id: UUID,
         request: StartInvestigationRequest,
         store: InvestigationStoreDependency,
@@ -571,7 +577,7 @@ def create_router(clock: Clock) -> APIRouter:
             incident_id,
             expected_version=request.expected_version,
             occurred_at=clock(),
-            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=actor_id),
             reason=request.reason,
             mode=request.mode,
             workflow_version=request.workflow_version,
@@ -698,6 +704,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["审批"],
     )
     async def create_approval_request(
+        actor_id: HumanActorDependency,
         plan_id: UUID,
         request: CreateApprovalRequest,
         response: Response,
@@ -709,7 +716,7 @@ def create_router(clock: Clock) -> APIRouter:
             plan_id,
             expected_incident_version=request.expected_incident_version,
             occurred_at=clock(),
-            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=actor_id),
             reason=request.reason,
         )
         if not creation.created:
@@ -749,13 +756,14 @@ def create_router(clock: Clock) -> APIRouter:
         request: DecideApprovalRequest,
         store: ApprovalRequestStore,
         decision: ApprovalDecision,
+        actor_id: str,
     ) -> DecideApprovalRequestResponse:
         outcome = await store.decide(
             request_id,
             decision=decision,
             expected_incident_version=request.expected_incident_version,
             occurred_at=clock(),
-            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=request.actor_id),
+            actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id=actor_id),
             reason=request.reason,
         )
         if outcome.request.status is ApprovalRequestStatus.EXPIRED:
@@ -775,6 +783,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["审批"],
     )
     async def approve_request(
+        actor_id: HumanActorDependency,
         request_id: UUID,
         request: DecideApprovalRequest,
         store: ApprovalRequestStoreDependency,
@@ -786,6 +795,7 @@ def create_router(clock: Clock) -> APIRouter:
             request,
             store,
             ApprovalDecision.APPROVE,
+            actor_id,
         )
 
     @router.post(
@@ -798,6 +808,7 @@ def create_router(clock: Clock) -> APIRouter:
         tags=["审批"],
     )
     async def reject_request(
+        actor_id: HumanActorDependency,
         request_id: UUID,
         request: DecideApprovalRequest,
         store: ApprovalRequestStoreDependency,
@@ -809,6 +820,7 @@ def create_router(clock: Clock) -> APIRouter:
             request,
             store,
             ApprovalDecision.REJECT,
+            actor_id,
         )
 
     @router.get(

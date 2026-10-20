@@ -9,6 +9,7 @@ def test_openapi_exposes_current_incident_contract() -> None:
 
     assert set(paths) >= {
         "/health",
+        "/api/v1/operators/me",
         "/api/v1/alerts",
         "/api/v1/incidents",
         "/api/v1/incidents/{incident_id}",

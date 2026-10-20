@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 104 步新增 `operator_authorizations`，保存控制面写命令的主体、凭据 ID、角色/权限、操作与资源范围、请求体散列和 UTC 授权时间；不保存令牌、凭据摘要或正文。授权准入先独立提交，不代表业务成功；已有审计时迁移禁止降级。历史主体字段不改写、不追认为可信身份。详见 [可信操作者身份](104-trusted-operator-identity.md)。
+
 第 100 步复用 `investigation_hypothesis_review_routes` 保存第三轮最大轮次停止路由，不新增表或字段。迁移 `0057_third_round_routing` 只扩展运行图约束到 v15；第三轮路由继续由既有复合外键、按审查唯一和按轮次唯一约束绑定假设、审查、运行与父尝试。降级检查图 v15 和第 3 轮及以后路由事实，不能通过改写图版本隐藏已经发生的停止决定。详细边界见 [v3 第三轮审查后的确定性最大轮次停止路由](100-third-round-terminal-routing.md)。
 
 第 101 步增量见 [只读 telemetry MCP 日志查询](101-telemetry-mcp-log-query.md)：迁移 `0058_telemetry_mcp_log_policy` 不新增列或表，只扩展 `investigation_runs.evidence_policy_version` 与现场截止时间约束。新建现场 v2 固定 `task-evidence-live-mcp-log-v1`，历史 `task-evidence-live-v1` 继续直连恢复；存在新策略运行时拒绝降级到 `0057`。
