@@ -25,5 +25,5 @@ async def test_downgrade_refuses_to_remove_pinned_evidence_policy(database_sessi
     assert (await store.get_run(started.run.id)).evidence_policy_version == "task-evidence-v1"
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0063_trusted_experience_review"
+            "0064_experience_lifecycle"
         )

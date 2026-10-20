@@ -169,15 +169,18 @@ class ExperienceReviewStore:
 
     async def get_entry(self, entry_id: UUID) -> EntryView:
         async with self._factory() as session, session.begin():
-            row = await session.get(ExperienceEntryRow, entry_id)
-            if row is None:
-                raise ExperienceError("experience_entry_not_found", "已确认经验版本不存在", 404)
-            bundle = await _bundle(session, row.candidate_id, read=True)
-            if bundle.entry is None or bundle.entry.id != entry_id:
-                raise ExperienceError(
-                    "experience_entry_integrity_conflict", "确认版本与审核投影不一致"
-                )
-            return bundle.entry
+            return await load_confirmed_entry_in_session(session, entry_id)
+
+
+async def load_confirmed_entry_in_session(session: AsyncSession, entry_id: UUID) -> EntryView:
+    """复用调用方事务复核历史确认工件，不跨仓储开启独立读取快照。"""
+    row = await session.get(ExperienceEntryRow, entry_id)
+    if row is None:
+        raise ExperienceError("experience_entry_not_found", "已确认经验版本不存在", 404)
+    bundle = await _bundle(session, row.candidate_id, read=True)
+    if bundle.entry is None or bundle.entry.id != entry_id:
+        raise ExperienceError("experience_entry_integrity_conflict", "确认版本与审核投影不一致")
+    return bundle.entry
 
 
 async def _bundle(session: AsyncSession, candidate_id: UUID, *, read: bool) -> ReviewBundle:

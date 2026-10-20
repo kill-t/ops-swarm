@@ -9,9 +9,11 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
@@ -97,6 +99,9 @@ class ExperienceEntryRow(Base):
     __table_args__ = (
         UniqueConstraint("review_id", name="uq_experience_entries_review"),
         UniqueConstraint("candidate_id", name="uq_experience_entries_candidate"),
+        UniqueConstraint(
+            "id", "version", "content_hash", "source_hash", name="uq_experience_entry_identity"
+        ),
         ForeignKeyConstraint(
             [
                 "review_id",
@@ -128,6 +133,14 @@ class ExperienceEntryRow(Base):
             name="ck_experience_entries_hashes",
         ),
         CheckConstraint("jsonb_typeof(content) = 'object'", name="ck_experience_entries_content"),
+        Index(
+            "ix_experience_entries_scope",
+            text("((content -> 'candidate_snapshot'::text) ->> 'service_name'::text)"),
+            text("((content -> 'candidate_snapshot'::text) ->> 'environment'::text)"),
+            text("((content -> 'candidate_snapshot'::text) ->> 'data_source_mode'::text)"),
+            text("created_at DESC"),
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)

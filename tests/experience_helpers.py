@@ -22,15 +22,22 @@ class ExperienceClock:
         self.value += timedelta(seconds=seconds)
 
 
-async def completed_source_report(client, factory, clock):
+async def completed_source_report(
+    client,
+    factory,
+    clock,
+    *,
+    source_key="experience-source",
+    scenario=RELEASE_500_SCENARIO,
+):
     async def post(path, *, role="engineer", body=None):
         response = await client.post(path, json=body, headers=auth_header(role))
         assert response.status_code in (200, 201), response.text
         return response.json()
 
-    incident = (
-        await post("/api/v1/alerts", role="alert_source", body=alert_payload("experience-source"))
-    )["incident"]
+    incident = (await post("/api/v1/alerts", role="alert_source", body=alert_payload(source_key)))[
+        "incident"
+    ]
     started = await post(
         f"/api/v1/incidents/{incident['id']}/actions/start-investigation",
         body={"expected_version": 1, "reason": "经验来源测试调查"},
@@ -38,7 +45,7 @@ async def completed_source_report(client, factory, clock):
     await complete_scenario_investigation(
         factory,
         run_id=started["investigation"]["id"],
-        scenario=RELEASE_500_SCENARIO,
+        scenario=scenario,
         worker_id="experience-source-worker",
     )
     clock.advance(3)
@@ -60,7 +67,7 @@ async def completed_source_report(client, factory, clock):
         await post(
             f"/api/v1/action-steps/{plan['steps'][0]['id']}/executions",
             role="executor",
-            body={"expected_incident_version": 4, "idempotency_key": "experience-execution"},
+            body={"expected_incident_version": 4, "idempotency_key": f"{source_key}-execution"},
         )
     )["operation_execution"]
     verification = (
@@ -74,7 +81,7 @@ async def completed_source_report(client, factory, clock):
         sampled = await post(
             f"/api/v1/verification-runs/{verification['id']}/samples",
             role="executor",
-            body={"idempotency_key": f"experience-sample-{index}"},
+            body={"idempotency_key": f"{source_key}-sample-{index}"},
         )
         if index != 2:
             clock.advance(30)

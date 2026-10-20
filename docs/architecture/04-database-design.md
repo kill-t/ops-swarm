@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 107 步新增不可变 `experience_disablements` 与 `experience_lifecycle_commands`，迁移为 `0064_experience_lifecycle`。原确认版本不改写，有效状态由确认事实（active/1）和唯一停用事实（disabled/2）投影；停用以复合外键绑定正文版本、内容和来源散列，保存可信主体、首次授权、完整命令幂等及原因。业务结果与停用原子提交，404/409 也独立审计；两表有事实时拒绝降级。确认表增加范围表达式索引；检索 SQL 先限定系统范围并最多选三条，共享锁之后以新语句复核停用，来源事故取不可变生成任务快照。详见 [有效经验状态与有界检索](107-experience-lifecycle-search.md)。
+
 第 106 步新增 `experience_reviews`、`experience_entries` 与 `experience_review_commands`，迁移为 `0063_trusted_experience_review`。唯一决定以复合外键绑定候选精确版本/内容及来源散列；确认版本以复合外键只能关联 confirm 决定，拒绝不生成经验。规范化命令、可信主体与 applied/replayed/error 业务结果独立保存，409/404 也可追溯；授权准入不代表该结果。三表不可改写/删除，有新事实时拒绝降级，原候选只增加复合唯一约束、不改正文。详见 [可信经验审核](106-trusted-experience-review.md)。
 
 第 105 步新增 `experience_generation_jobs`、`experience_generation_attempts` 与 `experience_candidates`，迁移为 `0062_experience_candidates`。任务按报告及策略唯一，固定完整来源 JSON/hash、可信请求者及授权准入外键；独立 Worker 采用行锁、租约和最多三次尝试，候选与任务成功原子保存。触发器保护来源、请求、尝试身份和候选不可变，终态拒绝改写；有事实时拒绝降级。候选仅为 `pending_review` 历史事实投影，不是启用经验。详细结构、来源上限和失败路径见 [经验候选与持久生成](105-experience-candidate-generation.md)。

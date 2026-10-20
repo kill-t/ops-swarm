@@ -69,6 +69,7 @@ WRITE_PERMISSIONS: dict[str, OperatorPermission] = {
     "record_verification_sample": OperatorPermission.VERIFY_ACTION,
     "create_experience_job": OperatorPermission.MANAGE_REPORT,
     "review_experience_candidate": OperatorPermission.MANAGE_REPORT,
+    "disable_experience_entry": OperatorPermission.MANAGE_REPORT,
 }
 
 TRUSTED_OPERATIONS = frozenset(
@@ -80,6 +81,9 @@ TRUSTED_OPERATIONS = frozenset(
         "review_experience_candidate",
         "get_experience_review",
         "get_experience_entry",
+        "disable_experience_entry",
+        "get_experience_entry_state",
+        "search_experience_entries",
     }
 )
 
