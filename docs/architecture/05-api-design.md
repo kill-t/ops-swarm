@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 106 步增加 `POST /api/v1/experience-candidates/{candidate_id}/reviews`、`GET /api/v1/experience-candidates/{candidate_id}/review`、`GET /api/v1/experience-entries/{entry_id}`。三个入口始终要求可信 Bearer；仅工程师使用 `manage_report` 作 confirm/reject 决定。严格命令绑定候选版本/散列、预期审核版本、幂等键及原因；首次决定 201、同主体同键同命令重放 200，版本/散列/终态冲突 409，未知目标 404。拒绝在事务内提交业务审计后再返回错误。现有候选 GET 保持生成工件语义，当前审核状态由新 GET 返回；不提供列表检索或上下文消费。详见 [可信经验审核](106-trusted-experience-review.md)。
+
 第 105 步增加 `POST /api/v1/incident-reports/{report_id}/experience-generation-jobs` 与 `GET /api/v1/experience-generation-jobs/{job_id}`、`GET /api/v1/experience-candidates/{candidate_id}`。三个入口始终要求可信 Bearer 身份，包括默认兼容模式。工程师使用已有 `manage_report` 权限提交，读接口使用 `read`；请求仅含 `expected_report_content_hash`，同报告同策略首次 201、重复 200，来源不完整或散列冲突 409，不存在 404。HTTP 只冻结来源和创建持久任务，独立 Worker 生成待审候选；不提供确认、启用或检索接口。详细响应、错误及幂等边界见 [经验候选与持久生成](105-experience-candidate-generation.md)。
 
 第 104 步新增 `GET /api/v1/operators/me` 与显式 `bearer` 控制面认证模式：所有 `/api/` 路由（含任务、预算、证据和 SSE）均要求有效 Bearer Header，GET 要求读取权限，13 个写入口使用各自权限，未知写入口拒绝。缺失/错误/过期凭据返回 401，越权/冒名返回 403，审计不可用返回 503。人工请求 `actor_id` 可省略，由认证主体注入，提交不同身份返回 403；默认 `legacy_local` 保留必需自填身份的演练语义，不能用于可信审核。写命令授权记录 ID 通过 `X-Authorization-ID` 返回，只证明准入，业务失败仍可能有记录；原状态、版本和幂等约束继续生效。详见 [可信操作者身份](104-trusted-operator-identity.md)。

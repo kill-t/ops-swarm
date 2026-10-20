@@ -338,7 +338,7 @@ async def test_third_round_plan_fact_blocks_downgrade_without_v11_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0062_experience_candidates"
+            == "0063_trusted_experience_review"
         )
         assert (
             await session.scalar(

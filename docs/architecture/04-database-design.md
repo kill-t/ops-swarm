@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 106 步新增 `experience_reviews`、`experience_entries` 与 `experience_review_commands`，迁移为 `0063_trusted_experience_review`。唯一决定以复合外键绑定候选精确版本/内容及来源散列；确认版本以复合外键只能关联 confirm 决定，拒绝不生成经验。规范化命令、可信主体与 applied/replayed/error 业务结果独立保存，409/404 也可追溯；授权准入不代表该结果。三表不可改写/删除，有新事实时拒绝降级，原候选只增加复合唯一约束、不改正文。详见 [可信经验审核](106-trusted-experience-review.md)。
+
 第 105 步新增 `experience_generation_jobs`、`experience_generation_attempts` 与 `experience_candidates`，迁移为 `0062_experience_candidates`。任务按报告及策略唯一，固定完整来源 JSON/hash、可信请求者及授权准入外键；独立 Worker 采用行锁、租约和最多三次尝试，候选与任务成功原子保存。触发器保护来源、请求、尝试身份和候选不可变，终态拒绝改写；有事实时拒绝降级。候选仅为 `pending_review` 历史事实投影，不是启用经验。详细结构、来源上限和失败路径见 [经验候选与持久生成](105-experience-candidate-generation.md)。
 
 第 104 步新增 `operator_authorizations`，保存控制面写命令的主体、凭据 ID、角色/权限、操作与资源范围、请求体散列和 UTC 授权时间；不保存令牌、凭据摘要或正文。授权准入先独立提交，不代表业务成功；已有审计时迁移禁止降级。历史主体字段不改写、不追认为可信身份。详见 [可信操作者身份](104-trusted-operator-identity.md)。

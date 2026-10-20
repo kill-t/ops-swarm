@@ -50,6 +50,8 @@ from opsswarm.execution.persistence import OperationExecutionStore
 from opsswarm.execution.service import OperationExecutionService
 from opsswarm.experience.api import create_experience_router
 from opsswarm.experience.contracts import ExperienceError
+from opsswarm.experience.review_api import create_experience_review_router
+from opsswarm.experience.review_store import ExperienceReviewStore
 from opsswarm.experience.store import ExperienceStore
 from opsswarm.follow_up import (
     FollowUpReportNotFound,
@@ -146,6 +148,7 @@ def create_app(
     operator_auth_settings: OperatorAuthSettings | None = None,
     operator_authorization_store: OperatorAuthorizationStore | None = None,
     experience_store: ExperienceStore | None = None,
+    experience_review_store: ExperienceReviewStore | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -196,6 +199,7 @@ def create_app(
             application.state.collaboration_queries = collaboration_queries
             application.state.call_budget_queries = call_budget_queries
             application.state.experience_store = experience_store
+            application.state.experience_review_store = experience_review_store
             try:
                 yield
             finally:
@@ -207,6 +211,9 @@ def create_app(
         application.state.database = database
         application.state.experience_store = experience_store or ExperienceStore(
             database.session_factory, clock=clock
+        )
+        application.state.experience_review_store = (
+            experience_review_store or ExperienceReviewStore(database.session_factory, clock=clock)
         )
         application.state.operator_authorization_store = OperatorAuthorizationStore(
             database.session_factory
@@ -271,6 +278,7 @@ def create_app(
     app.state.operator_authorization_store = operator_authorization_store
     app.include_router(create_identity_router())
     app.include_router(create_experience_router())
+    app.include_router(create_experience_review_router())
     app.include_router(create_router(clock))
     app.include_router(create_collaboration_router())
     app.include_router(create_call_budget_router())

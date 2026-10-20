@@ -2,11 +2,16 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from opsswarm.experience.artifact_validation import (
+    candidate_id_for_job,
+    validated_candidate,
+    validated_source,
+)
 from opsswarm.experience.contracts import (
     GENERATION_POLICY_VERSION,
     ExperienceDraft,
@@ -135,7 +140,7 @@ class ExperienceStore:
             job = await session.get(ExperienceJobRow, row.job_id)
             if job is None or job.status != "succeeded":
                 raise ExperienceError("source_conflict", "候选与成功任务不一致")
-            return _candidate_view(row, job)
+            return validated_candidate(row, job)
 
     async def claim_next(
         self,
@@ -250,7 +255,7 @@ class ExperienceStore:
                     and existing is not None
                     and existing.content_hash == canonical_hash(draft)
                 ):
-                    return _candidate_view(existing, row)
+                    return validated_candidate(existing, row)
                 raise ExperienceError("experience_lease_lost", "旧尝试不能结算已完成任务")
             row, attempt = await _active(session, claim, self._now())
             source = await _revalidate_source(session, row)
@@ -260,7 +265,7 @@ class ExperienceStore:
             now = self._now()
             _check_deadline(row, now)
             candidate = ExperienceCandidateRow(
-                id=_candidate_id(row.id),
+                id=candidate_id_for_job(row.id),
                 job_id=row.id,
                 version=1,
                 status="pending_review",
@@ -274,7 +279,7 @@ class ExperienceStore:
             row.lease_token, row.locked_until, row.last_error_code = None, None, None
             attempt.status, attempt.finished_at = "succeeded", now
             await session.flush()
-            return _candidate_view(candidate, row)
+            return validated_candidate(candidate, row)
 
     async def fail(
         self,
@@ -294,10 +299,6 @@ class ExperienceStore:
             row.updated_at, row.completed_at = now, None if retry else now
             row.lease_token, row.locked_until = None, None
             row.last_error_code = error_code
-
-
-def _candidate_id(job_id: UUID) -> UUID:
-    return uuid5(NAMESPACE_URL, f"opsswarm:experience:{job_id}:1")
 
 
 def _check_deadline(row: ExperienceJobRow, now: datetime) -> None:
@@ -334,58 +335,16 @@ async def _active(
     return row, attempt
 
 
-def _source(row: ExperienceJobRow) -> ExperienceSource:
-    try:
-        source = ExperienceSource.model_validate(row.source)
-        if (
-            canonical_hash(source) != row.source_hash
-            or source.report_id != row.report_id
-            or row.policy_version != GENERATION_POLICY_VERSION
-            or row.max_attempts != 3
-        ):
-            raise ValueError
-        return source
-    except ValueError:
-        raise ExperienceError("source_conflict", "已持久化的经验来源无法校验") from None
-
-
 async def _revalidate_source(session: AsyncSession, row: ExperienceJobRow) -> ExperienceSource:
-    source = _source(row)
+    source = validated_source(row)
     current = await load_source(session, row.report_id)
     if canonical_hash(current) != row.source_hash:
         raise ExperienceError("source_conflict", "经验来源记录与冻结快照不一致")
     return source
 
 
-def _candidate_view(row: ExperienceCandidateRow, job: ExperienceJobRow) -> CandidateView:
-    try:
-        draft = ExperienceDraft.model_validate(row.content)
-        if (
-            row.id != _candidate_id(job.id)
-            or row.job_id != job.id
-            or row.source_hash != job.source_hash
-            or row.content_hash != canonical_hash(draft)
-            or draft != project_source(_source(job))
-        ):
-            raise ValueError
-        return CandidateView.model_validate(
-            {
-                "id": row.id,
-                "job_id": row.job_id,
-                "version": row.version,
-                "status": row.status,
-                "source_hash": row.source_hash,
-                "content": draft,
-                "content_hash": row.content_hash,
-                "created_at": row.created_at,
-            }
-        )
-    except ValueError:
-        raise ExperienceError("candidate_conflict", "已持久化的经验候选无法校验") from None
-
-
 async def _job_view(session: AsyncSession, row: ExperienceJobRow) -> JobView:
-    source = _source(row)
+    source = validated_source(row)
     attempts = list(
         await session.scalars(
             select(ExperienceAttemptRow)
@@ -405,7 +364,7 @@ async def _job_view(session: AsyncSession, row: ExperienceJobRow) -> JobView:
     ):
         raise ExperienceError("source_conflict", "经验任务与尝试或候选事实不一致")
     if candidate is not None:
-        _candidate_view(candidate, row)
+        validated_candidate(candidate, row)
     return JobView.model_validate(
         dict(
             id=row.id,

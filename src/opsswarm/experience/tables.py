@@ -124,6 +124,13 @@ class ExperienceAttemptRow(Base):
 class ExperienceCandidateRow(Base):
     __tablename__ = "experience_candidates"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "version",
+            "content_hash",
+            "source_hash",
+            name="uq_experience_candidate_identity",
+        ),
         CheckConstraint(
             "version = 1 AND status = 'pending_review'",
             name="ck_experience_candidates_version_status",
