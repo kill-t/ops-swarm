@@ -15,6 +15,7 @@ from opsswarm.database.base import Base
 from opsswarm.database.settings import DatabaseSettings
 from opsswarm.evaluation.persistence import tables as evaluation_tables  # noqa: F401
 from opsswarm.execution.persistence import tables as execution_tables  # noqa: F401
+from opsswarm.experience import tables as experience_tables  # noqa: F401
 from opsswarm.follow_up.persistence import tables as follow_up_tables  # noqa: F401
 from opsswarm.identity import tables as operator_identity_tables  # noqa: F401
 from opsswarm.incidents.persistence import tables  # noqa: F401

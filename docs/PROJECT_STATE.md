@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-20。最新完成切片为第 104 步可信操作者身份与最小权限，基线为 main 的 `0f8f587`（第 103 步）。本文随第 104 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 104 步进度记录为准。
+核对日期：2026-10-20。最新完成切片为第 105 步经验候选契约、来源追踪与持久生成任务，基线为 main 的 `f2d77fb`（第 104 步）。本文随第 105 步独立提交保存；实际提交与工作区须以 Git 核对，统一验收以第 105 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 104 步设计](architecture/104-trusted-operator-identity.md) 与 [验收记录](progress/104-trusted-operator-identity.md)，再读第 103 步手册及第 64～65 步中的经验、身份与人工介入章节。
+2. 先读 [第 105 步设计](architecture/105-experience-candidate-generation.md) 与 [验收记录](progress/105-experience-candidate-generation.md)，再读第 104 步身份及第 64～65 步中的经验与人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -17,12 +17,12 @@
 
 ## 3. 当前架构与技术栈
 
-- Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证 Worker，业务数据库和 checkpoint 分离。
+- Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证/经验候选 Worker，业务数据库和 checkpoint 分离。
 - LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v15 已按持久计划动态执行并综合三轮专业任务，三轮开放假设均形成独立审查和确定性路由，第三轮在冻结上限停止。图 v1～v14 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0061_trusted_operator_identity`；第 104 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0062_experience_candidates`；第 105 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -106,7 +106,9 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 104 步新增显式 `bearer` 模式，凭据仅由环境配置，API 的操作者和角色由服务端认证；8 个人工命令注入主体，13 个写入口按权限放行，未登记写入口拒绝。所有业务查询含 SSE 均认证；授权准入记录先持久化并返回 `X-Authorization-ID`，其含义不等于业务成功。默认 `legacy_local` 保留历史演练，历史审批不追认为可信。经验审核后续必须直接要求可信主体。
 
-尚未完成：专业交互历史裁剪；经验提取、审核、停用；更多场景手册与 v3 接入；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
+第 105 步从完整关闭复盘冻结报告、调查、证据、批准计划、成功执行及验证样本，按报告与策略唯一创建经验生成任务。三个新入口始终要求可信 Bearer；独立 Worker 按固定 `report-fact-draft-v1` 作确定性历史投影，最多三次租约尝试，迟到结果拒绝，候选与成功原子落库。来源、请求、尝试身份和候选不可变；查询共享锁避免跨语句混读。候选仅为 `pending_review`，尚无审核、启用、检索或上下文消费；沿用现有主假设与单步骤复盘契约，不消费 v3 开放假设。
+
+尚未完成：专业交互历史裁剪；经验审核、有效经验检索、停用与版本替代；更多场景手册与 v3 接入；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -146,7 +148,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 105 步：**经验候选契约、来源追踪与持久生成任务**。从已关闭事故的不可变复盘建立候选来源和有界结构；以独立持久任务组织生成，不能在 HTTP 请求中承载长模型调用。候选与已确认经验区分，可信人工审核、停用和版本替代随后交付；兼容身份不得获得审核资格。
+第 106 步：**可信工程师经验审核、确认与拒绝**。绑定精确候选版本与内容散列，持久化可信决定及幂等、并发冲突审计；兼容身份不能审核，候选原文与来源不改写。随后交付有效经验检索、停用和版本替代，不把确认直接描述为已进入模型上下文。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -154,7 +156,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；完整第 104 步命令和结果见其进度记录。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
+使用仓库 `.venv/Scripts/`；完整第 105 步命令和结果见其进度记录；最终单元/API/迁移统一回归 1,333 项通过。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
 
 ```powershell
 git status --short
@@ -166,8 +168,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 104 步测试入口为 [身份单测](../tests/unit/identity)、[控制面身份与审批](../tests/api/test_operator_identity_api.py)、[授权审计迁移](../tests/integration/test_operator_identity_migration.py)。既有 API、单元和整组迁移回归；授权记录只代表准入，历史审批来源不变。`output/` 是未跟踪用户目录，不属于本切片静态检查或提交范围。
+第 105 步测试入口为 [经验单测](../tests/unit/experience)、[完整业务链与独立 Worker](../tests/api/test_experience_api.py)、[经验迁移](../tests/integration/test_experience_migration.py)。既有 API、单元和整组迁移回归；八项历史慢速动态图降级未重跑，其文件只更新 head 字符串。测试夹具来自假结果/固定探针业务链，不是现场证据。`output/` 是未跟踪用户目录，不属于本切片静态检查或提交范围。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 104 步设计/验收，核对 Git 与实际代码。控制面已提供显式 Bearer 认证、服务端主体与角色权限、授权准入审计；默认 legacy_local 与历史自填身份不能用于可信审核，浏览器认证适配未交付。从第 105 步经验候选契约、来源追踪与持久生成任务推进，先保存候选及来源，不提前启用经验、图内人工恢复或生产接入。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 105 步设计/验收，核对 Git 与实际代码。经验生成任务已冻结完整复盘来源，独立 Worker 生成不可变待审历史投影，尚无审核或检索。从第 106 步可信工程师确认与拒绝推进，绑定精确候选版本与散列、保存审核决定和幂等并发审计；兼容身份不能审核，不改写候选来源，不提前把确认当作模型上下文消费。

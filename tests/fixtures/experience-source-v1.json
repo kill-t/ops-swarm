@@ -1,0 +1,454 @@
+{
+  "source_schema_version": "experience-source-v1",
+  "report_id": "000d5f37-5ec2-4125-925c-1cbb001940bc",
+  "report_content_hash": "436bbcd4c95b1515c830908ab0e79f03af1a08119282e9e3f3591049f0a04b9b",
+  "incident_id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+  "service_name": "order-service",
+  "data_source_mode": "frozen",
+  "environment": "local_fault_lab",
+  "report": {
+    "id": "000d5f37-5ec2-4125-925c-1cbb001940bc",
+    "incident_id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+    "incident_version": 7,
+    "schema_version": "incident-report.v1",
+    "content_hash": "436bbcd4c95b1515c830908ab0e79f03af1a08119282e9e3f3591049f0a04b9b",
+    "content": {
+      "schema_version": "incident-report.v1",
+      "generated_at": "2026-01-01T08:01:03Z",
+      "generated_by_id": "trusted-engineer",
+      "incident": {
+        "id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+        "display_number": 1,
+        "reference": "INC-000001",
+        "service_name": "order-service",
+        "title": "订单接口大量返回 500",
+        "severity": "p1",
+        "status": "closed",
+        "fingerprint": "order-service:http-500",
+        "version": 7,
+        "started_at": "2026-01-01T07:59:59Z",
+        "resolved_at": "2026-01-01T08:01:03Z",
+        "closed_at": "2026-01-01T08:01:03Z",
+        "duration_seconds": 64
+      },
+      "workroom": {
+        "incident_id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+        "incident_version": 7,
+        "investigation": {
+          "id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+          "mode": "single_agent",
+          "data_source_mode": "frozen",
+          "status": "succeeded",
+          "prompt_version": "single-agent-v3",
+          "model_name": "fake-capability-model",
+          "error_code": null,
+          "error_message": null,
+          "created_at": "2026-01-01T08:00:00Z",
+          "started_at": "2026-01-01T08:00:01Z",
+          "completed_at": "2026-01-01T08:00:02Z",
+          "updated_at": "2026-01-01T08:00:02Z"
+        },
+        "evidence_board": {
+          "evidence_count": 3,
+          "specialist_report_count": 0,
+          "primary_hypothesis": {
+            "id": "a8f5893c-7dc2-561d-b645-bf8a46f66f22",
+            "root_cause": "release_500_regression",
+            "statement": "冻结场景证据支持当前根因。",
+            "confidence": 0.96,
+            "status": "supported",
+            "challenge_summary": "假设通过确定性证据质疑；支持 3 条，反驳 0 条，上下文 0 条。",
+            "rule_version": "hypothesis-challenge-v1"
+          }
+        },
+        "action_plan": {
+          "id": "6f29d0c3-d131-5e8c-8445-5189f06edb65",
+          "version": 1,
+          "status": "approved",
+          "summary": "将 order-service 从 2026.01.01-rc1 回滚到 stable，随后验证 5xx 比例持续低于 1%。",
+          "risk_level": "high",
+          "requires_human_approval": true,
+          "step_count": 1,
+          "created_at": "2026-01-01T08:00:03Z"
+        },
+        "approval_request": {
+          "id": "59a8ca1f-8d7c-5621-989a-5e2d8a5ba997",
+          "status": "approved",
+          "requested_by_id": "trusted-engineer",
+          "request_reason": "提交白名单回滚",
+          "expires_at": "2026-01-01T08:30:03Z",
+          "created_at": "2026-01-01T08:00:03Z",
+          "decided_by_id": "trusted-approver",
+          "decision_reason": "核对后批准",
+          "decided_at": "2026-01-01T08:00:03Z"
+        },
+        "operation_execution": {
+          "id": "cf0bcf95-b7dd-51c3-9d4a-e9fcb5eafda9",
+          "action_step_id": "6f05628c-acf5-5230-a5fc-761fe6fca559",
+          "status": "succeeded",
+          "executor_name": "local_fault_lab_release_500_v1",
+          "attempt_count": 1,
+          "error_code": null,
+          "error_message": null,
+          "created_at": "2026-01-01T08:00:03Z",
+          "updated_at": "2026-01-01T08:00:03Z",
+          "completed_at": "2026-01-01T08:00:03Z"
+        },
+        "verification_run": {
+          "id": "1bddcb20-8d9d-5e4a-9b5e-3f19d11956bd",
+          "status": "passed",
+          "signal": "http_5xx_ratio",
+          "threshold": 0.01,
+          "observation_window_seconds": 60,
+          "required_successful_samples": 3,
+          "successful_sample_count": 3,
+          "sample_count": 3,
+          "failure_code": null,
+          "failure_message": null,
+          "last_observed_at": "2026-01-01T08:01:03Z",
+          "created_at": "2026-01-01T08:00:03Z",
+          "updated_at": "2026-01-01T08:01:03Z",
+          "completed_at": "2026-01-01T08:01:03Z"
+        }
+      },
+      "timeline": [
+        {
+          "cursor": 1,
+          "event_type": "incident.created",
+          "actor_type": "system",
+          "actor_id": null,
+          "from_status": null,
+          "to_status": "open",
+          "reason": "接收到首条告警",
+          "incident_version": 1,
+          "payload": {
+            "source": "fault-simulator",
+            "alert_id": "b36b0076-9719-4b05-ab23-6e33f7cda3ff",
+            "external_event_id": "experience-source"
+          },
+          "occurred_at": "2026-01-01T08:00:00Z"
+        },
+        {
+          "cursor": 2,
+          "event_type": "incident.status_changed",
+          "actor_type": "human",
+          "actor_id": "trusted-engineer",
+          "from_status": "open",
+          "to_status": "investigating",
+          "reason": "经验来源测试调查",
+          "incident_version": 2,
+          "payload": {
+            "action": "start_investigation"
+          },
+          "occurred_at": "2026-01-01T08:00:00Z"
+        },
+        {
+          "cursor": 3,
+          "event_type": "incident.status_changed",
+          "actor_type": "human",
+          "actor_id": "trusted-engineer",
+          "from_status": "investigating",
+          "to_status": "awaiting_approval",
+          "reason": "提交白名单回滚",
+          "incident_version": 3,
+          "payload": {
+            "action": "request_approval"
+          },
+          "occurred_at": "2026-01-01T08:00:03Z"
+        },
+        {
+          "cursor": 4,
+          "event_type": "incident.status_changed",
+          "actor_type": "human",
+          "actor_id": "trusted-approver",
+          "from_status": "awaiting_approval",
+          "to_status": "mitigating",
+          "reason": "核对后批准",
+          "incident_version": 4,
+          "payload": {
+            "action": "approve_plan"
+          },
+          "occurred_at": "2026-01-01T08:00:03Z"
+        },
+        {
+          "cursor": 5,
+          "event_type": "incident.status_changed",
+          "actor_type": "executor",
+          "actor_id": "local_fault_lab_release_500_v1",
+          "from_status": "mitigating",
+          "to_status": "verifying",
+          "reason": "白名单操作执行成功",
+          "incident_version": 5,
+          "payload": {
+            "action": "complete_mitigation"
+          },
+          "occurred_at": "2026-01-01T08:00:03Z"
+        },
+        {
+          "cursor": 6,
+          "event_type": "incident.status_changed",
+          "actor_type": "executor",
+          "actor_id": "prometheus_order_http_5xx_ratio_v1",
+          "from_status": "verifying",
+          "to_status": "resolved",
+          "reason": "恢复验证通过",
+          "incident_version": 6,
+          "payload": {
+            "action": "confirm_recovery"
+          },
+          "occurred_at": "2026-01-01T08:01:03Z"
+        },
+        {
+          "cursor": 7,
+          "event_type": "incident.status_changed",
+          "actor_type": "human",
+          "actor_id": "trusted-engineer",
+          "from_status": "resolved",
+          "to_status": "closed",
+          "reason": "完整验证后关闭事故",
+          "incident_version": 7,
+          "payload": {
+            "action": "close"
+          },
+          "occurred_at": "2026-01-01T08:01:03Z"
+        }
+      ]
+    },
+    "created_at": "2026-01-01T08:01:03Z"
+  },
+  "investigation": {
+    "id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+    "mode": "single_agent",
+    "data_source_mode": "frozen",
+    "status": "succeeded",
+    "prompt_version": "single-agent-v3",
+    "model_name": "fake-capability-model",
+    "error_code": null,
+    "error_message": null,
+    "created_at": "2026-01-01T08:00:00Z",
+    "started_at": "2026-01-01T08:00:01Z",
+    "completed_at": "2026-01-01T08:00:02Z",
+    "updated_at": "2026-01-01T08:00:02Z"
+  },
+  "hypothesis": {
+    "id": "a8f5893c-7dc2-561d-b645-bf8a46f66f22",
+    "investigation_run_id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+    "root_cause": "release_500_regression",
+    "statement": "冻结场景证据支持当前根因。",
+    "confidence": 0.96,
+    "status": "supported",
+    "challenge_summary": "假设通过确定性证据质疑；支持 3 条，反驳 0 条，上下文 0 条。",
+    "rule_version": "hypothesis-challenge-v1",
+    "evidence_assessments": [
+      {
+        "evidence_item_id": "11a785c1-927b-5cfb-acb1-19b8b863d5f9",
+        "evidence_id": "metric-order-error-spike",
+        "relation": "supports",
+        "rule_code": "release_error_rate_spike",
+        "rationale": "服务端错误率显著上升且关键依赖保持健康。",
+        "created_at": "2026-01-01T08:00:02Z"
+      },
+      {
+        "evidence_item_id": "63a9603f-6d8e-54ce-99ae-4f34cf69860a",
+        "evidence_id": "change-order-release-rc1",
+        "relation": "supports",
+        "rule_code": "release_completed_deployment",
+        "rationale": "错误发生前存在已经完成的版本发布。",
+        "created_at": "2026-01-01T08:00:02Z"
+      },
+      {
+        "evidence_item_id": "8a08c6f1-c080-5c43-8710-1833034fa225",
+        "evidence_id": "log-order-runtime-error",
+        "relation": "supports",
+        "rule_code": "release_runtime_error",
+        "rationale": "运行时错误来自明确版本并产生服务端错误。",
+        "created_at": "2026-01-01T08:00:02Z"
+      }
+    ],
+    "created_at": "2026-01-01T08:00:02Z"
+  },
+  "evidence": [
+    {
+      "id": "63a9603f-6d8e-54ce-99ae-4f34cf69860a",
+      "investigation_run_id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+      "observation": {
+        "evidence_id": "change-order-release-rc1",
+        "kind": "change",
+        "source": "frozen-change-store",
+        "summary": "order-service 在错误率上升前一分钟从 stable 发布为 2026.01.01-rc1。",
+        "observed_at": "2026-01-01T08:04:00Z",
+        "attributes": {
+          "completed": true,
+          "to_version": "2026.01.01-rc1",
+          "change_type": "deployment",
+          "from_version": "stable"
+        }
+      },
+      "content_hash": "0f5070d6cadfb78687836188cbbb35d15116b9f04abac31d9220e72f4a62c6a3"
+    },
+    {
+      "id": "8a08c6f1-c080-5c43-8710-1833034fa225",
+      "investigation_run_id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+      "observation": {
+        "evidence_id": "log-order-runtime-error",
+        "kind": "log",
+        "source": "frozen-log-store",
+        "summary": "order-service 的 /orders 请求持续出现同一处未处理运行时异常。",
+        "observed_at": "2026-01-01T08:06:00Z",
+        "attributes": {
+          "route": "/orders/{id}",
+          "error_type": "RuntimeError",
+          "status_code": 500,
+          "release_version": "2026.01.01-rc1"
+        }
+      },
+      "content_hash": "96484bfc2e319b26b4cd62808dd7da91407f55682a2fe36c38be82af7a010daf"
+    },
+    {
+      "id": "11a785c1-927b-5cfb-acb1-19b8b863d5f9",
+      "investigation_run_id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+      "observation": {
+        "evidence_id": "metric-order-error-spike",
+        "kind": "metric",
+        "source": "frozen-metric-store",
+        "summary": "order-service 的 5xx 比例从 0.2% 跃升至 92%，数据库与 Redis 健康指标正常。",
+        "observed_at": "2026-01-01T08:06:00Z",
+        "attributes": {
+          "redis_healthy": true,
+          "postgres_healthy": true,
+          "http_5xx_ratio_after": 0.92,
+          "http_5xx_ratio_before": 0.002
+        }
+      },
+      "content_hash": "0c3119d3499598f7335bcacabbe70319089243410af5a5940b39ba329cacac5e"
+    }
+  ],
+  "plan": {
+    "id": "6f29d0c3-d131-5e8c-8445-5189f06edb65",
+    "investigation_run_id": "a333c921-73e1-4f48-9d3a-179846f084c8",
+    "hypothesis_id": "a8f5893c-7dc2-561d-b645-bf8a46f66f22",
+    "version": 1,
+    "status": "approved",
+    "summary": "将 order-service 从 2026.01.01-rc1 回滚到 stable，随后验证 5xx 比例持续低于 1%。",
+    "risk_level": "high",
+    "requires_human_approval": true,
+    "risk_policy_version": "action-risk-v3",
+    "steps": [
+      {
+        "id": "6f05628c-acf5-5230-a5fc-761fe6fca559",
+        "step_order": 1,
+        "action_type": "rollback_release",
+        "target_type": "service",
+        "target_name": "order-service",
+        "parameters": {
+          "current_version": "2026.01.01-rc1",
+          "target_version": "stable"
+        },
+        "risk_level": "high",
+        "requires_human_approval": true,
+        "risk_rule_code": "rollback_changes_running_version",
+        "risk_rationale": "回滚会把运行版本从 2026.01.01-rc1 改为 stable，必须由工程师审批。",
+        "verification": {
+          "signal": "http_5xx_ratio",
+          "operator": "less_than",
+          "threshold": 0.01,
+          "observation_window_seconds": 60,
+          "required_successful_samples": 3
+        },
+        "created_at": "2026-01-01T08:00:03Z"
+      }
+    ],
+    "created_at": "2026-01-01T08:00:03Z"
+  },
+  "approval_plan_content_hash": "3e4127e22a92f7ba3824de85c76d3b3f780cc26f9bcb9751eb88e6f8b97c6f63",
+  "execution": {
+    "id": "cf0bcf95-b7dd-51c3-9d4a-e9fcb5eafda9",
+    "idempotency_key": "experience-execution",
+    "incident_id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+    "approval_request_id": "59a8ca1f-8d7c-5621-989a-5e2d8a5ba997",
+    "action_plan_id": "6f29d0c3-d131-5e8c-8445-5189f06edb65",
+    "action_plan_version": 1,
+    "action_step_id": "6f05628c-acf5-5230-a5fc-761fe6fca559",
+    "status": "succeeded",
+    "executor_name": "local_fault_lab_release_500_v1",
+    "incident_version_before": 4,
+    "attempt_count": 1,
+    "lease_token": null,
+    "locked_until": null,
+    "result": {
+      "output": {
+        "fault": "release_500",
+        "enabled": false,
+        "service": "order-service"
+      }
+    },
+    "failure": null,
+    "created_at": "2026-01-01T08:00:03Z",
+    "updated_at": "2026-01-01T08:00:03Z",
+    "completed_at": "2026-01-01T08:00:03Z"
+  },
+  "verification": {
+    "id": "1bddcb20-8d9d-5e4a-9b5e-3f19d11956bd",
+    "operation_execution_id": "cf0bcf95-b7dd-51c3-9d4a-e9fcb5eafda9",
+    "incident_id": "52cdcacb-1f01-4ee6-b2d1-37acdfcf5f19",
+    "action_step_id": "6f05628c-acf5-5230-a5fc-761fe6fca559",
+    "status": "passed",
+    "verifier_name": "prometheus_order_http_5xx_ratio_v1",
+    "incident_version_before": 5,
+    "rule": {
+      "signal": "http_5xx_ratio",
+      "operator": "less_than",
+      "threshold": 0.01,
+      "observation_window_seconds": 60,
+      "required_successful_samples": 3
+    },
+    "successful_sample_count": 3,
+    "first_success_at": "2026-01-01T08:00:03Z",
+    "last_observed_at": "2026-01-01T08:01:03Z",
+    "failure": null,
+    "created_at": "2026-01-01T08:00:03Z",
+    "updated_at": "2026-01-01T08:01:03Z",
+    "completed_at": "2026-01-01T08:01:03Z",
+    "samples": [
+      {
+        "id": "94c93f1c-81e1-56d3-a3ff-68c22dc12dcc",
+        "verification_run_id": "1bddcb20-8d9d-5e4a-9b5e-3f19d11956bd",
+        "idempotency_key": "experience-sample-0",
+        "sequence": 1,
+        "status": "passed",
+        "signal": "http_5xx_ratio",
+        "observed_value": 0.0,
+        "threshold": 0.01,
+        "http_status": 200,
+        "failure": null,
+        "observed_at": "2026-01-01T08:00:03Z"
+      },
+      {
+        "id": "8161dda4-ded2-5c92-b931-405cd903751c",
+        "verification_run_id": "1bddcb20-8d9d-5e4a-9b5e-3f19d11956bd",
+        "idempotency_key": "experience-sample-1",
+        "sequence": 2,
+        "status": "passed",
+        "signal": "http_5xx_ratio",
+        "observed_value": 0.0,
+        "threshold": 0.01,
+        "http_status": 200,
+        "failure": null,
+        "observed_at": "2026-01-01T08:00:33Z"
+      },
+      {
+        "id": "28158ff0-4e17-5a81-8943-cc8a6f696ba3",
+        "verification_run_id": "1bddcb20-8d9d-5e4a-9b5e-3f19d11956bd",
+        "idempotency_key": "experience-sample-2",
+        "sequence": 3,
+        "status": "passed",
+        "signal": "http_5xx_ratio",
+        "observed_value": 0.0,
+        "threshold": 0.01,
+        "http_status": 200,
+        "failure": null,
+        "observed_at": "2026-01-01T08:01:03Z"
+      }
+    ]
+  }
+}

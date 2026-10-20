@@ -161,6 +161,16 @@ def _timeline_entry(row: IncidentEventRow) -> IncidentReportTimelineEntry:
     )
 
 
+async def load_incident_report_in_session(
+    session: AsyncSession, report_id: UUID
+) -> StoredIncidentReport:
+    """按报告身份在调用方事务内读取并验证不可变快照。"""
+    row = await session.get(IncidentReportRow, report_id)
+    if row is None:
+        raise IncidentReportNotFound(report_id)
+    return _stored_report(row)
+
+
 def _content_hash(content: IncidentReportContent) -> str:
     canonical_json = json.dumps(
         content.model_dump(mode="json"),

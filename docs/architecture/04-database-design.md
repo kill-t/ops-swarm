@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 105 步新增 `experience_generation_jobs`、`experience_generation_attempts` 与 `experience_candidates`，迁移为 `0062_experience_candidates`。任务按报告及策略唯一，固定完整来源 JSON/hash、可信请求者及授权准入外键；独立 Worker 采用行锁、租约和最多三次尝试，候选与任务成功原子保存。触发器保护来源、请求、尝试身份和候选不可变，终态拒绝改写；有事实时拒绝降级。候选仅为 `pending_review` 历史事实投影，不是启用经验。详细结构、来源上限和失败路径见 [经验候选与持久生成](105-experience-candidate-generation.md)。
+
 第 104 步新增 `operator_authorizations`，保存控制面写命令的主体、凭据 ID、角色/权限、操作与资源范围、请求体散列和 UTC 授权时间；不保存令牌、凭据摘要或正文。授权准入先独立提交，不代表业务成功；已有审计时迁移禁止降级。历史主体字段不改写、不追认为可信身份。详见 [可信操作者身份](104-trusted-operator-identity.md)。
 
 第 100 步复用 `investigation_hypothesis_review_routes` 保存第三轮最大轮次停止路由，不新增表或字段。迁移 `0057_third_round_routing` 只扩展运行图约束到 v15；第三轮路由继续由既有复合外键、按审查唯一和按轮次唯一约束绑定假设、审查、运行与父尝试。降级检查图 v15 和第 3 轮及以后路由事实，不能通过改写图版本隐藏已经发生的停止决定。详细边界见 [v3 第三轮审查后的确定性最大轮次停止路由](100-third-round-terminal-routing.md)。

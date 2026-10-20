@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from opsswarm.identity.authentication import authenticate_operator
 from opsswarm.identity.models import (
     HUMAN_OPERATIONS,
+    TRUSTED_OPERATIONS,
     OperatorAccessError,
     OperatorPermission,
     OperatorPrincipal,
@@ -41,7 +42,7 @@ async def authorize_control_request(
     request: Request,
     _credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> None:
-    """统一处理四组业务路由；命令准入必须早于业务仓储及幂等返回。"""
+    """统一处理控制面业务路由；命令准入必须早于业务仓储及幂等返回。"""
 
     route = cast(APIRoute, request.scope["route"])
     # URL 包含 ASGI 部署前缀，权限边界必须依据实际匹配的业务路由。
@@ -49,7 +50,7 @@ async def authorize_control_request(
         return
     settings = cast(OperatorAuthSettings, request.app.state.operator_auth_settings)
     headers = request.headers.getlist("authorization")
-    if settings.mode == "legacy_local" and route.name != "get_operator_identity":
+    if settings.mode == "legacy_local" and route.name not in TRUSTED_OPERATIONS:
         if headers:
             raise OperatorAccessError("operator_unauthenticated", "当前实例未启用可信认证")
         return

@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 105 步增加 `POST /api/v1/incident-reports/{report_id}/experience-generation-jobs` 与 `GET /api/v1/experience-generation-jobs/{job_id}`、`GET /api/v1/experience-candidates/{candidate_id}`。三个入口始终要求可信 Bearer 身份，包括默认兼容模式。工程师使用已有 `manage_report` 权限提交，读接口使用 `read`；请求仅含 `expected_report_content_hash`，同报告同策略首次 201、重复 200，来源不完整或散列冲突 409，不存在 404。HTTP 只冻结来源和创建持久任务，独立 Worker 生成待审候选；不提供确认、启用或检索接口。详细响应、错误及幂等边界见 [经验候选与持久生成](105-experience-candidate-generation.md)。
+
 第 104 步新增 `GET /api/v1/operators/me` 与显式 `bearer` 控制面认证模式：所有 `/api/` 路由（含任务、预算、证据和 SSE）均要求有效 Bearer Header，GET 要求读取权限，13 个写入口使用各自权限，未知写入口拒绝。缺失/错误/过期凭据返回 401，越权/冒名返回 403，审计不可用返回 503。人工请求 `actor_id` 可省略，由认证主体注入，提交不同身份返回 403；默认 `legacy_local` 保留必需自填身份的演练语义，不能用于可信审核。写命令授权记录 ID 通过 `X-Authorization-ID` 返回，只证明准入，业务失败仍可能有记录；原状态、版本和幂等约束继续生效。详见 [可信操作者身份](104-trusted-operator-identity.md)。
 
 第 103 步新增显式 `context_policy_version=runbook-read-v1`，要求固定 v2、多 Agent 与 function_calling 模型预算；省略字段和历史策略行为不变。该策略复用既有 `/model-input`、`/context-manifest`、`/interaction` 与 `/call-budget` 只读查询，不新增公开手册端点：专业输入使用 `runbook-loop-input-v1`，目录由服务端根据已持久化任务事实确定；仅命中的任务清单包含 `read_runbook`。模型请求只保存手册 ID、版本和散列，成功工具结果保存完整正文，后续模型清单追加实际读取正文的稳定材料引用。客户端不能提交路径、运行、任务、尝试、角色或授权范围。详见 [版本化调查手册最小读取链路](103-versioned-runbook-read.md)。

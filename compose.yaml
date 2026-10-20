@@ -49,6 +49,21 @@ x-investigation-worker: &investigation-worker
     - no-new-privileges:true
 
 services:
+  experience-worker:
+    <<: *opsswarm-runtime
+    init: true
+    command: [python, -m, opsswarm.experience.main]
+    environment:
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [control]
+
   jaeger:
     image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
     ports:
