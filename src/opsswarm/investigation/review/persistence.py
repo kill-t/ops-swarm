@@ -14,6 +14,7 @@ from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.context.reservation import validate_context_reservation
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
+from opsswarm.investigation.persistence.source_validation import reuse_validated_source
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.contracts import (
     HypothesisReview,
@@ -104,6 +105,7 @@ async def validated_review_call(
     return model_input, result, manifest
 
 
+@reuse_validated_source
 async def validated_hypothesis_review(
     session: AsyncSession, row: InvestigationHypothesisReviewRow
 ) -> HypothesisReviewRecord:

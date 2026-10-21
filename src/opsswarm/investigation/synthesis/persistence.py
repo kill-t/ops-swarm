@@ -16,6 +16,7 @@ from opsswarm.investigation.context.reservation import validate_context_reservat
 from opsswarm.investigation.coordination.persistence import validated_plan
 from opsswarm.investigation.coordination.tables import InvestigationCoordinationPlanRow
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
+from opsswarm.investigation.persistence.source_validation import reuse_validated_source
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.synthesis.contracts import (
     OpenHypothesis,
@@ -97,6 +98,7 @@ async def validated_synthesis_call(
     return model_input, result, manifest
 
 
+@reuse_validated_source
 async def validated_open_hypothesis(
     session: AsyncSession, row: InvestigationOpenHypothesisRow
 ) -> OpenHypothesisRecord:

@@ -29,6 +29,7 @@ from opsswarm.investigation.coordination.tables import (
 from opsswarm.investigation.follow_up_planning.policy import compile_follow_up_proposal
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
+from opsswarm.investigation.persistence.source_validation import reuse_validated_source
 from opsswarm.investigation.persistence.tables import InvestigationAttemptRow, InvestigationRunRow
 from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.errors import TaskFactConflict
@@ -63,6 +64,7 @@ def validated_policy(row: InvestigationCoordinationPolicyRow) -> CoordinationPol
         ) from error
 
 
+@reuse_validated_source
 async def validated_plan(
     session: AsyncSession,
     row: InvestigationCoordinationPlanRow,

@@ -13,6 +13,7 @@ from opsswarm.investigation.coordination.contracts import CoordinationPolicyReco
 from opsswarm.investigation.coordination.persistence import validated_policy
 from opsswarm.investigation.coordination.tables import InvestigationCoordinationPolicyRow
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
+from opsswarm.investigation.persistence.source_validation import reuse_validated_source
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.review.contracts import HypothesisReviewRecord
 from opsswarm.investigation.review.persistence import validated_hypothesis_review
@@ -133,6 +134,7 @@ async def _validated_routing_sources(
     )
 
 
+@reuse_validated_source
 async def validated_review_routing(
     session: AsyncSession,
     row: InvestigationHypothesisReviewRouteRow,

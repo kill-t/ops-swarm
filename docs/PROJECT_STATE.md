@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-21。最新完成切片为第 109 步首轮协调经验上下文与引用追溯，基线为 main 的 `99dc8c6`（第 108 步）。本文随第 109 步独立提交保存；实际提交与工作区须以 Git 核对，结果以第 109 步进度记录为准。
+核对日期：2026-10-21。最新完成切片为第 110 步有界来源核验与事务内复用，基线为 main 的 `b150018`（第 109 步）。本文随第 110 步独立提交保存；实际提交与工作区须以 Git 核对，结果以第 110 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 109 步设计](architecture/109-coordination-experience-context.md) 与 [验收记录](progress/109-coordination-experience-context.md)，再读第 108 步替代、第 107 步有效状态/检索、第 106 步可信审核及第 64～65 步中的上下文与人工介入章节。
+2. 先读 [第 110 步设计](architecture/110-bounded-source-validation.md) 与 [验收记录](progress/110-bounded-source-validation.md)，再读第 109 步经验上下文、第 108 步替代及第 64～65 步中的上下文、恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -116,12 +116,15 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 109 步以独立运行策略启用首轮协调经验输入，完整有界内容和精确版本引用实际进入模型；首次预算预留原子冻结最多三条的选择，空选择同样冻结。技术重试、成功调用复用、计划及 checkpoint 恢复保持原材料，退休状态不改历史输入，每次调用继续累计预算。输入/清单查询复核冻结来源；graph-v15、专业、综合、审查和补查输入保持原边界。v15 首轮终端场景及恢复已通过；三轮扩展实验在最终来源递归重建超过 600 秒，不列入通过验收。
 
-尚未完成：多轮来源核验性能；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
+第 110 步在单次 v3 来源遍历中复用成功的计划、假设、审查及路由 DTO；命中前以有界行版本和完整集合重查动态来源，包括冻结经验审核授权，变化即拒绝。每次业务操作、会话、事务及 savepoint 都重新核验，不缓存父租约或授权决定。两种冻结三轮路径连同跨租约 checkpoint 恢复分别约 77/100 秒，保持 13 次模型及 6 次工具账本，通过 180 秒、25,000 条业务 SQL 上界；该记录补齐第 109 步同类实验的超时缺口，不修改历史试验结果。
+
+尚未完成：更多负载性能验收；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；图内人工暂停/补充/取消/恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。当前终端路由只是持久决定，尚未执行人工或候选路径；历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
 | 入口 | 边界 |
 | --- | --- |
+| [persistence/source_validation.py](../src/opsswarm/investigation/persistence/source_validation.py)、[source_revision.py](../src/opsswarm/investigation/persistence/source_revision.py) | 单次来源遍历复用、行修订门禁、ORM 新鲜度、异常/事务失效与有界结果；不跨操作缓存或替代租约 |
 | [experience/context_store.py](../src/opsswarm/experience/context_store.py)、[context_contracts.py](../src/opsswarm/experience/context_contracts.py) | 首轮协调经验的临时选择、原子冻结与历史恢复；精确引用不可变确认工件，空选择保持冻结 |
 | [experience/replacement_store.py](../src/opsswarm/experience/replacement_store.py)、[replacement_policy.py](../src/opsswarm/experience/replacement_policy.py)、[replacement_validation.py](../src/opsswarm/experience/replacement_validation.py)、[state_reader.py](../src/opsswarm/experience/state_reader.py) | 可信替代、单一前后继、精确双侧工件、历史重放和互斥终态读取；不递归跟随链；首轮消费由独立上下文服务组织 |
 | [experience/lifecycle_store.py](../src/opsswarm/experience/lifecycle_store.py)、[lifecycle_validation.py](../src/opsswarm/experience/lifecycle_validation.py)、[search_store.py](../src/opsswarm/experience/search_store.py)、[search_policy.py](../src/opsswarm/experience/search_policy.py) | 当前有效状态、可信停用及业务审计，系统范围内最多三条的检索和并发锁复核；替代由独立仓储组织，消费由 context_store 组织 |
@@ -160,7 +163,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 110 步：**多轮来源核验的事务内复用与性能回归**。当前扩展三轮实验完成 13 次模型与 6 次工具调用，但在最终历史来源递归重建超过 600 秒，不能把该实验当作完成或恢复验收。先测量重复访问，只在同一事务内复用已验证的不可变工件；跨事务、租约、状态及有效性检查不能缓存。以完整三轮调查和 checkpoint 恢复建立耗时与数据库访问上界，再推进 v3 通用 Worker 和持久人工等待。
+第 111 步：**v3 通用 Worker 接管与终端路由的持久交接**。先明确 await_human 与 candidate_evaluation 如何保存交接状态和来源、释放父租约，以及错误/重试/恢复路径，再接入实际 Worker；不能把终端路由视为旧调查成功、已实现人工图暂停或执行授权。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -168,7 +171,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；第 109 步分组回归累计 1,705 个不同用例通过（单元 1,215、API 262、迁移 228），另有 6 项既有协调规划测试通过；实际分组命令和失败修正见其进度记录；Ruff/格式检查覆盖 641 个文件，mypy 检查 351 个源文件。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
+使用仓库 `.venv/Scripts/`；第 110 步分组回归 1,519 项通过（单元/API 1,477、新增边界/三轮 24、并行及提交窗口 16、成功来源歧义 2）；实际分组命令和测量见其进度记录。Ruff/格式覆盖 645 个文件，mypy 检查 353 个源文件；schema 和迁移未变，本片未重复整组迁移。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动独立 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环，MCP SDK 异步客户端在既有受限取证线程内运行独立事件循环。
 
 ```powershell
 git status --short
@@ -180,8 +183,8 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 109 步测试入口为 [冻结与恢复纯规则](../tests/unit/experience/test_context_selection.py)、[上下文隔离与预算](../tests/unit/investigation/test_coordination_experience_context.py)、[业务/API/图恢复](../tests/api/test_coordination_experience_api.py)、[迁移边界](../tests/integration/test_coordination_experience_migration.py)。八项历史慢速动态图降级未重跑，相关文件只更新 head；扩展三轮超时实验不计入通过。测试夹具与 SDK 假传输不是现场证据。`output/` 是未跟踪用户目录，不属于本切片静态检查或提交范围。
+第 110 步测试入口为 [作用域与修订戳](../tests/integration/test_source_validation_scope.py)、[三轮性能和恢复](../tests/integration/test_bounded_source_validation_graph.py)。新旧策略、独立操作、父租约和错误路径均保留验证；未重新执行八项历史慢速动态图降级。测试夹具、SDK 假传输及性能数据不是现场或生产验收。`output/` 是未跟踪用户目录，不属于本片读取、静态检查或提交范围。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引和第 109 步设计/验收，核对 Git 与实际代码。当前首轮协调已通过显式独立策略消费有界确认经验，首次预留原子冻结选择及精确引用，停用/替代后保持历史恢复和共享预算；旧运行不静默换输入。三轮扩展实验在最终来源重建超过 600 秒，尚无该路径的性能与恢复验收。第 110 步先测量并控制重复核验，仅在同一事务内复用不可变工件验证，保留跨事务重建及租约/状态检查；以三轮调查和 checkpoint 恢复建立上界，再推进通用 Worker 和持久人工等待。不删除来源校验，不使用跨事务缓存替代业务事实。
+> 请阅读 AGENTS.md、项目状态、进度索引和第 110 步设计/验收，核对 Git 与实际代码。来源重建现在只在一次遍历内复用成功 DTO，每次命中重查动态行版本和完整集合；事务/savepoint/异常失效，旧运行输入和图版本不变。两种冻结三轮策略与跨租约恢复已通过耗时及 SQL 上界，保留原父租约和重复成功来源拒绝。下一片推进 v3 通用 Worker 接管和终端路由持久交接，先明确等待状态、两类终端分支、租约释放、错误/重试/恢复和查询；不把终端路由视作旧调查成功、已实现人工 interrupt/resume 或执行授权。
