@@ -63,7 +63,7 @@ async def test_0061_preserves_authorization_and_blocks_destructive_downgrade(
         await asyncio.to_thread(command.downgrade, config(), "0060_versioned_runbook_read")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0064_experience_lifecycle"
+            "0065_experience_replacement"
         )
         assert (
             await session.scalar(

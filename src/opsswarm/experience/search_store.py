@@ -14,6 +14,7 @@ from opsswarm.experience.lifecycle_contracts import (
     SearchScope,
 )
 from opsswarm.experience.lifecycle_tables import ExperienceDisablementRow
+from opsswarm.experience.replacement_tables import ExperienceReplacementRow
 from opsswarm.experience.review_store import load_confirmed_entry_in_session
 from opsswarm.experience.review_tables import ExperienceEntryRow
 from opsswarm.experience.search_policy import summarize_entry
@@ -83,12 +84,13 @@ class ExperienceSearchStore:
                         draft.op("->>", return_type=String)(literal_column("'data_source_mode'"))
                         == scope.data_source_mode.value,
                         ~exists().where(ExperienceDisablementRow.entry_id == ExperienceEntryRow.id),
+                        ~exists().where(ExperienceReplacementRow.entry_id == ExperienceEntryRow.id),
                     )
                     .order_by(*ordering)
                     .limit(3)
-                    .with_for_update(read=True, of=ExperienceEntryRow)
                 )
             ).all()
+            await lock_search_entries(session, [row.id for row, _ in rows])
             # 拿到全部行锁后另开语句读取停用事实，不能依赖等待锁前的子查询快照。
             disabled_ids = set(
                 await session.scalars(
@@ -97,9 +99,16 @@ class ExperienceSearchStore:
                     )
                 )
             )
+            replaced_ids = set(
+                await session.scalars(
+                    select(ExperienceReplacementRow.entry_id).where(
+                        ExperienceReplacementRow.entry_id.in_([row.id for row, _ in rows]),
+                    )
+                )
+            )
             items = []
             for row, source_incident_id in rows:
-                if row.id in disabled_ids:
+                if row.id in disabled_ids or row.id in replaced_ids:
                     continue
                 entry = await load_confirmed_entry_in_session(session, row.id)
                 items.append(summarize_entry(entry, UUID(source_incident_id), scope))
@@ -112,3 +121,15 @@ class ExperienceSearchStore:
                 retrieved_at=now.astimezone(UTC),
                 items=tuple(items),
             )
+
+
+async def lock_search_entries(session: AsyncSession, entry_ids: list[UUID]) -> None:
+    # 排名与锁顺序分开，避免与双侧替代锁产生反向等待。
+    for entry_id in sorted(entry_ids, key=lambda value: value.int):
+        locked_id = await session.scalar(
+            select(ExperienceEntryRow.id)
+            .where(ExperienceEntryRow.id == entry_id)
+            .with_for_update(read=True)
+        )
+        if locked_id is None:
+            raise ExperienceError("experience_entry_integrity_conflict", "选中确认版本已不存在")

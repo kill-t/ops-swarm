@@ -13,7 +13,10 @@ def evaluate_disable(
     *,
     subject_id: str,
     existing: DisablementView | None,
+    replaced: bool = False,
 ) -> Literal["apply", "replay"]:
+    if replaced:
+        raise ExperienceError("experience_entry_already_replaced", "已替代经验不能再停用")
     same_key = (
         existing is not None
         and existing.disabled_by_id == subject_id

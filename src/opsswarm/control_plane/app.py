@@ -52,6 +52,8 @@ from opsswarm.experience.api import create_experience_router
 from opsswarm.experience.contracts import ExperienceError
 from opsswarm.experience.lifecycle_api import create_experience_lifecycle_router
 from opsswarm.experience.lifecycle_store import ExperienceLifecycleStore
+from opsswarm.experience.replacement_api import create_experience_replacement_router
+from opsswarm.experience.replacement_store import ExperienceReplacementStore
 from opsswarm.experience.review_api import create_experience_review_router
 from opsswarm.experience.review_store import ExperienceReviewStore
 from opsswarm.experience.search_store import ExperienceSearchStore
@@ -154,6 +156,7 @@ def create_app(
     experience_review_store: ExperienceReviewStore | None = None,
     experience_lifecycle_store: ExperienceLifecycleStore | None = None,
     experience_search_store: ExperienceSearchStore | None = None,
+    experience_replacement_store: ExperienceReplacementStore | None = None,
     tracing_runtime: TracingRuntime | None = None,
     clock: Clock = utc_now,
 ) -> FastAPI:
@@ -207,6 +210,7 @@ def create_app(
             application.state.experience_review_store = experience_review_store
             application.state.experience_lifecycle_store = experience_lifecycle_store
             application.state.experience_search_store = experience_search_store
+            application.state.experience_replacement_store = experience_replacement_store
             try:
                 yield
             finally:
@@ -228,6 +232,10 @@ def create_app(
         )
         application.state.experience_search_store = (
             experience_search_store or ExperienceSearchStore(database.session_factory, clock=clock)
+        )
+        application.state.experience_replacement_store = (
+            experience_replacement_store
+            or ExperienceReplacementStore(database.session_factory, clock=clock)
         )
         application.state.operator_authorization_store = OperatorAuthorizationStore(
             database.session_factory
@@ -294,6 +302,7 @@ def create_app(
     app.include_router(create_experience_router())
     app.include_router(create_experience_review_router())
     app.include_router(create_experience_lifecycle_router())
+    app.include_router(create_experience_replacement_router())
     app.include_router(create_router(clock))
     app.include_router(create_collaboration_router())
     app.include_router(create_call_budget_router())

@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 108 步新增不可变 `experience_replacements` 与 `experience_replacement_commands`，迁移为 `0065_experience_replacement`。关系分别以复合外键绑定新旧确认工件，来源、目标、首次授权各自唯一；严格较晚的目标确认时间和相同结构化范围保证有序后继。双向插入守卫锁父 entry 后复核停用与替代源互斥，目标后来停用不破坏历史关系。状态投影新增 replaced/2，所有多 entry 锁统一 UUID 升序，检索先有界选择再排序锁定。新事实及结果原子保存，触发器禁止改写/删除，有事实拒绝降级，空表可恢复旧停用语义。详见 [经验版本替代](108-experience-replacement.md)。
+
 第 107 步新增不可变 `experience_disablements` 与 `experience_lifecycle_commands`，迁移为 `0064_experience_lifecycle`。原确认版本不改写，有效状态由确认事实（active/1）和唯一停用事实（disabled/2）投影；停用以复合外键绑定正文版本、内容和来源散列，保存可信主体、首次授权、完整命令幂等及原因。业务结果与停用原子提交，404/409 也独立审计；两表有事实时拒绝降级。确认表增加范围表达式索引；检索 SQL 先限定系统范围并最多选三条，共享锁之后以新语句复核停用，来源事故取不可变生成任务快照。详见 [有效经验状态与有界检索](107-experience-lifecycle-search.md)。
 
 第 106 步新增 `experience_reviews`、`experience_entries` 与 `experience_review_commands`，迁移为 `0063_trusted_experience_review`。唯一决定以复合外键绑定候选精确版本/内容及来源散列；确认版本以复合外键只能关联 confirm 决定，拒绝不生成经验。规范化命令、可信主体与 applied/replayed/error 业务结果独立保存，409/404 也可追溯；授权准入不代表该结果。三表不可改写/删除，有新事实时拒绝降级，原候选只增加复合唯一约束、不改正文。详见 [可信经验审核](106-trusted-experience-review.md)。

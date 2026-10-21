@@ -6,10 +6,11 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field
 
 from opsswarm.experience.contracts import ExperienceModel, Hash
+from opsswarm.experience.replacement_contracts import ReplacementView
 from opsswarm.investigation.models import InvestigationDataSourceMode, RootCause
 
 LIFECYCLE_POLICY_VERSION: Literal["experience-lifecycle-v1"] = "experience-lifecycle-v1"
-SEARCH_POLICY_VERSION: Literal["experience-search-v1"] = "experience-search-v1"
+SEARCH_POLICY_VERSION: Literal["experience-search-v2"] = "experience-search-v2"
 
 
 class DisableCommand(ExperienceModel):
@@ -43,8 +44,9 @@ class EntryState(ExperienceModel):
     entry_version: Literal[1]
     entry_content_hash: Hash
     state_version: Literal[1, 2]
-    status: Literal["active", "disabled"]
+    status: Literal["active", "disabled", "replaced"]
     disablement: DisablementView | None
+    replacement: ReplacementView | None = None
 
 
 class DisableResult(ExperienceModel):
@@ -80,7 +82,7 @@ class ExperienceSearchItem(ExperienceModel):
 
 
 class ExperienceSearchResult(ExperienceModel):
-    policy_version: Literal["experience-search-v1"] = SEARCH_POLICY_VERSION
+    policy_version: Literal["experience-search-v2"] = SEARCH_POLICY_VERSION
     scope: SearchScope
     preferred_fault_tag: RootCause | None
     retrieved_at: AwareDatetime

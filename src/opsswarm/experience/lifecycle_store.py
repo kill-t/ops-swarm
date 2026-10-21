@@ -25,6 +25,7 @@ from opsswarm.experience.lifecycle_validation import disablement_id_for_entry, v
 from opsswarm.experience.review_contracts import EntryView
 from opsswarm.experience.review_store import load_confirmed_entry_in_session
 from opsswarm.experience.review_tables import ExperienceEntryRow
+from opsswarm.experience.state_reader import load_entry_state, project_entry_state
 from opsswarm.experience.store import utc_now
 from opsswarm.identity.models import OperatorAccessError, OperatorPrincipal, require_permission
 from opsswarm.identity.tables import OperatorAuthorizationRow
@@ -79,9 +80,14 @@ class ExperienceLifecycleStore:
             try:
                 entry = await _locked_entry(session, entry_id, read=False)
                 self._check_expiry(principal)
-                existing = await _disablement(session, entry)
+                state = await load_entry_state(session, entry)
+                existing = state.disablement
                 action = evaluate_disable(
-                    entry, command, subject_id=principal.subject_id, existing=existing
+                    entry,
+                    command,
+                    subject_id=principal.subject_id,
+                    existing=existing,
+                    replaced=state.status == "replaced",
                 )
                 if action == "apply":
                     now = self._now()
@@ -109,7 +115,9 @@ class ExperienceLifecycleStore:
                         await session.flush()
                         existing = validated_disablement(row, entry, admission)
                 assert existing is not None
-                result = DisableResult(applied=action == "apply", state=_state(entry, existing))
+                result = DisableResult(
+                    applied=action == "apply", state=project_entry_state(entry, existing)
+                )
                 _record(
                     session,
                     entry_id,
@@ -140,7 +148,7 @@ class ExperienceLifecycleStore:
     async def get_state(self, entry_id: UUID) -> EntryState:
         async with self._factory() as session, session.begin():
             entry = await _locked_entry(session, entry_id, read=True)
-            return _state(entry, await _disablement(session, entry))
+            return await load_entry_state(session, entry)
 
 
 async def _locked_entry(session: AsyncSession, entry_id: UUID, *, read: bool) -> EntryView:
@@ -154,29 +162,6 @@ async def _locked_entry(session: AsyncSession, entry_id: UUID, *, read: bool) ->
     if row is None:
         raise ExperienceError("experience_entry_not_found", "已确认经验版本不存在", 404)
     return await load_confirmed_entry_in_session(session, entry_id)
-
-
-async def _disablement(session: AsyncSession, entry: EntryView) -> DisablementView | None:
-    row = await session.scalar(
-        select(ExperienceDisablementRow).where(
-            ExperienceDisablementRow.entry_id == entry.id,
-        )
-    )
-    if row is None:
-        return None
-    admission = await session.get(OperatorAuthorizationRow, row.authorization_id)
-    return validated_disablement(row, entry, admission)
-
-
-def _state(entry: EntryView, disablement: DisablementView | None) -> EntryState:
-    return EntryState(
-        entry_id=entry.id,
-        entry_version=entry.version,
-        entry_content_hash=entry.content_hash,
-        state_version=1 if disablement is None else 2,
-        status="active" if disablement is None else "disabled",
-        disablement=disablement,
-    )
 
 
 def _record(

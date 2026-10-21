@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 108 步增加 `POST /api/v1/experience-entries/{entry_id}/actions/replace`，要求可信工程师和 `manage_report`；严格命令绑定两侧 ID、正文版本/散列及预期状态、幂等键与原因，首次 201、原命令重放 200、业务冲突 409、任一目标缺失 404，并保存独立业务结果。现有 state 接口增加 replaced/2 和可选 replacement 直接后继，历史正文仍为 confirmed；后继后来停用或替代不改变原关系与成功重放。检索升级 `experience-search-v2`，排除替代源，保留最多三条与锁后复核；不自动沿链查找或回退。详见 [经验版本替代](108-experience-replacement.md)。
+
 第 107 步增加 `POST /api/v1/experience-entries/{entry_id}/actions/disable`、`GET /api/v1/experience-entries/{entry_id}/state` 与 `GET /api/v1/investigations/{run_id}/experience-entries`，全部要求可信 Bearer。仅工程师可停用，命令绑定正文版本/散列、预期状态版本、幂等键和原因；首次 201、原命令重放 200、冲突 409、未知目标 404。状态接口区分当前 active/disabled 与历史 confirmed。检索范围由持久运行及事故决定，仅接受可选故障标签排序偏好；同服务、环境和来源模式，排除同事故与已停用版本，固定排序最多三条。结果保留不可变版本和来源引用，尚未接入模型上下文。详见 [有效经验状态与有界检索](107-experience-lifecycle-search.md)。
 
 第 106 步增加 `POST /api/v1/experience-candidates/{candidate_id}/reviews`、`GET /api/v1/experience-candidates/{candidate_id}/review`、`GET /api/v1/experience-entries/{entry_id}`。三个入口始终要求可信 Bearer；仅工程师使用 `manage_report` 作 confirm/reject 决定。严格命令绑定候选版本/散列、预期审核版本、幂等键及原因；首次决定 201、同主体同键同命令重放 200，版本/散列/终态冲突 409，未知目标 404。拒绝在事务内提交业务审计后再返回错误。现有候选 GET 保持生成工件语义，当前审核状态由新 GET 返回；不提供列表检索或上下文消费。详见 [可信经验审核](106-trusted-experience-review.md)。
