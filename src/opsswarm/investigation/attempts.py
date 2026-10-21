@@ -14,6 +14,7 @@ class InvestigationAttemptStatus(StrEnum):
 
     RUNNING = "running"
     SUCCEEDED = "succeeded"
+    HANDED_OFF = "handed_off"
     FAILED = "failed"
     LEASE_EXPIRED = "lease_expired"
 

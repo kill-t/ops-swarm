@@ -1,0 +1,247 @@
+"""在有效父租约下原子交接；查询和重复提交重新核对业务来源。"""
+
+from collections.abc import Callable
+from datetime import datetime
+from uuid import UUID, uuid5
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from opsswarm.incidents.persistence.tables import IncidentRow
+from opsswarm.investigation.attempts import InvestigationAttemptStatus, ModelUsageTelemetry
+from opsswarm.investigation.budget.tables import CallReservationRow
+from opsswarm.investigation.errors import (
+    InvestigationRunNotFound,
+    WorkItemLeaseLost,
+    WorkItemNotFound,
+)
+from opsswarm.investigation.handoff.contracts import TerminalHandoffRecord
+from opsswarm.investigation.handoff.tables import InvestigationTerminalHandoffRow
+from opsswarm.investigation.persistence.attempt_settlement import finalize_attempt
+from opsswarm.investigation.persistence.lease import normalized_now, require_lease
+from opsswarm.investigation.persistence.tables import (
+    InvestigationAttemptRow,
+    InvestigationRunRow,
+    WorkItemRow,
+)
+from opsswarm.investigation.review_routing.contracts import ReviewRoutingRecord
+from opsswarm.investigation.review_routing.persistence import validated_review_routing
+from opsswarm.investigation.review_routing.tables import InvestigationHypothesisReviewRouteRow
+from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.events import append_task_event
+from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
+from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+
+
+def waiting_status(destination: str) -> str:
+    return "await_human" if destination == "await_human" else "await_candidate"
+
+
+async def terminal_source(
+    session: AsyncSession, run: InvestigationRunRow, route_id: UUID, source_sha256: str
+) -> ReviewRoutingRecord:
+    """终端必须覆盖最高实际轮次，不能把中间补查或未完成工作交出。"""
+
+    row = await session.get(InvestigationHypothesisReviewRouteRow, route_id)
+    if (
+        run.workflow_version != "v3"
+        or run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+        or run.data_source_mode != "frozen"
+        or row is None
+        or row.investigation_run_id != run.id
+        or row.content_sha256 != source_sha256
+    ):
+        raise TaskFactConflict("handoff_source_invalid", "交接缺少同运行、同版本的终端路由")
+    route = await validated_review_routing(session, row)
+    rounds = list(
+        await session.scalars(
+            select(InvestigationRoundRow)
+            .where(InvestigationRoundRow.investigation_run_id == run.id)
+            .order_by(InvestigationRoundRow.round_number)
+        )
+    )
+    unfinished = await session.scalar(
+        select(AgentTaskRow.id)
+        .where(AgentTaskRow.investigation_run_id == run.id, AgentTaskRow.status != "succeeded")
+        .limit(1)
+    )
+    reserved = await session.scalar(
+        select(CallReservationRow.id)
+        .where(
+            CallReservationRow.investigation_run_id == run.id,
+            CallReservationRow.status == "reserved",
+        )
+        .limit(1)
+    )
+    if (
+        route.decision.route == "follow_up"
+        or not rounds
+        or rounds[-1].id != route.round_id
+        or any(item.status != "completed" for item in rounds)
+        or unfinished is not None
+        or reserved is not None
+    ):
+        raise TaskFactConflict(
+            "handoff_not_terminal", "只有无未完成工作和在途调用的最高轮终端可交接"
+        )
+    return route
+
+
+async def validated_handoff(
+    session: AsyncSession, row: InvestigationTerminalHandoffRow
+) -> TerminalHandoffRecord:
+    try:
+        record = TerminalHandoffRecord.model_validate(row, from_attributes=True)
+    except ValueError as error:
+        raise TaskFactConflict("handoff_integrity_violation", "交接内容无法通过结构校验") from error
+    run = await session.get(InvestigationRunRow, record.investigation_run_id)
+    parent = await session.get(InvestigationAttemptRow, record.investigation_attempt_id)
+    work = await session.scalar(
+        select(WorkItemRow).where(WorkItemRow.investigation_run_id == record.investigation_run_id)
+    )
+    if run is None or parent is None or work is None:
+        raise TaskFactConflict("handoff_integrity_violation", "交接所属运行、任务或尝试不存在")
+    route = await terminal_source(session, run, record.source_review_route_id, record.source_sha256)
+    if (
+        record.id != uuid5(run.id, "terminal-handoff:v1")
+        or record.destination != route.decision.route
+        or record.created_at < route.created_at
+        or parent.investigation_run_id != run.id
+        or parent.work_item_id != work.id
+        or parent.status != "handed_off"
+        or not parent.started_at <= record.created_at < parent.lease_expires_at
+        or parent.finished_at != record.created_at
+        or parent.will_retry is not False
+        or work.status != "completed"
+        or work.completed_at != record.created_at
+        or work.lease_token is not None
+        or work.locked_by is not None
+        or work.locked_until is not None
+        or run.status != waiting_status(record.destination)
+        or run.completed_at is not None
+        or run.result is not None
+        or run.metrics is not None
+    ):
+        raise TaskFactConflict("handoff_integrity_violation", "交接与业务状态或来源不一致")
+    return record
+
+
+class TerminalHandoffStore:
+    """交接保存独立于旧根因成功结算，提交后不再占用 Worker。"""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._factory = session_factory
+
+    async def get(self, run_id: UUID) -> TerminalHandoffRecord | None:
+        async with self._factory() as session:
+            if await session.get(InvestigationRunRow, run_id) is None:
+                raise InvestigationRunNotFound(run_id)
+            row = await session.scalar(
+                select(InvestigationTerminalHandoffRow).where(
+                    InvestigationTerminalHandoffRow.investigation_run_id == run_id
+                )
+            )
+            return await validated_handoff(session, row) if row is not None else None
+
+    async def handoff(
+        self,
+        work_item_id: UUID,
+        *,
+        lease_token: UUID,
+        source_review_route_id: UUID,
+        source_sha256: str,
+        model_name: str,
+        usage: ModelUsageTelemetry,
+        clock: Callable[[], datetime],
+    ) -> TerminalHandoffRecord:
+        async with self._factory() as session, session.begin():
+            work = await session.scalar(
+                select(WorkItemRow).where(WorkItemRow.id == work_item_id).with_for_update()
+            )
+            if work is None:
+                raise WorkItemNotFound(work_item_id)
+            run = await session.get(InvestigationRunRow, work.investigation_run_id)
+            if run is None:
+                raise InvestigationRunNotFound(work.investigation_run_id)
+            parent = await session.scalar(
+                select(InvestigationAttemptRow)
+                .where(
+                    InvestigationAttemptRow.work_item_id == work.id,
+                    InvestigationAttemptRow.lease_token == lease_token,
+                )
+                .with_for_update()
+            )
+            existing = await session.scalar(
+                select(InvestigationTerminalHandoffRow).where(
+                    InvestigationTerminalHandoffRow.investigation_run_id == run.id
+                )
+            )
+            if existing is not None:
+                if (
+                    parent is None
+                    or existing.investigation_attempt_id != parent.id
+                    or existing.source_review_route_id != source_review_route_id
+                    or existing.source_sha256 != source_sha256
+                    or parent.model_name != model_name.strip()
+                    or any(
+                        getattr(parent, name) != value for name, value in usage.model_dump().items()
+                    )
+                ):
+                    raise TaskFactConflict(
+                        "handoff_conflict", "交接已存在，拒绝不同来源或尝试的重复命令"
+                    )
+                return await validated_handoff(session, existing)
+            require_lease(work, lease_token, normalized_now(clock))
+            lease_deadline = work.locked_until
+            incident = await session.scalar(
+                select(IncidentRow).where(IncidentRow.id == run.incident_id).with_for_update()
+            )
+            if (
+                run.status != "running"
+                or parent is None
+                or parent.status != "running"
+                or incident is None
+                or incident.status != "investigating"
+            ):
+                raise WorkItemLeaseLost(work.id)
+            route = await terminal_source(session, run, source_review_route_id, source_sha256)
+            now = normalized_now(clock)
+            require_lease(work, lease_token, now)
+            if now < route.created_at:
+                raise TaskFactConflict("handoff_source_invalid", "交接不能早于来源路由")
+            row = InvestigationTerminalHandoffRow(
+                id=uuid5(run.id, "terminal-handoff:v1"),
+                investigation_run_id=run.id,
+                investigation_attempt_id=parent.id,
+                source_review_route_id=route.id,
+                source_sha256=route.content_sha256,
+                version="terminal-handoff-v1",
+                destination=route.decision.route,
+                created_at=now,
+            )
+            session.add(row)
+            # 原生准入护栏先核对尚未释放的租约；延迟约束核对整笔事务的最终状态。
+            await session.flush()
+            finalize_attempt(
+                parent,
+                status=InvestigationAttemptStatus.HANDED_OFF,
+                occurred_at=now,
+                usage=usage,
+                will_retry=False,
+                error=None,
+                model_name=model_name,
+            )
+            work.status = "completed"
+            work.locked_by = work.locked_until = work.lease_token = None
+            work.last_error = None
+            work.completed_at = work.updated_at = now
+            run.status = waiting_status(route.decision.route)
+            run.model_name = model_name.strip()
+            run.last_error = None
+            run.updated_at = now
+            await append_task_event(session, run.id, event_type="run.handed_off", occurred_at=now)
+            await session.flush()
+            # 租约已清空，仍须按保存的截止时间拒绝写入阶段耗时后的迟到提交。
+            if lease_deadline is None or normalized_now(clock) >= lease_deadline:
+                raise WorkItemLeaseLost(work.id)
+            return TerminalHandoffRecord.model_validate(row, from_attributes=True)

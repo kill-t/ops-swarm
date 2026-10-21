@@ -4,11 +4,10 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, cast
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.experience.context_policy import CoordinationExperiencePolicy
@@ -42,6 +41,7 @@ from opsswarm.investigation.errors import (
     WorkItemNotFound,
 )
 from opsswarm.investigation.graph_thread import build_graph_thread_id
+from opsswarm.investigation.handoff.contracts import TerminalHandoffRecord
 from opsswarm.investigation.models import (
     EvidenceKind,
     EvidenceObservation,
@@ -61,6 +61,7 @@ from opsswarm.investigation.models import (
     WorkItemKind,
     WorkItemStatus,
 )
+from opsswarm.investigation.persistence.attempt_settlement import finalize_attempt
 from opsswarm.investigation.persistence.records import (
     ClaimedInvestigation,
     StartedInvestigation,
@@ -117,6 +118,13 @@ class InvestigationStore:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    async def get_terminal_handoff(self, run_id: UUID) -> TerminalHandoffRecord | None:
+        """交接查询独立重建来源，不读取工作流 checkpoint。"""
+
+        from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
+
+        return await TerminalHandoffStore(self._session_factory).get(run_id)
 
     async def start_investigation(
         self,
@@ -440,6 +448,7 @@ class InvestigationStore:
             WorkflowVersion.V1,
             WorkflowVersion.V2,
         ),
+        supported_dynamic_graph_versions: tuple[InvestigationGraphVersion, ...] | None = None,
         model_name: str | None = None,
         model_pricing: ModelPricing | None = None,
     ) -> ClaimedInvestigation | None:
@@ -465,6 +474,12 @@ class InvestigationStore:
                     .where(
                         InvestigationRunRow.data_source_mode == data_source_mode.value,
                         InvestigationRunRow.workflow_version.in_(supported_values),
+                        or_(
+                            InvestigationRunRow.workflow_version != WorkflowVersion.V3.value,
+                            InvestigationRunRow.graph_version.in_(supported_dynamic_graph_versions),
+                        )
+                        if supported_dynamic_graph_versions is not None
+                        else true(),
                         or_(
                             and_(
                                 WorkItemRow.status == WorkItemStatus.PENDING.value,
@@ -607,6 +622,8 @@ class InvestigationStore:
             work_row = await _locked_work_item(session, work_item_id)
             _require_valid_lease(work_row, lease_token=lease_token, occurred_at=occurred_at)
             run_row = await _require_run(session, work_row.investigation_run_id)
+            if run_row.workflow_version == WorkflowVersion.V3.value:
+                raise ValueError("v3 必须提交终端交接，不能写入旧调查成功结果")
             if run_row.workflow_version == WorkflowVersion.V2.value:
                 await require_complete_results(session, run_row.id, artifacts)
             await interrupt_tasks(
@@ -618,7 +635,7 @@ class InvestigationStore:
                 work_item_id=work_item_id,
                 lease_token=lease_token,
             )
-            _finalize_attempt(
+            finalize_attempt(
                 attempt_row,
                 status=InvestigationAttemptStatus.SUCCEEDED,
                 occurred_at=occurred_at,
@@ -686,7 +703,7 @@ class InvestigationStore:
                 work_item_id=work_item_id,
                 lease_token=lease_token,
             )
-            _finalize_attempt(
+            finalize_attempt(
                 attempt_row,
                 status=InvestigationAttemptStatus.FAILED,
                 occurred_at=occurred_at,
@@ -895,7 +912,7 @@ async def _expire_current_attempt(
         error_code="lease_expired",
         message="Worker 租约到期，未能确认本次调查结果。",
     )
-    _finalize_attempt(
+    finalize_attempt(
         row,
         status=InvestigationAttemptStatus.LEASE_EXPIRED,
         occurred_at=occurred_at,
@@ -904,67 +921,6 @@ async def _expire_current_attempt(
         error=error,
         model_name=None,
     )
-
-
-def _finalize_attempt(
-    row: InvestigationAttemptRow,
-    *,
-    status: InvestigationAttemptStatus,
-    occurred_at: datetime,
-    usage: ModelUsageTelemetry,
-    will_retry: bool,
-    error: WorkItemError | None,
-    model_name: str | None,
-) -> None:
-    """将运行态尝试只结算一次，并校验价格与费用形状。"""
-
-    if row.status != InvestigationAttemptStatus.RUNNING.value:
-        raise WorkItemLeaseLost(row.work_item_id)
-    if occurred_at < row.started_at:
-        raise ValueError("尝试结束时间不能早于开始时间")
-    normalized_model_name = _normalize_optional_model_name(model_name)
-    if row.model_name is None:
-        row.model_name = normalized_model_name
-    elif normalized_model_name is not None and row.model_name != normalized_model_name:
-        raise ValueError("尝试使用的 model_name 与领取时快照不一致")
-
-    has_pricing = row.input_cost_per_million_usd is not None
-    if has_pricing != (row.output_cost_per_million_usd is not None):
-        raise RuntimeError("调查尝试价格快照不完整")
-    if usage.estimated_cost_usd is not None and not has_pricing:
-        raise ValueError("未保存价格快照时不能写入估算费用")
-    if (
-        status is not InvestigationAttemptStatus.LEASE_EXPIRED
-        and usage.usage_complete
-        and has_pricing
-        and usage.estimated_cost_usd is None
-    ):
-        raise ValueError("用量与价格均可用时必须写入估算费用")
-    if usage.usage_complete and has_pricing:
-        assert row.input_cost_per_million_usd is not None
-        assert row.output_cost_per_million_usd is not None
-        expected_cost = (
-            (
-                Decimal(usage.input_tokens) * row.input_cost_per_million_usd
-                + Decimal(usage.output_tokens) * row.output_cost_per_million_usd
-            )
-            / Decimal(1_000_000)
-        ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
-        if usage.estimated_cost_usd != expected_cost:
-            raise ValueError("估算费用与 Token 及价格快照重算结果不一致")
-
-    row.status = status.value
-    row.model_request_count = usage.model_request_count
-    row.usage_complete = usage.usage_complete
-    row.input_tokens = usage.input_tokens
-    row.output_tokens = usage.output_tokens
-    row.total_tokens = usage.total_tokens
-    row.estimated_cost_usd = usage.estimated_cost_usd
-    row.finished_at = occurred_at
-    row.duration_ms = int((occurred_at - row.started_at).total_seconds() * 1000)
-    row.will_retry = will_retry
-    row.error_code = error.error_code if error is not None else None
-    row.error_message = error.message if error is not None else None
 
 
 def _require_valid_lease(

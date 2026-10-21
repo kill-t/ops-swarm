@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from opsswarm.approval import ApprovalDecision, ApprovalRequestExpired, ApprovalRequestStatus
 from opsswarm.approval.persistence import ApprovalRequestStore
@@ -70,7 +70,9 @@ from opsswarm.follow_up.persistence import ReportActionItemStore
 from opsswarm.identity.api import HumanActorDependency
 from opsswarm.incidents import ActorType, IncidentAction, IncidentActor, IncidentStatus
 from opsswarm.incidents.persistence import IncidentStore
+from opsswarm.investigation.handoff.contracts import TerminalHandoffRecord
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.observability import capture_current_trace_context
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.reports.persistence import IncidentReportStore
@@ -619,6 +621,29 @@ def create_router(clock: Clock) -> APIRouter:
             run_id,
             await store.list_attempts(run_id),
         )
+
+    @router.get(
+        "/api/v1/investigations/{run_id}/terminal-handoff",
+        response_model=TerminalHandoffRecord | None,
+        responses={404: {"model": ApiErrorResponse}, 409: {"model": ApiErrorResponse}},
+        tags=["调查"],
+    )
+    async def get_terminal_handoff(
+        run_id: UUID,
+        store: InvestigationStoreDependency,
+    ) -> TerminalHandoffRecord | None | JSONResponse:
+        """查询等待阶段及终端引用；未交接返回 null，不生成推断事实。"""
+
+        try:
+            return await store.get_terminal_handoff(run_id)
+        except TaskFactConflict as error:
+            return JSONResponse(
+                status_code=409,
+                content=ApiErrorResponse(
+                    error_code=error.code,
+                    message=str(error),
+                ).model_dump(mode="json"),
+            )
 
     @router.get(
         "/api/v1/investigations/{run_id}/evidence-board",

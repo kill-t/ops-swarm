@@ -12,7 +12,7 @@ x-investigation-worker: &investigation-worker
     - -m
     - opsswarm.worker.main
   restart: unless-stopped
-  stop_grace_period: 2m
+  stop_grace_period: ${OPSSWARM_WORKER_STOP_GRACE_PERIOD:-2m}
   environment: &investigation-worker-environment
     OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
     OPSSWARM_CHECKPOINT_DATABASE_URL: postgresql://opsswarm:local-development-only@control-db:5432/opsswarm_checkpoints
@@ -555,6 +555,7 @@ services:
     environment:
       <<: *investigation-worker-environment
       OPSSWARM_WORKER_DATA_SOURCE_MODE: frozen
+      OPSSWARM_WORKER_ENABLE_DYNAMIC_WORKFLOW: ${OPSSWARM_WORKER_ENABLE_DYNAMIC_WORKFLOW:-false}
     networks:
       - control
 

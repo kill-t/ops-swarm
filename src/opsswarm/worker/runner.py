@@ -10,7 +10,7 @@ from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode, Tracer
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from opsswarm.investigation.attempts import ModelUsageTelemetry
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
@@ -19,6 +19,7 @@ from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.challenge import validate_hypothesis_challenge
 from opsswarm.investigation.context.contracts import ContextPolicyVersion
 from opsswarm.investigation.coordination.contracts import CoordinationPolicy
+from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.live_window import UnsupportedLiveTaskSource
 from opsswarm.investigation.models import (
     EvidenceObservation,
@@ -36,7 +37,11 @@ from opsswarm.investigation.models import (
 )
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
-from opsswarm.investigation.workflow_versions import InvestigationGraphVersion, WorkflowVersion
+from opsswarm.investigation.workflow_versions import (
+    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    InvestigationGraphVersion,
+    WorkflowVersion,
+)
 from opsswarm.observability import extract_trace_context, mark_span_error
 from opsswarm.worker.usage import ModelUsageTracker
 
@@ -66,6 +71,14 @@ class ProcessorOutcome(StrictModel):
         return self
 
 
+class TerminalProcessorOutcome(StrictModel):
+    """动态图只交出业务路由引用，不能伪装成固定根因成功。"""
+
+    source_review_route_id: UUID
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_name: str = Field(min_length=1, max_length=200)
+
+
 class ProcessorContext(StrictModel):
     """Worker 交给处理器的持久路由上下文。"""
 
@@ -89,7 +102,9 @@ class ProcessorContext(StrictModel):
 class InvestigationProcessor(Protocol):
     """隔离 LangChain、假模型和未来 LangGraph 处理器。"""
 
-    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+    async def process(
+        self, context: ProcessorContext
+    ) -> ProcessorOutcome | TerminalProcessorOutcome:
         """调查一个事故并返回可持久化结果。"""
 
 
@@ -110,6 +125,7 @@ class InvestigationWorker:
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         model_name: str | None = None,
         usage_tracker: ModelUsageTracker | None = None,
+        handoff_store: TerminalHandoffStore | None = None,
         tracer: Tracer | None = None,
     ) -> None:
         if base_retry_delay < timedelta(0):
@@ -131,6 +147,7 @@ class InvestigationWorker:
         self._data_source_mode = data_source_mode
         self._model_name = model_name
         self._usage_tracker = usage_tracker
+        self._handoff_store = handoff_store
         self._tracer = tracer or trace.get_tracer(__name__)
 
     async def run_once(self) -> bool:
@@ -141,7 +158,10 @@ class InvestigationWorker:
             occurred_at=self._clock(),
             lease_duration=self._lease_duration,
             data_source_mode=self._data_source_mode,
-            supported_workflow_versions=(WorkflowVersion.V1, WorkflowVersion.V2),
+            supported_workflow_versions=(WorkflowVersion.V1, WorkflowVersion.V2, WorkflowVersion.V3)
+            if self._handoff_store is not None
+            else (WorkflowVersion.V1, WorkflowVersion.V2),
+            supported_dynamic_graph_versions=(DYNAMIC_INVESTIGATION_GRAPH_VERSION,),
             model_name=self._model_name,
             model_pricing=(
                 self._usage_tracker.pricing if self._usage_tracker is not None else None
@@ -226,6 +246,24 @@ class InvestigationWorker:
                 return True
 
             usage = self._finish_usage()
+            if isinstance(outcome, TerminalProcessorOutcome):
+                if (
+                    self._handoff_store is None
+                    or claimed.run.workflow_version is not WorkflowVersion.V3
+                ):
+                    raise ValueError("终端交接结果只能由支持 v3 的 Worker 结算")
+                await self._handoff_store.handoff(
+                    claimed.work_item.id,
+                    lease_token=lease_token,
+                    source_review_route_id=outcome.source_review_route_id,
+                    source_sha256=outcome.source_sha256,
+                    model_name=outcome.model_name,
+                    usage=usage,
+                    clock=self._clock,
+                )
+                span.set_status(Status(StatusCode.OK))
+                logger.info("调查终端已交接 work_item_id=%s", claimed.work_item.id)
+                return True
             await self._store.complete(
                 claimed.work_item.id,
                 lease_token=lease_token,

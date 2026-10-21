@@ -19,6 +19,7 @@ from opsswarm.database import Database, DatabaseSettings
 from opsswarm.database.asyncio_compat import create_selector_event_loop
 from opsswarm.investigation.budget.model_settings import ModelBudgetSettings
 from opsswarm.investigation.github_changes import GitHubChangeSettings
+from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.live import (
     LiveChangeProvider,
     LiveInvestigationSettings,
@@ -42,12 +43,17 @@ from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.observability import create_tracing_runtime
 from opsswarm.telemetry_mcp.client import TelemetryMcpClientSettings
 from opsswarm.telemetry_metrics_mcp.client import TelemetryMetricsMcpClientSettings
+from opsswarm.worker.dynamic_factory import CurrentDynamicGraphFactory
+from opsswarm.worker.dynamic_processor import (
+    DynamicInvestigationProcessor,
+    WorkflowRoutingProcessor,
+)
 from opsswarm.worker.processor import (
     LangChainInvestigationProcessor,
     LangGraphMultiAgentProcessor,
     ModeRoutingProcessor,
 )
-from opsswarm.worker.runner import InvestigationWorker
+from opsswarm.worker.runner import InvestigationProcessor, InvestigationWorker
 from opsswarm.worker.settings import InvestigationWorkerSettings
 from opsswarm.worker.task_graph import TaskGraphFactory
 from opsswarm.worker.usage import ModelUsageTracker
@@ -134,7 +140,7 @@ async def run(*, once: bool) -> bool | None:
                 checkpointer=saver,
                 tracer=tracer,
             )
-            processor = ModeRoutingProcessor(
+            processor: InvestigationProcessor = ModeRoutingProcessor(
                 single_agent=LangChainInvestigationProcessor(
                     model=model,
                     model_name=llm_settings.model,
@@ -168,6 +174,23 @@ async def run(*, once: bool) -> bool | None:
                     tracer=tracer,
                 ),
             )
+            handoff_store = None
+            if worker_settings.enable_dynamic_workflow:
+                if not isinstance(data_source, FrozenScenarioDataSource):
+                    raise ValueError("动态 Worker 需要冻结来源")
+                processor = WorkflowRoutingProcessor(
+                    legacy=processor,
+                    dynamic=DynamicInvestigationProcessor(
+                        factory=CurrentDynamicGraphFactory(
+                            session_factory=database.session_factory,
+                            model=task_model,
+                            checkpointer=saver,
+                            clock=utc_now,
+                        ),
+                        model_name=llm_settings.model,
+                    ),
+                )
+                handoff_store = TerminalHandoffStore(database.session_factory)
             worker = InvestigationWorker(
                 store=InvestigationStore(database.session_factory),
                 processor=processor,
@@ -180,6 +203,7 @@ async def run(*, once: bool) -> bool | None:
                 data_source_mode=worker_settings.data_source_mode,
                 model_name=llm_settings.model,
                 usage_tracker=usage_tracker,
+                handoff_store=handoff_store,
                 tracer=tracer,
             )
             logger.info(

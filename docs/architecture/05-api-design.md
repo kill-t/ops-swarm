@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 111 步增加 `GET /api/v1/investigations/{run_id}/terminal-handoff`，返回来源路由、散列、交接尝试、目的地与时间，未交接 null、未知运行 404、来源冲突 409。运行状态增加 await_human/await_candidate，尝试增加 handed_off；不接受客户端交接命令或执行授权。详见 [Worker 终端交接](111-dynamic-worker-handoff.md)。
+
 第 109 步在启动调查命令新增可选 `coordination_experience_policy_version=coordination-experience-v1`，仅允许冻结 v3、summary-context-v1 和 function_calling 模型预算；省略保持禁用，显式 null 或不支持组合返回 422。运行响应回显固定策略。已有 `GET /api/v1/investigations/{run_id}/calls/{call_id}/model-input` 与 `context-manifest` 可追溯实际进入首轮协调模型的经验选择及最多三条精确版本/散列，并复核冻结来源；不增加经验工具或执行权限。详见 [首轮协调经验上下文](109-coordination-experience-context.md)。
 
 第 108 步增加 `POST /api/v1/experience-entries/{entry_id}/actions/replace`，要求可信工程师和 `manage_report`；严格命令绑定两侧 ID、正文版本/散列及预期状态、幂等键与原因，首次 201、原命令重放 200、业务冲突 409、任一目标缺失 404，并保存独立业务结果。现有 state 接口增加 replaced/2 和可选 replacement 直接后继，历史正文仍为 confirmed；后继后来停用或替代不改变原关系与成功重放。检索升级 `experience-search-v2`，排除替代源，保留最多三条与锁后复核；不自动沿链查找或回退。详见 [经验版本替代](108-experience-replacement.md)。

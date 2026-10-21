@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 111 步增加不可变终端交接表与父运行 await_human/await_candidate、父尝试 handed_off；任务 completed 释放租约，等待仍占用事故活动唯一槽位，v3 不写旧 succeeded。复合来源外键与延迟跨表约束保护原子交接；详见 [Worker 终端交接](111-dynamic-worker-handoff.md)。
+
 第 110 步未修改 schema 或迁移。来源复用的新鲜度检查只在当前短遍历内比较有界主键、xmin 与 ctid 集合，不持久化物理行标记，不替代业务版本、审计、租约或 checkpoint。详见 [有界来源核验](110-bounded-source-validation.md)。
 
 第 109 步新增运行级 `coordination_experience_policy_version` 和不可变 `investigation_experience_contexts`，迁移为 `0066_coordination_experience`。显式策略仅允许当前冻结 v3；选择按运行唯一，完整有界 JSON/hash、选择时间、首次预留时间及首次 call ID 一并保存。同运行复合延迟外键和调用插入守卫把首次冻结与预算预留绑定在同一事务；重试调用各自精确引用同一快照，首次 call ID 只代表冻结来源。空选择也冻结，停用/替代不改写历史输入；有新策略运行或快照即拒绝降级。详见 [首轮协调经验上下文](109-coordination-experience-context.md)。

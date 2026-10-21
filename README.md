@@ -317,7 +317,7 @@ uv run python -m opsswarm.evaluation.real_batch_main `
 docker compose up -d investigation-worker-frozen investigation-worker-live
 ```
 
-冻结工作池只领取 `frozen` 任务，现场工作池只领取 `live` 任务。它们在空闲时低频轮询，收到停机信号后不再领取新任务，但允许当前任务在 100 秒处理超时内结算；Compose 给予 2 分钟宽限。手工调试可使用 `--once` 至多处理一个任务后退出：
+冻结工作池只领取 `frozen` 任务，现场工作池只领取 `live` 任务。它们在空闲时低频轮询，收到停机信号后不再领取新任务。默认配置允许当前任务在 100 秒处理超时内结算，Compose 给予 2 分钟宽限；动态池可按下文调整。手工调试可使用 `--once` 至多处理一个任务后退出：
 
 ```powershell
 $env:LLM_API_KEY = "本地模型服务密钥"
@@ -328,6 +328,21 @@ $env:LLM_STRUCTURED_OUTPUT_METHOD = "json_schema、json_mode 或 function_callin
 $env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen 或 live"
 uv run python -m opsswarm.worker.main --once
 ```
+
+第 111 步已将冻结 v3 的当前 graph-v15 接入 Worker；默认仍只领取 v1/v2。先执行最新迁移，显式设置以下变量启用动态演练池（模型结构化输出须为 `function_calling`）：
+
+```powershell
+$env:OPSSWARM_WORKER_DATA_SOURCE_MODE = "frozen"
+$env:OPSSWARM_WORKER_ENABLE_DYNAMIC_WORKFLOW = "true"
+$env:LLM_STRUCTURED_OUTPUT_METHOD = "function_calling"
+$env:OPSSWARM_WORKER_PROCESSING_TIMEOUT_SECONDS = "240"
+$env:OPSSWARM_WORKER_LEASE_DURATION_SECONDS = "300"
+$env:OPSSWARM_WORKER_STOP_GRACE_PERIOD = "5m"
+```
+
+启动 v3 三轮演练时建议显式设置调用预算 `max_model_calls=16, max_duration_seconds=900`；总时限从首次开始计算，需为租约过期后的恢复留出窗口，恢复不会重置预算或延长 deadline。
+
+Compose 仅将动态开关传入冻结池。动态演练使用 `release-500-worker-v1`，把固定模拟材料的最新观察锚定事故开始时间，按完整内容计算稳定快照；限 order-service 发布故障，不是真实现场。历史 v3 图不会被新 Worker 领取，其他冻结来源的旧 graph-v15 也不能混入新快照。终端交接后父运行是 `await_human` 或 `await_candidate`，父尝试 `handed_off`、工作项释放租约；没有旧根因成功结果，也不授予执行资格。`GET /api/v1/investigations/{run_id}/terminal-handoff` 可查精确路由来源；人工补充/恢复与候选评估器尚待后续切片。详见 [终端交接设计](docs/architecture/111-dynamic-worker-handoff.md)。
 
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 

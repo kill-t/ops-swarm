@@ -79,6 +79,8 @@ class InvestigationRunStatus(StrEnum):
 
     QUEUED = "queued"
     RUNNING = "running"
+    AWAIT_HUMAN = "await_human"
+    AWAIT_CANDIDATE = "await_candidate"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 

@@ -25,7 +25,12 @@ from opsswarm.investigation.scenarios import (
 from opsswarm.investigation.tools import InvestigationDataSource
 from opsswarm.investigation.workflow_versions import WorkflowVersion, validate_workflow_route
 from opsswarm.observability import mark_span_error
-from opsswarm.worker.runner import InvestigationProcessor, ProcessorContext, ProcessorOutcome
+from opsswarm.worker.runner import (
+    InvestigationProcessor,
+    ProcessorContext,
+    ProcessorOutcome,
+    TerminalProcessorOutcome,
+)
 
 
 class CheckpointedParallelInvestigator(Protocol):
@@ -219,7 +224,9 @@ class ModeRoutingProcessor:
             InvestigationMode.MULTI_AGENT: multi_agent,
         }
 
-    async def process(self, context: ProcessorContext) -> ProcessorOutcome:
+    async def process(
+        self, context: ProcessorContext
+    ) -> ProcessorOutcome | TerminalProcessorOutcome:
         return await self._processors[context.mode].process(context)
 
 

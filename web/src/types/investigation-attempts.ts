@@ -1,4 +1,4 @@
-export type InvestigationAttemptStatus = "running" | "succeeded" | "failed" | "lease_expired";
+export type InvestigationAttemptStatus = "running" | "handed_off" | "succeeded" | "failed" | "lease_expired";
 
 export interface InvestigationModelPricing {
   input_cost_per_million_usd: string;

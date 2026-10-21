@@ -51,7 +51,7 @@ class AgentTaskEventRow(Base):
         CheckConstraint(
             "event_type IN ('round.created', 'round.completed', 'round.failed', "
             "'task.started', 'task.succeeded', 'task.failed', 'task.interrupted', "
-            "'task.evidence_saved')",
+            "'task.evidence_saved', 'run.handed_off')",
             name="ck_task_events_type",
         ),
     )

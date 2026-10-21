@@ -13,6 +13,7 @@ defineProps<{
 const statusLabels: Record<InvestigationAttemptStatus, string> = {
   running: "进行中",
   succeeded: "成功",
+  handed_off: "已交接",
   failed: "失败",
   lease_expired: "租约过期",
 };

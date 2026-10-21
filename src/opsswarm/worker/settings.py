@@ -14,6 +14,7 @@ class InvestigationWorkerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OPSSWARM_WORKER_", extra="ignore")
 
     data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN
+    enable_dynamic_workflow: bool = False
     poll_interval_seconds: float = Field(default=1.0, ge=0.1, le=60.0)
     lease_duration_seconds: float = Field(default=120.0, ge=10.0, le=1800.0)
     processing_timeout_seconds: float = Field(default=100.0, ge=1.0, le=1790.0)
@@ -28,6 +29,12 @@ class InvestigationWorkerSettings(BaseSettings):
             raise ValueError("processing_timeout_seconds 必须小于 lease_duration_seconds")
         if self.max_retry_delay_seconds < self.base_retry_delay_seconds:
             raise ValueError("max_retry_delay_seconds 不能小于 base_retry_delay_seconds")
+        if self.enable_dynamic_workflow and (
+            self.data_source_mode is not InvestigationDataSourceMode.FROZEN
+            or self.processing_timeout_seconds < 180
+            or self.lease_duration_seconds - self.processing_timeout_seconds < 30
+        ):
+            raise ValueError("v3 需要 frozen、至少 180 秒处理窗口及 30 秒租约结算余量")
         return self
 
     @classmethod

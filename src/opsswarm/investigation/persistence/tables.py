@@ -146,6 +146,16 @@ class InvestigationRunRow(Base):
         ),
         CheckConstraint(f"status IN ({RUN_STATUS_SQL})", name="ck_investigation_runs_status"),
         CheckConstraint(
+            "status NOT IN ('await_human', 'await_candidate') OR "
+            "(workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' "
+            "AND data_source_mode = 'frozen')",
+            name="ck_investigation_runs_handoff_scope",
+        ),
+        CheckConstraint(
+            "workflow_version <> 'v3' OR status <> 'succeeded'",
+            name="ck_investigation_runs_v3_no_success",
+        ),
+        CheckConstraint(
             "result IS NULL OR jsonb_typeof(result) = 'object'",
             name="ck_investigation_runs_result_object",
         ),
@@ -177,7 +187,8 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_failure_shape",
         ),
         CheckConstraint(
-            "(status IN ('queued', 'running') AND completed_at IS NULL) OR "
+            "(status IN ('queued', 'running', 'await_human', 'await_candidate') "
+            "AND completed_at IS NULL) OR "
             "(status IN ('succeeded', 'failed') AND completed_at IS NOT NULL)",
             name="ck_investigation_runs_completion_shape",
         ),
@@ -194,7 +205,9 @@ class InvestigationRunRow(Base):
             "uq_investigation_runs_active_incident",
             "incident_id",
             unique=True,
-            postgresql_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text(
+                "status IN ('queued', 'running', 'await_human', 'await_candidate')"
+            ),
         ),
         Index("ix_investigation_runs_incident_created", "incident_id", text("created_at DESC")),
     )
@@ -351,7 +364,8 @@ class InvestigationAttemptRow(Base):
             "(status = 'running' AND finished_at IS NULL AND duration_ms IS NULL "
             "AND will_retry IS NULL AND error_code IS NULL AND error_message IS NULL "
             "AND estimated_cost_usd IS NULL) OR "
-            "(status = 'succeeded' AND finished_at IS NOT NULL AND duration_ms >= 0 "
+            "(status IN ('succeeded', 'handed_off') AND finished_at IS NOT NULL "
+            "AND duration_ms >= 0 "
             "AND will_retry = false AND error_code IS NULL AND error_message IS NULL) OR "
             "(status IN ('failed', 'lease_expired') AND finished_at IS NOT NULL "
             "AND duration_ms >= 0 AND will_retry IS NOT NULL "
