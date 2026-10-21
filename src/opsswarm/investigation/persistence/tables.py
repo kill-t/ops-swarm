@@ -146,6 +146,11 @@ class InvestigationRunRow(Base):
         ),
         CheckConstraint(f"status IN ({RUN_STATUS_SQL})", name="ck_investigation_runs_status"),
         CheckConstraint(
+            "status <> 'cancelled' OR (workflow_version = 'v3' AND "
+            "graph_version = 'dynamic-investigation-graph-v15' AND data_source_mode = 'frozen')",
+            name="ck_investigation_runs_cancelled_scope",
+        ),
+        CheckConstraint(
             "status NOT IN ('await_human', 'await_candidate') OR "
             "(workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' "
             "AND data_source_mode = 'frozen')",
@@ -189,7 +194,7 @@ class InvestigationRunRow(Base):
         CheckConstraint(
             "(status IN ('queued', 'running', 'await_human', 'await_candidate') "
             "AND completed_at IS NULL) OR "
-            "(status IN ('succeeded', 'failed') AND completed_at IS NOT NULL)",
+            "(status IN ('succeeded', 'failed', 'cancelled') AND completed_at IS NOT NULL)",
             name="ck_investigation_runs_completion_shape",
         ),
         CheckConstraint(

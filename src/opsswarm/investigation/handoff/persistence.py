@@ -102,6 +102,14 @@ async def validated_handoff(
     if run is None or parent is None or work is None:
         raise TaskFactConflict("handoff_integrity_violation", "交接所属运行、任务或尝试不存在")
     route = await terminal_source(session, run, record.source_review_route_id, record.source_sha256)
+    from opsswarm.investigation.human_wait.validation import validated_wait_events
+
+    events = (
+        await validated_wait_events(session, record) if record.destination == "await_human" else ()
+    )
+    cancellation = events[-1] if events and events[-1].action == "cancel" else None
+    expected_status = "cancelled" if cancellation else waiting_status(record.destination)
+    expected_completion = cancellation.created_at if cancellation else None
     if (
         record.id != uuid5(run.id, "terminal-handoff:v1")
         or record.destination != route.decision.route
@@ -117,8 +125,8 @@ async def validated_handoff(
         or work.lease_token is not None
         or work.locked_by is not None
         or work.locked_until is not None
-        or run.status != waiting_status(record.destination)
-        or run.completed_at is not None
+        or run.status != expected_status
+        or run.completed_at != expected_completion
         or run.result is not None
         or run.metrics is not None
     ):
@@ -133,7 +141,13 @@ class TerminalHandoffStore:
         self._factory = session_factory
 
     async def get(self, run_id: UUID) -> TerminalHandoffRecord | None:
-        async with self._factory() as session:
+        async with self._factory() as session, session.begin():
+            # 与人工命令共享父工作项锁，避免取消提交跨越来源与当前状态的读取。
+            await session.scalar(
+                select(WorkItemRow)
+                .where(WorkItemRow.investigation_run_id == run_id)
+                .with_for_update(read=True)
+            )
             if await session.get(InvestigationRunRow, run_id) is None:
                 raise InvestigationRunNotFound(run_id)
             row = await session.scalar(

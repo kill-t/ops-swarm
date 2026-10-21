@@ -14,6 +14,7 @@ class InvestigationTerminalHandoffRow(Base):
     __tablename__ = "investigation_terminal_handoffs"
     __table_args__ = (
         UniqueConstraint("investigation_run_id", name="uq_terminal_handoffs_run"),
+        UniqueConstraint("id", "investigation_run_id", name="uq_terminal_handoffs_id_run"),
         ForeignKeyConstraint(
             ["source_review_route_id", "investigation_run_id"],
             [

@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 112 步增加 `investigation_human_wait_events` 连续版本事件与 `investigation_human_wait_commands` 逐请求业务审计，迁移为 `0068_human_wait_commands`。补充保持等待，可信取消使父运行 cancelled；原交接、work 与 handed_off 尝试保留。原始有界正文与授权散列绑定，成功事实及业务拒绝独立审计；来源外键、不可变、连续版本和延迟双向状态守卫保护原子提交，有事实拒绝降级。详见 [人工等待命令](112-trusted-human-wait-commands.md)。
+
 第 111 步增加不可变终端交接表与父运行 await_human/await_candidate、父尝试 handed_off；任务 completed 释放租约，等待仍占用事故活动唯一槽位，v3 不写旧 succeeded。复合来源外键与延迟跨表约束保护原子交接；详见 [Worker 终端交接](111-dynamic-worker-handoff.md)。
 
 第 110 步未修改 schema 或迁移。来源复用的新鲜度检查只在当前短遍历内比较有界主键、xmin 与 ctid 集合，不持久化物理行标记，不替代业务版本、审计、租约或 checkpoint。详见 [有界来源核验](110-bounded-source-validation.md)。

@@ -56,7 +56,7 @@ MVP 已完成发布验收；第 64 步确定总方向，第 65 步形成 [Agent 
 
 新入口通过原启动调查 API 显式提交 `"mode": "multi_agent", "data_source_mode": "frozen", "workflow_version": "v2"`，并保留原有 `expected_version`、`actor_id` 与 `reason` 字段；默认仍为 v1。也可将 `data_source_mode` 设为 `live`；现场 Worker 必须配置 `OPSSWARM_INVESTIGATION_CHANGE_PROVIDER=simulator`，GitHub 组合配置会明确失败。前端尚无版本选择器。现场运行的 `observation_cutoff_at` 与取证策略由服务端固定，不能在请求中指定；历史变更不提供当前部署证明，现场结果不生成冻结真值评测指标。运行迁移后使用原独立调查 Worker 即可路由，v1/v2 checkpoint 禁止混用。
 
-v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和当前 `dynamic-investigation-graph-v3`。内部图已能按首轮计划动态执行并恢复 1～3 个专业任务，再综合为待审查开放假设；图 v1/v2 保持历史兼容。当前 Worker 仍不领取 v3，独立审查、补查路由和终态校验完成后才开放执行。
+v3 启动另需显式提交 function_calling `model_budget`，可选提交 `coordination_policy`；服务端固定 `summary-context-v1`、`task-working-summary-v1`、`task-evidence-v1` 和当前 `dynamic-investigation-graph-v15`。图按计划动态执行并恢复最多三轮专业任务、综合、独立审查和确定性路由；历史图保持版本隔离。当前冻结 v3 可由下文显式开关启用 Worker 接管，终端进入人工或候选等待。
 
 新 v2 运行默认最多 12 次模型调用、18 次工具调用、每专业任务 6 次工具调用和 300 秒总时限，可在启动请求的 `call_budget` 中提交受限配置。`GET /api/v1/investigations/{run_id}/call-budget` 返回固定策略、截止时间与逐次预留记录；重试不重置额度。旧运行的策略与预留计数为 null，保留历史语义；预留数不代表供应商最终请求数或费用。
 
@@ -342,7 +342,27 @@ $env:OPSSWARM_WORKER_STOP_GRACE_PERIOD = "5m"
 
 启动 v3 三轮演练时建议显式设置调用预算 `max_model_calls=16, max_duration_seconds=900`；总时限从首次开始计算，需为租约过期后的恢复留出窗口，恢复不会重置预算或延长 deadline。
 
-Compose 仅将动态开关传入冻结池。动态演练使用 `release-500-worker-v1`，把固定模拟材料的最新观察锚定事故开始时间，按完整内容计算稳定快照；限 order-service 发布故障，不是真实现场。历史 v3 图不会被新 Worker 领取，其他冻结来源的旧 graph-v15 也不能混入新快照。终端交接后父运行是 `await_human` 或 `await_candidate`，父尝试 `handed_off`、工作项释放租约；没有旧根因成功结果，也不授予执行资格。`GET /api/v1/investigations/{run_id}/terminal-handoff` 可查精确路由来源；人工补充/恢复与候选评估器尚待后续切片。详见 [终端交接设计](docs/architecture/111-dynamic-worker-handoff.md)。
+Compose 仅将动态开关传入冻结池。动态演练使用 `release-500-worker-v1`，把固定模拟材料的最新观察锚定事故开始时间，按完整内容计算稳定快照；限 order-service 发布故障，不是真实现场。历史 v3 图不会被新 Worker 领取，其他冻结来源的旧 graph-v15 也不能混入新快照。终端交接后父运行是 `await_human` 或 `await_candidate`，父尝试 `handed_off`、工作项释放租约；没有旧根因成功结果，也不授予执行资格。`GET /api/v1/investigations/{run_id}/terminal-handoff` 可查精确路由来源。详见 [终端交接设计](docs/architecture/111-dynamic-worker-handoff.md)。
+
+第 112 步提供 [可信人工补充与取消](docs/architecture/112-trusted-human-wait-commands.md)。先配置第 104 步的有效工程师 Bearer 凭据；即使控制面使用 `legacy_local`，以下入口也要求可信认证。以已有 await_human 运行 ID 为例，令牌由本地环境变量读取：
+
+```powershell
+$waitHeaders = @{ Authorization = "Bearer $env:OPSSWARM_OPERATOR_TOKEN" }
+$waitUrl = "http://localhost:8000/api/v1/investigations/$runId/human-wait"
+$waitState = Invoke-RestMethod -Uri $waitUrl -Headers $waitHeaders
+$waitCommand = @{
+  handoff_id = $waitState.handoff_id
+  source_sha256 = $waitState.source_sha256
+  expected_wait_version = $waitState.state_version
+  idempotency_key = [guid]::NewGuid().ToString()
+  reason = "补充演练调查约束"
+  items = @(@{ kind = "constraint"; text = "只读调查，暂不允许执行回滚。" })
+} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method Post -Uri "$waitUrl/supplements" -Headers $waitHeaders -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($waitCommand))
+Invoke-RestMethod -Uri "$waitUrl/commands?limit=20" -Headers $waitHeaders
+```
+
+取消调用 `POST $waitUrl/cancel`，正文保留交接、散列、最新等待版本、幂等键和原因，去掉 items。首次成功为 201，同主体同键完整命令重放为 200；版本或内容冲突为 409。最多 15 次补充，每次 1～5 项，每项最多 1000 字。人工陈述不变成工具证据，也尚未进入模型上下文。取消后 run 为 cancelled、Incident 仍 investigating，旧成功命令和交接仍可追溯。恢复任务、图内 interrupt/resume 与候选评估器尚待后续切片，原预算和 deadline 保留。
 
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 

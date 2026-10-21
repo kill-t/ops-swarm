@@ -12,6 +12,8 @@ from opsswarm.investigation.tasks.contracts import TaskModel
 
 TaskEventType = Literal[
     "run.handed_off",
+    "run.human_input_saved",
+    "run.cancelled",
     "round.created",
     "round.completed",
     "round.failed",

@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 112 步增加 `GET /api/v1/investigations/{run_id}/human-wait` 和 `/human-wait/commands` 状态/命令审计查询、`POST /human-wait/supplements` 与 `/human-wait/cancel`。四个入口始终要求可信 Bearer；写入限工程师，绑定精确交接、等待版本和幂等键，首次 201、重放 200、冲突 409、未知运行 404。原始正文最多 64 KiB，拒绝结果与授权准入分开保存。只实现补充与取消，恢复执行后置。详见 [人工等待命令](112-trusted-human-wait-commands.md)。
+
 第 111 步增加 `GET /api/v1/investigations/{run_id}/terminal-handoff`，返回来源路由、散列、交接尝试、目的地与时间，未交接 null、未知运行 404、来源冲突 409。运行状态增加 await_human/await_candidate，尝试增加 handed_off；不接受客户端交接命令或执行授权。详见 [Worker 终端交接](111-dynamic-worker-handoff.md)。
 
 第 109 步在启动调查命令新增可选 `coordination_experience_policy_version=coordination-experience-v1`，仅允许冻结 v3、summary-context-v1 和 function_calling 模型预算；省略保持禁用，显式 null 或不支持组合返回 422。运行响应回显固定策略。已有 `GET /api/v1/investigations/{run_id}/calls/{call_id}/model-input` 与 `context-manifest` 可追溯实际进入首轮协调模型的经验选择及最多三条精确版本/散列，并复核冻结来源；不增加经验工具或执行权限。详见 [首轮协调经验上下文](109-coordination-experience-context.md)。
