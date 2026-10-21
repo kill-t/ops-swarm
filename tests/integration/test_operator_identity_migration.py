@@ -29,6 +29,8 @@ async def test_0061_empty_audit_can_downgrade_without_rewriting_old_facts(databa
             text("SELECT to_jsonb(r) FROM investigation_runs r WHERE id = :id"),
             {"id": started.run.id},
         )
+    # 0066 新增列在降级时被移除，单独核对默认值后比较全部旧列。
+    assert before.pop("coordination_experience_policy_version") is None
     await asyncio.to_thread(command.downgrade, config(), "0060_versioned_runbook_read")
     try:
         async with database_session_factory() as session:
@@ -63,7 +65,7 @@ async def test_0061_preserves_authorization_and_blocks_destructive_downgrade(
         await asyncio.to_thread(command.downgrade, config(), "0060_versioned_runbook_read")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0065_experience_replacement"
+            "0066_coordination_experience"
         )
         assert (
             await session.scalar(

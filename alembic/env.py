@@ -15,6 +15,7 @@ from opsswarm.database.base import Base
 from opsswarm.database.settings import DatabaseSettings
 from opsswarm.evaluation.persistence import tables as evaluation_tables  # noqa: F401
 from opsswarm.execution.persistence import tables as execution_tables  # noqa: F401
+from opsswarm.experience import context_tables as experience_context_tables  # noqa: F401
 from opsswarm.experience import lifecycle_tables as experience_lifecycle_tables  # noqa: F401
 from opsswarm.experience import replacement_tables as experience_replacement_tables  # noqa: F401
 from opsswarm.experience import review_tables as experience_review_tables  # noqa: F401

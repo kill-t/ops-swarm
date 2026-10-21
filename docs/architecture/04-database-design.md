@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 109 步新增运行级 `coordination_experience_policy_version` 和不可变 `investigation_experience_contexts`，迁移为 `0066_coordination_experience`。显式策略仅允许当前冻结 v3；选择按运行唯一，完整有界 JSON/hash、选择时间、首次预留时间及首次 call ID 一并保存。同运行复合延迟外键和调用插入守卫把首次冻结与预算预留绑定在同一事务；重试调用各自精确引用同一快照，首次 call ID 只代表冻结来源。空选择也冻结，停用/替代不改写历史输入；有新策略运行或快照即拒绝降级。详见 [首轮协调经验上下文](109-coordination-experience-context.md)。
+
 第 108 步新增不可变 `experience_replacements` 与 `experience_replacement_commands`，迁移为 `0065_experience_replacement`。关系分别以复合外键绑定新旧确认工件，来源、目标、首次授权各自唯一；严格较晚的目标确认时间和相同结构化范围保证有序后继。双向插入守卫锁父 entry 后复核停用与替代源互斥，目标后来停用不破坏历史关系。状态投影新增 replaced/2，所有多 entry 锁统一 UUID 升序，检索先有界选择再排序锁定。新事实及结果原子保存，触发器禁止改写/删除，有事实拒绝降级，空表可恢复旧停用语义。详见 [经验版本替代](108-experience-replacement.md)。
 
 第 107 步新增不可变 `experience_disablements` 与 `experience_lifecycle_commands`，迁移为 `0064_experience_lifecycle`。原确认版本不改写，有效状态由确认事实（active/1）和唯一停用事实（disabled/2）投影；停用以复合外键绑定正文版本、内容和来源散列，保存可信主体、首次授权、完整命令幂等及原因。业务结果与停用原子提交，404/409 也独立审计；两表有事实时拒绝降级。确认表增加范围表达式索引；检索 SQL 先限定系统范围并最多选三条，共享锁之后以新语句复核停用，来源事故取不可变生成任务快照。详见 [有效经验状态与有界检索](107-experience-lifecycle-search.md)。

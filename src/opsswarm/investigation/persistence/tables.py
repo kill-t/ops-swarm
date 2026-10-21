@@ -119,6 +119,20 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_dynamic_policy",
         ),
         CheckConstraint(
+            "coordination_experience_policy_version IS NULL OR ("
+            "coordination_experience_policy_version = 'coordination-experience-v1' AND "
+            "workflow_version = 'v3' AND "
+            "graph_version = 'dynamic-investigation-graph-v15' AND "
+            "data_source_mode = 'frozen' AND "
+            "context_policy_version = 'summary-context-v1' AND "
+            "working_summary_policy_version = 'task-working-summary-v1' AND "
+            "evidence_policy_version = 'task-evidence-v1' AND "
+            "prompt_version = 'summary-context-v1' AND model_budget IS NOT NULL AND "
+            "COALESCE(model_budget #>> '{profile,structured_output_method}', '') = "
+            "'function_calling')",
+            name="ck_investigation_runs_coordination_experience_policy",
+        ),
+        CheckConstraint(
             "mode IN ('single_agent', 'multi_agent')",
             name="ck_investigation_runs_mode",
         ),
@@ -204,6 +218,7 @@ class InvestigationRunRow(Base):
     workflow_version: Mapped[str] = mapped_column(String(16), nullable=False, server_default="v1")
     graph_version: Mapped[str | None] = mapped_column(String(64))
     coordination_policy_version: Mapped[str | None] = mapped_column(String(32))
+    coordination_experience_policy_version: Mapped[str | None] = mapped_column(String(40))
     graph_thread_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     model_name: Mapped[str | None] = mapped_column(String(200))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

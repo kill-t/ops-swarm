@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import JsonValue
 
+from opsswarm.experience.context_policy import CoordinationExperiencePolicy
 from opsswarm.incidents.persistence import StoredIncident
 from opsswarm.investigation.attempts import (
     InvestigationAttemptStatus,
@@ -52,6 +53,7 @@ class StoredInvestigationRun(StrictModel):
     workflow_version: WorkflowVersion = WorkflowVersion.V1
     graph_version: InvestigationGraphVersion | None = None
     coordination_policy_version: Literal["dynamic-coordination-v1"] | None = None
+    coordination_experience_policy_version: CoordinationExperiencePolicy | None = None
     coordination_policy: CoordinationPolicy | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None

@@ -77,7 +77,11 @@ class ContextEvidenceReader:
 
     async def catalog(self) -> EvidenceCatalog | None:
         manifest = await self._manifest()
-        if manifest is None or manifest.version == "coordination-context-v1":
+        if (
+            manifest is None
+            or manifest.version == "coordination-context-v1"
+            or manifest.version == "coordination-experience-v1"
+        ):
             return None
         groups = []
         for ref in self._references(manifest):

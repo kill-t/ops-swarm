@@ -170,6 +170,7 @@ class CallBudgetStore:
                     or attempt.status != "running"
                 ):
                     raise TaskFactConflict("call_scope_invalid", "调用不属于当前有效专业尝试")
+            new_reservation_id = uuid4()
             await validate_context_reservation(
                 session,
                 run,
@@ -180,6 +181,8 @@ class CallBudgetStore:
                 prompt_version,
                 task_attempt_id,
                 invocation_index,
+                reservation_id=new_reservation_id,
+                reserved_at=now,
             )
             await validate_tool_request(
                 session, run, task_id, task_attempt_id, operation, invocation_index, tool_request
@@ -236,7 +239,7 @@ class CallBudgetStore:
                 )
                 require_model_capacity(model_policy, usage, allocation)
             row = CallReservationRow(
-                id=uuid4(),
+                id=new_reservation_id,
                 investigation_run_id=run_id,
                 investigation_attempt_id=parent.id,
                 task_id=task_id,

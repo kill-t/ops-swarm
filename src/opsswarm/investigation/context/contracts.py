@@ -54,6 +54,8 @@ class ContextMaterial(TaskModel):
         "open_hypothesis",
         "runbook_catalog",
         "runbook_content",
+        "experience_selection",
+        "confirmed_experience",
     ]
     material_id: UUID
     version: str = Field(min_length=1, max_length=100)
@@ -62,13 +64,16 @@ class ContextMaterial(TaskModel):
 
 
 class ContextManifest(TaskModel):
-    version: ContextPolicyVersion | Literal["coordination-context-v1"] = CONTEXT_POLICY_VERSION
+    version: (
+        ContextPolicyVersion | Literal["coordination-context-v1", "coordination-experience-v1"]
+    ) = CONTEXT_POLICY_VERSION
     investigation_run_id: UUID
     task_id: UUID | None
     role: Literal["log", "metric", "change", "synthesis", "coordinator", "reviewer"]
     role_version: Literal[
         "fixed-roles-v1",
         "dynamic-coordinator-v1",
+        "dynamic-coordinator-experience-v1",
         "dynamic-synthesis-v1",
         "dynamic-follow-up-synthesis-v1",
         "dynamic-third-round-synthesis-v1",
@@ -83,6 +88,7 @@ class ContextManifest(TaskModel):
         "summary-context-v1",
         "runbook-read-v1",
         "coordination-plan-v1",
+        "coordination-experience-plan-v1",
         "open-hypothesis-synthesis-v1",
         "follow-up-open-hypothesis-synthesis-v1",
         "third-round-open-hypothesis-synthesis-v1",
@@ -99,6 +105,24 @@ class ContextManifest(TaskModel):
     @model_validator(mode="after")
     def validate_strategy(self) -> Self:
         if self.role == "coordinator":
+            if self.version == "coordination-experience-v1":
+                kinds = tuple(item.kind for item in self.materials)
+                if (
+                    self.workflow_version != "v3"
+                    or self.task_id is not None
+                    or self.role_version != "dynamic-coordinator-experience-v1"
+                    or self.prompt_version != "coordination-experience-plan-v1"
+                    or self.evidence_policy_version != "task-evidence-v1"
+                    or self.tool_names
+                    or self.trimming
+                    or not 3 <= len(kinds) <= 6
+                    or kinds[:3]
+                    != ("incident_input", "coordination_policy", "experience_selection")
+                    or any(kind != "confirmed_experience" for kind in kinds[3:])
+                    or any(item.evidence_ids for item in self.materials[2:])
+                ):
+                    raise ValueError("协调经验上下文策略、材料或权限不匹配")
+                return self
             if (
                 self.version != "coordination-context-v1"
                 or self.task_id is not None
@@ -166,7 +190,7 @@ class ContextManifest(TaskModel):
                 raise ValueError("独立审查上下文策略、材料或权限不匹配")
             return self
         if (
-            self.version == "coordination-context-v1"
+            self.version in ("coordination-context-v1", "coordination-experience-v1")
             or self.role_version != "fixed-roles-v1"
             or len(self.materials) < 3
         ):

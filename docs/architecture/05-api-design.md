@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 109 步在启动调查命令新增可选 `coordination_experience_policy_version=coordination-experience-v1`，仅允许冻结 v3、summary-context-v1 和 function_calling 模型预算；省略保持禁用，显式 null 或不支持组合返回 422。运行响应回显固定策略。已有 `GET /api/v1/investigations/{run_id}/calls/{call_id}/model-input` 与 `context-manifest` 可追溯实际进入首轮协调模型的经验选择及最多三条精确版本/散列，并复核冻结来源；不增加经验工具或执行权限。详见 [首轮协调经验上下文](109-coordination-experience-context.md)。
+
 第 108 步增加 `POST /api/v1/experience-entries/{entry_id}/actions/replace`，要求可信工程师和 `manage_report`；严格命令绑定两侧 ID、正文版本/散列及预期状态、幂等键与原因，首次 201、原命令重放 200、业务冲突 409、任一目标缺失 404，并保存独立业务结果。现有 state 接口增加 replaced/2 和可选 replacement 直接后继，历史正文仍为 confirmed；后继后来停用或替代不改变原关系与成功重放。检索升级 `experience-search-v2`，排除替代源，保留最多三条与锁后复核；不自动沿链查找或回退。详见 [经验版本替代](108-experience-replacement.md)。
 
 第 107 步增加 `POST /api/v1/experience-entries/{entry_id}/actions/disable`、`GET /api/v1/experience-entries/{entry_id}/state` 与 `GET /api/v1/investigations/{run_id}/experience-entries`，全部要求可信 Bearer。仅工程师可停用，命令绑定正文版本/散列、预期状态版本、幂等键和原因；首次 201、原命令重放 200、冲突 409、未知目标 404。状态接口区分当前 active/disabled 与历史 confirmed。检索范围由持久运行及事故决定，仅接受可选故障标签排序偏好；同服务、环境和来源模式，排除同事故与已停用版本，固定排序最多三条。结果保留不可变版本和来源引用，尚未接入模型上下文。详见 [有效经验状态与有界检索](107-experience-lifecycle-search.md)。

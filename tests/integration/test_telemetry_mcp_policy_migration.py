@@ -46,7 +46,7 @@ async def test_new_live_run_pins_mcp_policy_and_blocks_downgrade(
     )
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0065_experience_replacement"
+            "0066_coordination_experience"
         )
 
 
@@ -72,6 +72,15 @@ async def test_historical_live_policies_can_cross_new_migration(
         "0058_telemetry_mcp_log_policy",
     )
     try:
-        assert (await store.get_run(started.run.id)).evidence_policy_version == expected
+        # 降级库不含后续新增列，只读取该历史迁移定义的字段。
+        async with database_session_factory() as session:
+            assert (
+                await session.scalar(
+                    text("SELECT evidence_policy_version FROM investigation_runs WHERE id=:id"),
+                    {"id": started.run.id},
+                )
+                == expected
+            )
     finally:
         await asyncio.to_thread(command.upgrade, migration_config(), "head")
+    assert (await store.get_run(started.run.id)).evidence_policy_version == expected

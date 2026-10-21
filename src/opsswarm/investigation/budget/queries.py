@@ -20,6 +20,7 @@ from opsswarm.investigation.budget.model_contracts import (
 from opsswarm.investigation.budget.model_policy import summarize_model_usage
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.contracts import ContextManifest
+from opsswarm.investigation.coordination.contracts import CoordinationModelInput
 from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.loop.contracts import (
     MODEL_INPUT_ADAPTER,
@@ -89,7 +90,8 @@ class CallBudgetQueries:
 
     async def get_model_input(self, run_id: UUID, call_id: UUID) -> AnyModelInput | None:
         async with self._factory() as session:
-            if await session.get(InvestigationRunRow, run_id) is None:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
                 raise InvestigationRunNotFound(run_id)
             row = await session.scalar(
                 select(CallReservationRow).where(
@@ -99,6 +101,7 @@ class CallBudgetQueries:
             )
             if row is None:
                 raise TaskFactConflict("model_input_not_found", "该运行不存在指定调用")
+            await _validate_experience_context(session, run, row)
             return (
                 MODEL_INPUT_ADAPTER.validate_python(row.model_input)
                 if row.model_input is not None
@@ -128,18 +131,18 @@ class CallBudgetQueries:
 
     async def get_context_manifest(self, run_id: UUID, call_id: UUID) -> ContextManifest | None:
         async with self._factory() as session:
-            if await session.get(InvestigationRunRow, run_id) is None:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
                 raise InvestigationRunNotFound(run_id)
             row = await session.scalar(
-                select(CallReservationRow)
-                .options(defer(CallReservationRow.model_input))
-                .where(
+                select(CallReservationRow).where(
                     CallReservationRow.investigation_run_id == run_id,
                     CallReservationRow.id == call_id,
                 )
             )
             if row is None:
                 raise TaskFactConflict("context_manifest_not_found", "该运行不存在指定调用")
+            await _validate_experience_context(session, run, row)
             if row.context_manifest is None:
                 return None
             manifest = ContextManifest.model_validate(row.context_manifest)
@@ -150,3 +153,23 @@ class CallBudgetQueries:
             ):
                 raise TaskFactConflict("context_manifest_corrupt", "上下文清单与调用记录不一致")
             return manifest
+
+
+async def _validate_experience_context(
+    session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
+) -> None:
+    if row.operation != "coordinate" or run.coordination_experience_policy_version is None:
+        return
+    # 历史调用查询也复核冻结工件，但不要求调用成功，失败预留同样是审计事实。
+    from opsswarm.investigation.coordination.context import validate_coordination_context
+
+    try:
+        model_input = CoordinationModelInput.model_validate(row.model_input)
+        manifest = ContextManifest.model_validate(row.context_manifest)
+    except ValueError as error:
+        raise TaskFactConflict(
+            "experience_context_call_conflict", "协调经验调用审计不完整"
+        ) from error
+    if manifest.allocation.model_dump(mode="json") != row.model_allocation:
+        raise TaskFactConflict("experience_context_call_conflict", "协调经验预算分配不一致")
+    await validate_coordination_context(session, run, model_input, manifest)

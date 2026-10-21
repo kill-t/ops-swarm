@@ -108,7 +108,9 @@ class CoordinationPlanRecord(TaskModel):
 class CoordinationModelInput(TaskModel):
     """协调调用的完整版本化输入，不包含任意工具或执行权限。"""
 
-    version: Literal["coordination-model-input-v1"] = "coordination-model-input-v1"
+    version: Literal["coordination-model-input-v1", "coordination-experience-input-v1"] = (
+        "coordination-model-input-v1"
+    )
     round_number: int = Field(ge=1, le=3, strict=True)
     existing_task_count: int = Field(ge=0, le=9, strict=True)
     observation_cutoff_at: AwareDatetime

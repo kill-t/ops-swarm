@@ -11,6 +11,7 @@ from uuid import UUID, uuid4, uuid5
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from opsswarm.experience.context_policy import CoordinationExperiencePolicy
 from opsswarm.incidents import IncidentAction, IncidentActor
 from opsswarm.incidents.persistence.repository import transition_incident_in_session
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -132,6 +133,7 @@ class InvestigationStore:
         model_budget: ModelBudgetPolicy | None = None,
         context_policy_version: ContextPolicyVersion | None = None,
         coordination_policy: CoordinationPolicy | None = None,
+        coordination_experience_policy_version: CoordinationExperiencePolicy | None = None,
         data_source_mode: InvestigationDataSourceMode = InvestigationDataSourceMode.FROZEN,
         trace_context: TraceContextCarrier | None = None,
     ) -> StartedInvestigation:
@@ -151,6 +153,18 @@ class InvestigationStore:
             model_budget,
             context_policy_version,
         )
+        if coordination_experience_policy_version is not None:
+            if coordination_experience_policy_version != "coordination-experience-v1":
+                raise ValueError("不支持的协调经验上下文策略")
+            if (
+                workflow_version is not WorkflowVersion.V3
+                or data_source_mode is not InvestigationDataSourceMode.FROZEN
+                or context_policy_version != "summary-context-v1"
+                or model_budget is None
+                or model_budget.profile.structured_output_method != "function_calling"
+                or DYNAMIC_INVESTIGATION_GRAPH_VERSION != "dynamic-investigation-graph-v15"
+            ):
+                raise ValueError("协调经验上下文只支持当前冻结 v3 调查")
         if workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
             call_budget = call_budget or CallBudgetPolicy()
         if workflow_version is WorkflowVersion.V3:
@@ -198,6 +212,7 @@ class InvestigationStore:
                 coordination_policy_version=(
                     coordination_policy.version if coordination_policy is not None else None
                 ),
+                coordination_experience_policy_version=(coordination_experience_policy_version),
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
                 context_policy_version=context_policy_version,
@@ -1005,6 +1020,10 @@ def _stored_run(
         coordination_policy_version=cast(
             Literal["dynamic-coordination-v1"] | None,
             row.coordination_policy_version,
+        ),
+        coordination_experience_policy_version=cast(
+            CoordinationExperiencePolicy | None,
+            row.coordination_experience_policy_version,
         ),
         coordination_policy=coordination_policy,
         call_budget=CallBudgetPolicy.model_validate(row.call_budget) if row.call_budget else None,

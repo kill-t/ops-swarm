@@ -58,6 +58,7 @@ class CoordinationPlanner:
         self._run_id = run_id
         self._lease_token = lease_token
         self._model = model
+        self._clock = clock
         self._plan_store = CoordinationPlanStore(factory, clock=clock)
         self._call_store = CallBudgetStore(factory, clock=clock)
 
@@ -118,7 +119,9 @@ class CoordinationPlanner:
         observation_cutoff_at: datetime,
         evidence_snapshot_id: str,
     ) -> CoordinationProposalCall:
-        packet = await CoordinationContextService(self._factory, self._run_id).prepare(
+        packet = await CoordinationContextService(
+            self._factory, self._run_id, clock=self._clock
+        ).prepare(
             observation_cutoff_at=observation_cutoff_at,
             evidence_snapshot_id=evidence_snapshot_id,
         )

@@ -44,6 +44,7 @@ from opsswarm.execution.persistence import (
     StoredExecutionCandidate,
     StoredOperationExecution,
 )
+from opsswarm.experience.context_policy import CoordinationExperiencePolicy
 from opsswarm.follow_up import (
     ReportActionItem,
     ReportActionItemCompletion,
@@ -201,6 +202,7 @@ class StartInvestigationRequest(StrictApiModel):
     model_budget: ModelBudgetPolicy | None = None
     context_policy_version: ContextPolicyVersion | None = None
     coordination_policy: CoordinationPolicy | None = None
+    coordination_experience_policy_version: CoordinationExperiencePolicy | None = None
 
     @model_validator(mode="after")
     def validate_workflow(self) -> Self:
@@ -210,6 +212,11 @@ class StartInvestigationRequest(StrictApiModel):
             and self.context_policy_version is None
         ):
             raise ValueError("context_policy_version 省略时使用默认策略，不能显式设为 null")
+        if (
+            "coordination_experience_policy_version" in self.model_fields_set
+            and self.coordination_experience_policy_version is None
+        ):
+            raise ValueError("coordination_experience_policy_version 省略时禁用，不能显式设为 null")
         if (self.call_budget is not None or self.model_budget is not None) and (
             self.workflow_version not in (WorkflowVersion.V2, WorkflowVersion.V3)
         ):
@@ -221,6 +228,11 @@ class StartInvestigationRequest(StrictApiModel):
             self.model_budget,
             self.context_policy_version,
         )
+        if self.coordination_experience_policy_version is not None and (
+            self.workflow_version is not WorkflowVersion.V3
+            or self.data_source_mode is not InvestigationDataSourceMode.FROZEN
+        ):
+            raise ValueError("协调经验上下文只支持当前冻结 v3 调查")
         return self
 
 
@@ -244,6 +256,7 @@ class InvestigationRunResponse(StrictApiModel):
     workflow_version: WorkflowVersion = WorkflowVersion.V1
     graph_version: InvestigationGraphVersion | None = None
     coordination_policy_version: Literal["dynamic-coordination-v1"] | None = None
+    coordination_experience_policy_version: CoordinationExperiencePolicy | None = None
     coordination_policy: CoordinationPolicy | None = None
     call_budget: CallBudgetPolicy | None = None
     model_budget: ModelBudgetPolicy | None = None

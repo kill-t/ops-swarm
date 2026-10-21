@@ -1,5 +1,6 @@
 """在既有预算事务内复核上下文材料与实际输入，禁止伪造审计清单。"""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,8 @@ async def validate_context_reservation(
     prompt_version: str | None,
     task_attempt_id: UUID | None = None,
     invocation_index: int = 0,
+    reservation_id: UUID | None = None,
+    reserved_at: datetime | None = None,
 ) -> None:
     if operation == CallOperation.COORDINATE:
         if (
@@ -42,7 +45,14 @@ async def validate_context_reservation(
             raise TaskFactConflict(
                 "coordination_context_required", "协调模型调用必须提供根级协调上下文"
             )
-        await validate_coordination_context(session, run, model_input, manifest)
+        await validate_coordination_context(
+            session,
+            run,
+            model_input,
+            manifest,
+            reservation_id=reservation_id,
+            reserved_at=reserved_at,
+        )
         return
     if isinstance(model_input, LoopModelInput) and (
         run.context_policy_version

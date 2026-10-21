@@ -33,6 +33,8 @@ async def test_0060_round_trip_preserves_historical_run(database_session_factory
             {"id": started.run.id},
         )
 
+    # 0066 新增列在降级时被移除，单独核对默认值后比较全部旧列。
+    assert before.pop("coordination_experience_policy_version") is None
     await asyncio.to_thread(command.downgrade, config(), "0059_telemetry_mcp_metric_policy")
     try:
         async with database_session_factory() as session:
@@ -63,5 +65,5 @@ async def test_0060_refuses_downgrade_after_runbook_policy_is_persisted(
         await asyncio.to_thread(command.downgrade, config(), "0059_telemetry_mcp_metric_policy")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0065_experience_replacement"
+            "0066_coordination_experience"
         )
