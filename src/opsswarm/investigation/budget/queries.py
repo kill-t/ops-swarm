@@ -40,53 +40,7 @@ class CallBudgetQueries:
             run = await session.get(InvestigationRunRow, run_id)
             if run is None:
                 raise InvestigationRunNotFound(run_id)
-            policy = (
-                CallBudgetPolicy.model_validate(run.call_budget)
-                if run.call_budget is not None
-                else None
-            )
-            model_policy = (
-                ModelBudgetPolicy.model_validate(run.model_budget) if run.model_budget else None
-            )
-            rows = list(
-                await session.scalars(
-                    select(CallReservationRow)
-                    .options(defer(CallReservationRow.model_input))
-                    .where(
-                        CallReservationRow.investigation_run_id == run_id,
-                    )
-                    .order_by(CallReservationRow.sequence)
-                )
-            )
-            return CallBudgetSnapshot(
-                investigation_run_id=run_id,
-                policy=policy,
-                started_at=run.started_at,
-                deadline=run.started_at + timedelta(seconds=policy.max_duration_seconds)
-                if policy and run.started_at
-                else None,
-                reserved_model_calls=sum(r.kind == "model" for r in rows) if policy else None,
-                reserved_tool_calls=sum(r.kind == "tool" for r in rows) if policy else None,
-                calls=tuple(
-                    CallReservationRecord.model_validate(r, from_attributes=True) for r in rows
-                ),
-                model_budget=model_policy,
-                model_usage=summarize_model_usage(
-                    model_policy,
-                    [
-                        (
-                            ModelAllocation.model_validate(r.model_allocation),
-                            ReportedModelUsage.model_validate(r.model_usage)
-                            if r.model_usage
-                            else None,
-                        )
-                        for r in rows
-                        if r.kind == "model"
-                    ],
-                )
-                if model_policy
-                else None,
-            )
+            return await read_budget_snapshot(session, run)
 
     async def get_model_input(self, run_id: UUID, call_id: UUID) -> AnyModelInput | None:
         async with self._factory() as session:
@@ -173,3 +127,48 @@ async def _validate_experience_context(
     if manifest.allocation.model_dump(mode="json") != row.model_allocation:
         raise TaskFactConflict("experience_context_call_conflict", "协调经验预算分配不一致")
     await validate_coordination_context(session, run, model_input, manifest)
+
+
+async def read_budget_snapshot(
+    session: AsyncSession, run: InvestigationRunRow
+) -> CallBudgetSnapshot:
+    """在调用方事务中读取原账本，准备诊断不创建第二套额度。"""
+    policy = (
+        CallBudgetPolicy.model_validate(run.call_budget) if run.call_budget is not None else None
+    )
+    model_policy = ModelBudgetPolicy.model_validate(run.model_budget) if run.model_budget else None
+    rows = list(
+        await session.scalars(
+            select(CallReservationRow)
+            .options(defer(CallReservationRow.model_input))
+            .where(
+                CallReservationRow.investigation_run_id == run.id,
+            )
+            .order_by(CallReservationRow.sequence)
+        )
+    )
+    return CallBudgetSnapshot(
+        investigation_run_id=run.id,
+        policy=policy,
+        started_at=run.started_at,
+        deadline=run.started_at + timedelta(seconds=policy.max_duration_seconds)
+        if policy and run.started_at
+        else None,
+        reserved_model_calls=sum(r.kind == "model" for r in rows) if policy else None,
+        reserved_tool_calls=sum(r.kind == "tool" for r in rows) if policy else None,
+        calls=tuple(CallReservationRecord.model_validate(r, from_attributes=True) for r in rows),
+        model_budget=model_policy,
+        model_usage=summarize_model_usage(
+            model_policy,
+            [
+                (
+                    ModelAllocation.model_validate(r.model_allocation),
+                    ReportedModelUsage.model_validate(r.model_usage) if r.model_usage else None,
+                )
+                for r in rows
+                if r.kind == "model"
+            ],
+        )
+        if model_policy
+        else None,
+    )

@@ -362,7 +362,26 @@ Invoke-RestMethod -Method Post -Uri "$waitUrl/supplements" -Headers $waitHeaders
 Invoke-RestMethod -Uri "$waitUrl/commands?limit=20" -Headers $waitHeaders
 ```
 
-取消调用 `POST $waitUrl/cancel`，正文保留交接、散列、最新等待版本、幂等键和原因，去掉 items。首次成功为 201，同主体同键完整命令重放为 200；版本或内容冲突为 409。最多 15 次补充，每次 1～5 项，每项最多 1000 字。人工陈述不变成工具证据，也尚未进入模型上下文。取消后 run 为 cancelled、Incident 仍 investigating，旧成功命令和交接仍可追溯。恢复任务、图内 interrupt/resume 与候选评估器尚待后续切片，原预算和 deadline 保留。
+取消调用 `POST $waitUrl/cancel`，正文保留交接、散列、最新等待版本、幂等键和原因，去掉 items。首次成功为 201，同主体同键完整命令重放为 200；版本或内容冲突为 409。最多 15 次补充，每次 1～5 项，每项最多 1000 字。人工陈述不变成工具证据，也尚未进入模型上下文。取消后 run 为 cancelled、Incident 仍 investigating，旧成功命令和交接仍可追溯。实际模型重评、图内 interrupt/resume 与候选评估器尚待后续切片，原预算和 deadline 保留。
+
+第 113 步增加 [可信人工重评输入准备](docs/architecture/113-human-input-preparation.md)。在至少一次补充后，可以按最新等待版本创建独立准备任务。Worker 实际生成完整待重评 ModelInput、来源清单和原预算诊断；必要材料过大或预算过期会明确 blocked，不静默裁剪人工约束。准备阶段没有调用模型，ready 也不是调用预留或恢复授权。
+
+```powershell
+$waitState = Invoke-RestMethod -Uri $waitUrl -Headers $waitHeaders
+$prepareCommand = @{
+  handoff_id = $waitState.handoff_id
+  source_sha256 = $waitState.source_sha256
+  expected_wait_version = $waitState.state_version
+  idempotency_key = [guid]::NewGuid().ToString()
+  reason = "核对人工约束和待重评预算"
+} | ConvertTo-Json
+$preparation = Invoke-RestMethod -Method Post -Uri "$waitUrl/preparations" -Headers $waitHeaders -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($prepareCommand))
+uv run python -m opsswarm.investigation.human_prepare.main --once
+Invoke-RestMethod -Uri "$waitUrl/preparations/$($preparation.job.id)" -Headers $waitHeaders
+Invoke-RestMethod -Uri "$waitUrl/preparations/commands?limit=20" -Headers $waitHeaders
+```
+
+使用 Compose 时可启动 `human-preparation-worker`，它仅使用业务数据库；需要先构建当前运行镜像并执行最新迁移。每等待版本最多一个准备任务、每任务最多三次尝试，租约默认 600 秒且不会延长原运行 deadline。后续补充或取消使旧输入 stale，历史工件仍可查询。实际模型重评和共享账本的新阶段归属仍待后续实现，不能重跑原 graph-v15 代替恢复。
 
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 

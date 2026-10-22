@@ -26,6 +26,7 @@ from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.budget import tables as investigation_budget_tables  # noqa: F401
 from opsswarm.investigation.coordination import tables as coordination_tables  # noqa: F401
 from opsswarm.investigation.handoff import tables as handoff_tables  # noqa: F401
+from opsswarm.investigation.human_prepare import tables as human_preparation_tables  # noqa: F401
 from opsswarm.investigation.human_wait import tables as human_wait_tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.investigation.review import tables as review_tables  # noqa: F401

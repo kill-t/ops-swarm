@@ -12,9 +12,6 @@ from opsswarm.identity.models import OperatorAccessError, OperatorPrincipal, req
 from opsswarm.identity.tables import OperatorAuthorizationRow
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.context.hashing import content_hash
-from opsswarm.investigation.handoff.contracts import TerminalHandoffRecord
-from opsswarm.investigation.handoff.persistence import validated_handoff
-from opsswarm.investigation.handoff.tables import InvestigationTerminalHandoffRow
 from opsswarm.investigation.human_wait.authorization import operation_for, validate_admission
 from opsswarm.investigation.human_wait.contracts import (
     MAX_COMMAND_BYTES,
@@ -26,14 +23,13 @@ from opsswarm.investigation.human_wait.contracts import (
     WaitCommand,
 )
 from opsswarm.investigation.human_wait.policy import evaluate_wait_command
+from opsswarm.investigation.human_wait.state import load_wait_state as _load_state
+from opsswarm.investigation.human_wait.state import lock_wait_run as _locked_run
 from opsswarm.investigation.human_wait.tables import HumanWaitCommandRow, HumanWaitEventRow
 from opsswarm.investigation.human_wait.validation import (
-    project_wait_state,
     validated_audit,
-    validated_wait_events,
 )
 from opsswarm.investigation.persistence.lease import normalized_now
-from opsswarm.investigation.persistence.tables import InvestigationRunRow, WorkItemRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 
@@ -276,41 +272,6 @@ class HumanWaitStore:
                 await session.flush()
                 self._check_principal(principal)
                 return HumanWaitOutcome(error=failure)
-
-
-async def _locked_run(session: AsyncSession, run_id: UUID, *, read: bool) -> InvestigationRunRow:
-    work = await session.scalar(
-        select(WorkItemRow)
-        .where(WorkItemRow.investigation_run_id == run_id)
-        .with_for_update(read=read)
-    )
-    run = await session.get(InvestigationRunRow, run_id)
-    if run is None:
-        raise HumanWaitError("human_wait_run_not_found", "调查运行不存在", 404)
-    if work is None:
-        raise HumanWaitError("human_wait_integrity_violation", "调查运行缺少父工作项")
-    return run
-
-
-async def _load_state(
-    session: AsyncSession,
-    run_id: UUID,
-) -> tuple[TerminalHandoffRecord, HumanWaitState]:
-    row = await session.scalar(
-        select(InvestigationTerminalHandoffRow).where(
-            InvestigationTerminalHandoffRow.investigation_run_id == run_id
-        )
-    )
-    if row is None or row.destination != "await_human":
-        raise HumanWaitError("human_wait_not_available", "运行未交接至人工等待")
-    try:
-        handoff = await validated_handoff(session, row)
-    except TaskFactConflict as error:
-        raise HumanWaitError(
-            "human_wait_integrity_violation", "人工等待交接来源校验失败"
-        ) from error
-    events = await validated_wait_events(session, handoff)
-    return handoff, project_wait_state(handoff, events)
 
 
 def _record(

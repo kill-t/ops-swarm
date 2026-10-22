@@ -49,6 +49,23 @@ x-investigation-worker: &investigation-worker
     - no-new-privileges:true
 
 services:
+  human-preparation-worker:
+    <<: *opsswarm-runtime
+    init: true
+    command: [python, -m, opsswarm.investigation.human_prepare.main]
+    restart: unless-stopped
+    stop_grace_period: 2m
+    environment:
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [control]
+
   experience-worker:
     <<: *opsswarm-runtime
     init: true

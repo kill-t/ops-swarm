@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-21。最新完成切片为第 112 步可信人工补充与调查取消，基线为 main 的 `55d70dc`（第 111 步）。本文随第 112 步独立提交保存；实际提交与工作区须以 Git 核对，结果以第 112 步进度记录为准。
+核对日期：2026-10-22。最新完成切片为第 113 步可信人工重评输入准备与就绪诊断，基线为 main 的 `a8b5420`（第 112 步）。本文随第 113 步独立提交保存；实际提交与工作区须以 Git 核对，结果以第 113 步进度记录为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 112 步设计](architecture/112-trusted-human-wait-commands.md) 与 [验收记录](progress/112-trusted-human-wait-commands.md)，再读第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读 [第 113 步设计](architecture/113-human-input-preparation.md) 与 [验收记录](progress/113-human-input-preparation.md)，再读第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -20,11 +20,11 @@
 - Python 3.12、FastAPI、Pydantic 2；PostgreSQL 17、SQLAlchemy 异步、Psycopg 3 与 Alembic；独立调查/验证/经验候选 Worker，业务数据库和 checkpoint 分离。
 - LangGraph 管理固定 v1/v2 图、专业并行与 checkpoint；v3 图 v15 已按持久计划动态执行并综合三轮专业任务，三轮开放假设均形成独立审查和确定性路由，第三轮在冻结上限停止。图 v1～v14 保留各自历史语义。LangChain 管理模型适配及新策略专业工具循环；内部 Harness 已有任务、共享预算、上下文与逐次交互组件，整体仍未完成。
 - 显式启用动态 Worker 后可领取冻结 v3 graph-v15，完成后将父运行置为 await_human/await_candidate，工作项完成并释放租约，父尝试 handed_off。默认仍只领 v1/v2；历史图不自动升级。交接不是旧根因成功或人工 interrupt/resume。动态演练来源 release-500-worker-v1 按事故时间锚定，限 order-service 发布故障，不是现场证据。
-- await_human 支持可信工程师补充与取消、状态及业务审计查询，即使 legacy_local 也必须 Bearer。连续等待版本和完整命令幂等绑定原交接及主体；取消后 run 为 cancelled、Incident 仍 investigating，父工作项/尝试与预算不变。人工材料尚未进入模型，恢复任务与图内 interrupt/resume 尚未实现。
+- await_human 支持可信工程师补充与取消、状态及业务审计查询，即使 legacy_local 也必须 Bearer。连续等待版本和完整命令幂等绑定原交接及主体；取消后 run 为 cancelled、Incident 仍 investigating，父工作项/尝试与预算不变。第 113 步独立准备 Worker 已生成完整待重评输入、材料清单及原预算就绪诊断；人工材料尚未发送模型，实际重评执行与图内 interrupt/resume 尚未实现。
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0068_human_wait_commands`；第 112 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0069_human_input_preparation`；第 113 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -51,6 +51,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 第 111 步把当前图接入显式动态 Worker 能力，新增独立终端 outcome 和不可变交接事实，原子保存当前父尝试、两类等待状态、用量与可重放事件并释放租约。最高轮来源、真实时钟租约、不同快照恢复、并发重放和前后提交崩溃均通过验证；在途调用禁交接由应用与原生守卫校验。旧 complete/数据库拒绝 v3 succeeded；等待继续占用事故活动槽位。新增只读 terminal-handoff 接口与原生状态守卫；对应提交 `55d70dc`。
 
 第 112 步在原交接上增加连续版本人工事件和逐请求业务结果审计。可信工程师可提交最多 15 次有界陈述/约束/问题，或取消本次自动调查；取消生成终态，保留原交接、completed 工作项、handed_off 尝试和共享预算，事故仍 investigating。完整规范命令绑定主体和幂等键，旧成功命令在取消后仍可重放。原始正文与实际授权来源重建校验，业务 404/409 先提交审计；父工作项锁、等锁后及提交前凭据期限检查覆盖并发与回滚。原生守卫、历史交接读取/重放和保守降级均通过，人工材料不是工具证据，尚未进入模型。
+
+第 113 步在第 112 步（提交 `a8b5420`）之上增加可信 prepare 命令、独立持久准备任务/尝试及 Worker。完整输入绑定原交接、最高终端轮次的成功审查材料和全部可信人工补充，保留约束与来源，必要材料超窗明确阻断。不可变工件保存输入、材料清单和原预算诊断；查询重算当前适用性，历史工件不因后续补充、取消或时间经过而改写。每等待版本一个任务、最多三次尝试，租约接管、写后过期回滚、可信审计及原生闭环通过。准备不预留预算、不发送模型请求、不改变旧 run/work/attempt 或 checkpoint。
 
 ## 5. 当前能力与限制
 
@@ -124,7 +126,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 110 步在单次 v3 来源遍历中复用成功的计划、假设、审查及路由 DTO；命中前以有界行版本和完整集合重查动态来源，包括冻结经验审核授权，变化即拒绝。每次业务操作、会话、事务及 savepoint 都重新核验，不缓存父租约或授权决定。两种冻结三轮路径连同跨租约 checkpoint 恢复分别约 77/100 秒，保持 13 次模型及 6 次工具账本，通过 180 秒、25,000 条业务 SQL 上界；该记录补齐第 109 步同类实验的超时缺口，不修改历史试验结果。
 
-尚未完成：更多负载性能验收；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；人工材料上下文消费与持久恢复；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。人工等待已支持补充与取消，但没有恢复任务或候选执行；graph-v15 已到 END，历史业务审批不等于 LangGraph interrupt/resume。
+尚未完成：更多负载性能验收；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；人工输入实际模型重评与共享账本新阶段归属；候选结论与规划 Agent、多步骤处置及验证失败回流；复杂场景工作台和完整工程版发布。人工等待已支持补充、取消和完整输入准备任务，但没有实际模型重评或候选执行；graph-v15 已到 END，历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
@@ -157,6 +159,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 | [follow_up_planning/policy.py](../src/opsswarm/investigation/follow_up_planning/policy.py)、[follow_up_planning/service.py](../src/opsswarm/investigation/follow_up_planning/service.py)、[coordination/persistence.py](../src/opsswarm/investigation/coordination/persistence.py) | 完整补查建议的确定性下一轮编译、按来源轮次限制图能力、计划/轮次/任务原子提交与恢复；图 v11 已创建第三轮待执行任务 |
 | [worker/processor.py](../src/opsswarm/worker/processor.py)、[worker/task_graph.py](../src/opsswarm/worker/task_graph.py)、[worker/dynamic_processor.py](../src/opsswarm/worker/dynamic_processor.py)、[worker/dynamic_factory.py](../src/opsswarm/worker/dynamic_factory.py) | 保留 v1/v2，显式分派当前冻结 v3、稳定演练快照与 checkpoint 恢复 |
 | [handoff/persistence.py](../src/opsswarm/investigation/handoff/persistence.py)、[handoff/tables.py](../src/opsswarm/investigation/handoff/tables.py) | 重建最高轮终端来源、精确幂等交接、父尝试结算与租约释放；等待不授予执行资格 |
+| [human_prepare/store.py](../src/opsswarm/investigation/human_prepare/store.py)、[job_store.py](../src/opsswarm/investigation/human_prepare/job_store.py)、[source.py](../src/opsswarm/investigation/human_prepare/source.py)、[builder.py](../src/opsswarm/investigation/human_prepare/builder.py)、[queries.py](../src/opsswarm/investigation/human_prepare/queries.py)、[main.py](../src/opsswarm/investigation/human_prepare/main.py) | 可信准备命令、独立租约任务、最高轮来源、完整输入/清单和原预算诊断；CLI/Compose Worker 实际运行纯组装，不执行模型重评 |
 | [human_wait/store.py](../src/opsswarm/investigation/human_wait/store.py)、[policy.py](../src/opsswarm/investigation/human_wait/policy.py)、[validation.py](../src/opsswarm/investigation/human_wait/validation.py)、[authorization.py](../src/opsswarm/investigation/human_wait/authorization.py) | 有界可信补充/取消、等待版本、幂等与业务结果审计；重建原始正文/授权/连续事件，取消后历史交接兼容；不消费上下文或创建恢复任务 |
 | [telemetry_mcp](../src/opsswarm/telemetry_mcp)、[telemetry_metrics_mcp](../src/opsswarm/telemetry_metrics_mcp) | 日志与指标各自的单工具严格契约、独立 Streamable HTTP 服务、固定端点客户端与双重范围校验；原日志协议保持冻结 |
 | [live.py](../src/opsswarm/investigation/live.py)、[live_window.py](../src/opsswarm/investigation/live_window.py) | 按三种持久取证策略选择直连、仅日志 MCP 或日志与指标 MCP；变更保持原适配器且不允许失败回退 |
@@ -171,7 +174,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 113 步：**未取消等待的可信人工输入消费与显式恢复任务**。先固定精确输入快照与系统约束、后续任务及尝试身份、预算续接/过期处理、图和阶段版本及失败路径，再交付可运行恢复。现有 graph-v15 已到 END，不能当作人工 interrupt；不静默升级旧 checkpoint、不恢复旧审批、不清零额度。第 112 步只完成补充/取消命令，不能据此宣称已有图内恢复。
+第 114 步：**复用准备输入的有界模型重评与共享账本阶段归属**。第 113 步已冻结完整输入并诊断原预算，但现有账本的调用归属、预留和结算仍绑定旧 running 父租约。下一片先设计独立执行任务/尝试在同一账本中的租约入口、固定模型操作、上下文与结果版本，再实现调用前的精确等待核验和累计预算预留。不得重开 handed_off 尝试或另建额度。原 deadline 过期必须停止；预算追加需另行设计可审计命令。旧 graph-v15 已 END，不当作 interrupt，不覆盖旧结论、升级旧 checkpoint 或沿用旧审批。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -179,7 +182,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`；第 112 步去重验收 1,839 项 Python 测试（单元/API 1,533、全迁移 251、动态交接及旧 Worker/仓储/任务图 55）通过，另有两项并发回归复跑通过但不重复计数，命令和耗时见进度记录。Ruff/格式覆盖 668 个文件，mypy 检查 368 个源文件，前端 typecheck 通过；metadata、空库往返和唯一 head 验证通过。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动隔离 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环。
+使用仓库 `.venv/Scripts/`；第 113 步去重验收 1,868 项 Python 测试通过：全量单元/API 1,577、全迁移 264、共享预算仓储/运行器/图 25，以及全量收集后新增并单独复跑通过的两个来源异常分类用例。新增纯规则 32 项和 API/Worker 14 项均已单独复核，不重复计数；命令与耗时见进度记录。Ruff 检查通过、685 个文件格式一致，mypy 检查 381 个源文件通过；metadata、空库往返、唯一 head、CLI help、Compose config 与文档链接通过。本片未修改前端，未重跑前端检查。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动隔离 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker。Windows 使用 Selector 事件循环。
 
 ```powershell
 git status --short
@@ -191,10 +194,10 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 112 步主要测试入口为 [可信人工 API](../tests/api/test_human_wait_api.py)、[人工等待迁移](../tests/integration/test_human_wait_migration.py) 与 [纯规则](../tests/unit/investigation/test_human_wait_policy.py)；第 111 步 [动态交接](../tests/integration/test_dynamic_worker_handoff.py) 同轮回归。仍未重跑所有动态历史图的慢速场景；测试夹具和 SDK 假传输不是现场或真实模型验收。`output/` 是未跟踪用户目录，不属于本片读取、静态检查或提交范围。
+第 113 步主要测试入口为 [准备 API/Worker](../tests/api/test_human_preparation_api.py)、[正式迁移](../tests/integration/test_human_preparation_migration.py) 与 [纯规则](../tests/unit/investigation/test_human_preparation.py)。旧人工命令、预算仓储/运行器/图均在本轮回归；第三轮最高来源准备前后保持 13 次原模型预留。仍未重跑所有动态历史图的慢速场景；测试夹具和 SDK 假传输不是现场或真实模型验收。`output/` 是未跟踪用户目录，不属于本片功能或提交范围。
 
 动态池默认关闭。开启需要 frozen、function_calling 模型，建议处理 240 秒、租约 300 秒、停止宽限 5m；运行建议显式 max_model_calls=16、max_duration_seconds=900 及足够模型预算。旧默认 300 秒总时限不因 Worker 参数变化而延长；具体命令见 README，未升级用户 Compose 数据库。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引及第 112 步设计/验收，核对 Git、实际代码和 0068_human_wait_commands。当前冻结 v3 graph-v15 可由显式 Worker 接管并持久交接；await_human 已有可信有界补充、取消、版本幂等及独立业务审计，取消后事故仍 investigating，原预算和历史交接保留。下一片针对未取消等待推进人工输入消费与显式恢复任务，先固定输入快照、后续任务、预算续接/过期处理和图/阶段兼容边界。人工材料不是工具证据，现有 END 不是 interrupt，不静默升级旧图、不清零额度或沿用旧审批。
+> 请阅读 AGENTS.md、项目状态、进度索引及第 113 步设计/验收，核对 Git、实际代码和 0069_human_input_preparation。可信人工补充/取消及完整输入准备已实现，独立准备 Worker 不调用模型；历史工件与当前可用性分开，新输入/取消使旧输入 stale，原 deadline 过期会 blocked。下一片 114 为独立重评任务/尝试设计同一共享账本的新阶段归属，复用准备输入，先重验等待版本、租约及所有累计额度再有界调用，独立保存重评结果。不得重开旧 handed_off 尝试、清零预算、另建额度或把已 END 的 graph-v15 当 interrupt。人工材料不是工具证据，不继承旧审批。

@@ -41,7 +41,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 @pytest_asyncio.fixture
-async def wait_context(database_session_factory, migrated_database_url, checkpoint_database_url):
+async def wait_context(
+    database_session_factory, migrated_database_url, checkpoint_database_url, request
+):
     db = database_session_factory
     clock = TaskClock()
     settings = auth_settings()
@@ -66,12 +68,15 @@ async def wait_context(database_session_factory, migrated_database_url, checkpoi
     await initialize_checkpoint_schema(checkpoint_database_url)
     store, started = await setup_run(db)
     claimed = await claim(store, clock)
+    replies = ReviewReplies(db, (EvidenceKind.LOG,), route_case="human")
+    if getattr(request, "param", None) == "three_round":
+        from tests.integration.test_dynamic_third_round_routing_graph import (
+            ThirdRoundRoutingReplies,
+        )
+
+        replies = ThirdRoundRoutingReplies(db, third_route_case="round_limit")
     async with (
-        httpx2.AsyncClient(
-            transport=httpx2.MockTransport(
-                ReviewReplies(db, (EvidenceKind.LOG,), route_case="human")
-            )
-        ) as model_client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(replies)) as model_client,
         open_checkpoint_saver(checkpoint_database_url) as saver,
     ):
         outcome = await make_processor(db, model_client, saver, clock).process(
