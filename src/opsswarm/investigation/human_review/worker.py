@@ -29,6 +29,8 @@ class HumanReviewWorker:
         self._factory, self._worker_id = model_factory, worker_id
 
     async def run_once(self) -> bool:
+        if await self._store.route_next():
+            return True
         claim = await self._store.claim_next(worker_id=self._worker_id)
         if claim is None:
             return False

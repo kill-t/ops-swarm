@@ -82,6 +82,7 @@ TRUSTED_OPERATIONS = frozenset(
         "get_operator_identity",
         "reassess_investigation_human_input",
         "get_investigation_human_review",
+        "get_investigation_human_review_route",
         "list_investigation_human_review_commands",
         "prepare_investigation_human_input",
         "get_investigation_human_preparation",

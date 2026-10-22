@@ -25,6 +25,8 @@ from opsswarm.investigation.human_review.tables import (
     HumanReviewJobRow,
     HumanReviewResultRow,
 )
+from opsswarm.investigation.human_routing.persistence import record_route
+from opsswarm.investigation.human_routing.store import HumanRoutingStore
 from opsswarm.investigation.human_wait.state import load_wait_state, lock_wait_run
 from opsswarm.investigation.persistence.lease import normalized_now
 from opsswarm.investigation.persistence.tables import InvestigationRunRow, WorkItemRow
@@ -36,9 +38,13 @@ class HumanReviewJobStore:
         self, factory: async_sessionmaker[AsyncSession], *, clock: Callable[[], datetime] = utc_now
     ) -> None:
         self._factory, self._clock = factory, clock
+        self._routing = HumanRoutingStore(factory, clock=clock)
 
     def _now(self) -> datetime:
         return normalized_now(self._clock)
+
+    async def route_next(self) -> bool:
+        return await self._routing.record_next()
 
     async def claim_next(
         self, *, worker_id: str, lease_duration: timedelta = timedelta(seconds=600)
@@ -183,6 +189,7 @@ class HumanReviewJobStore:
             attempt.status, attempt.finished_at = "succeeded", now
             _finish_job(job, "succeeded", now, None)
             await session.flush()
+            await record_route(session, job, run, clock=self._clock)
             if deadline is None or self._now() >= deadline:
                 raise HumanReviewError("human_review_lease_lost", "重评提交阶段租约已过期")
             remaining_time(source.call_budget, source.started_at, self._now())

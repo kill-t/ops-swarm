@@ -90,6 +90,7 @@ from opsswarm.investigation.human_prepare.store import HumanPreparationStore
 from opsswarm.investigation.human_review.api import create_human_review_router
 from opsswarm.investigation.human_review.contracts import HumanReviewError
 from opsswarm.investigation.human_review.store import HumanReviewStore
+from opsswarm.investigation.human_routing.contracts import HumanRoutingError
 from opsswarm.investigation.human_wait.api import create_human_wait_router
 from opsswarm.investigation.human_wait.contracts import HumanWaitError
 from opsswarm.investigation.human_wait.store import HumanWaitStore
@@ -365,8 +366,11 @@ def create_app(
             ),
         )
 
+    @app.exception_handler(HumanRoutingError)
     @app.exception_handler(HumanReviewError)
-    async def handle_human_review_error(_: Request, error: HumanReviewError) -> JSONResponse:
+    async def handle_human_review_error(
+        _: Request, error: HumanReviewError | HumanRoutingError
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,
             content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(

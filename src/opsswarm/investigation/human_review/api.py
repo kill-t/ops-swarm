@@ -13,6 +13,7 @@ from opsswarm.investigation.human_review.contracts import (
     ReassessCommand,
 )
 from opsswarm.investigation.human_review.store import HumanReviewStore
+from opsswarm.investigation.human_routing.contracts import HumanRoutingView
 
 
 def get_store(request: Request) -> HumanReviewStore:
@@ -72,5 +73,11 @@ def create_human_review_router() -> APIRouter:
         run_id: UUID, preparation_id: UUID, job_id: UUID, store: StoreDependency
     ) -> HumanReviewJobView:
         return await store.get(run_id, preparation_id, job_id)
+
+    @router.get("/{job_id}/route")
+    async def get_investigation_human_review_route(
+        run_id: UUID, preparation_id: UUID, job_id: UUID, store: StoreDependency
+    ) -> HumanRoutingView:
+        return await store.get_route(run_id, preparation_id, job_id)
 
     return router

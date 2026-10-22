@@ -36,6 +36,8 @@ from opsswarm.investigation.human_review.tables import (
     HumanReviewCommandRow,
     HumanReviewJobRow,
 )
+from opsswarm.investigation.human_routing.contracts import HumanRoutingView
+from opsswarm.investigation.human_routing.store import HumanRoutingStore
 from opsswarm.investigation.human_wait.contracts import HumanWaitError
 from opsswarm.investigation.human_wait.state import load_wait_state, lock_wait_run
 from opsswarm.investigation.persistence.lease import normalized_now
@@ -289,6 +291,11 @@ class HumanReviewStore:
             if job is None:
                 raise HumanReviewError("human_review_job_not_found", "重评任务不存在", 404)
             return await read_job(session, job, run, clock=self._clock)
+
+    async def get_route(self, run_id: UUID, preparation_id: UUID, job_id: UUID) -> HumanRoutingView:
+        return await HumanRoutingStore(self._factory, clock=self._clock).get(
+            run_id, preparation_id, job_id
+        )
 
     async def list_commands(
         self, run_id: UUID, preparation_id: UUID, *, after_cursor: int = 0, limit: int = 50

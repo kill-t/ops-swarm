@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 115 步增加可信只读 `GET /api/v1/investigations/{run_id}/human-wait/preparations/{preparation_id}/reassessments/{job_id}/route`，区分不可变意图与 pending/current/stale 当前适用性。意图尚未分派，不改变原运行状态或授权。详见 [重评后续路由](115-human-reassessment-routing.md)。
+
 第 114 步增加 [可信人工输入实际重评](114-human-input-reassessment.md)：可信命令创建独立任务/尝试，在原共享账本预留并实际消费完整输入，独立保存意见；取消/迟到隔离与成功调用复用通过。迁移为 `0070_human_input_reassessment`，原预算与旧图保持，意见没有后续路由或执行资格。
 
 第 113 步增加 [可信人工重评输入准备](113-human-input-preparation.md)：可信工程师 `POST /api/v1/investigations/{run_id}/human-wait/preparations` 创建精确等待版本的独立准备任务，首次 201、完整命令重放 200、业务冲突 409、未知运行 404。`GET /preparations/{job_id}` 返回完整待重评输入与历史/当前诊断，`GET /preparations/commands` 游标查询业务结果；三个入口始终要求 Bearer。准备就绪不等于恢复执行或预算预留。

@@ -68,7 +68,12 @@ async def wait_context(
     await initialize_checkpoint_schema(checkpoint_database_url)
     store, started = await setup_run(db)
     claimed = await claim(store, clock)
-    replies = ReviewReplies(db, (EvidenceKind.LOG,), route_case="human")
+    replies = ReviewReplies(
+        db,
+        (EvidenceKind.LOG,),
+        route_case="human",
+        synthesis_counter_evidence=getattr(request, "param", None) != "human_clean",
+    )
     if getattr(request, "param", None) == "three_round":
         from tests.integration.test_dynamic_third_round_routing_graph import (
             ThirdRoundRoutingReplies,

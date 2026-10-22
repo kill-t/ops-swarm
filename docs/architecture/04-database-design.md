@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 115 步增加不可变 `investigation_human_review_routes`，迁移 `0071_human_reassessment_routing`；精确绑定成功重评、原准备来源与等待版本，保存确定性意图和原共享预算快照。详见 [重评后续路由](115-human-reassessment-routing.md)。
+
 第 114 步增加 [可信人工输入实际重评](114-human-input-reassessment.md)：可信命令创建独立任务/尝试，在原共享账本预留并实际消费完整输入，独立保存意见；取消/迟到隔离与成功调用复用通过。迁移为 `0070_human_input_reassessment`，原预算与旧图保持，意见没有后续路由或执行资格。
 
 第 113 步增加 [可信人工重评输入准备](113-human-input-preparation.md)，迁移为 `0069_human_input_preparation`：准备任务、独立尝试、不可变输入工件及逐请求业务结果四表，精确绑定交接与人工事件前缀；固定来源、授权正文与延迟成功闭环保护原子提交，有事实拒绝降级。旧运行、租约、调用账本与 checkpoint 不修改，准备就绪不等于恢复执行。

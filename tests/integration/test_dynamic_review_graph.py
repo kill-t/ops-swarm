@@ -43,11 +43,13 @@ class ReviewReplies:
         *,
         route_case: str | None = None,
         allow_follow_up_review: bool = False,
+        synthesis_counter_evidence: bool = True,
     ) -> None:
         self.professionals = DynamicReplies(db, proposal_for(*roles))
         self.calls = CallBudgetQueries(db)
         self.route_case = route_case
         self.allow_follow_up_review = allow_follow_up_review
+        self.synthesis_counter_evidence = synthesis_counter_evidence
         self.synthesis_inputs = []
         self.review_inputs = []
 
@@ -66,7 +68,9 @@ class ReviewReplies:
                     "confidence": 0.72,
                     "supporting_evidence_ids": evidence_ids[:1],
                     "counter_evidence_ids": (
-                        [] if self.route_case == "candidate" else evidence_ids[1:2]
+                        []
+                        if self.route_case == "candidate" or not self.synthesis_counter_evidence
+                        else evidence_ids[1:2]
                     ),
                     "unresolved_questions": ["是否存在尚未调查的竞争性解释？"],
                 },

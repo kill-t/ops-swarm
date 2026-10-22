@@ -70,8 +70,8 @@ class RecordingModel:
         return self.result
 
 
-async def prepared_context(c):
-    response = await post(c, command(c))
+async def prepared_context(c, *, items=None):
+    response = await post(c, command(c, **({"items": items} if items is not None else {})))
     assert response.status_code == 201, response.text
     created = await prepare(c)
     assert created.status_code == 201, created.text

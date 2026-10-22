@@ -190,13 +190,14 @@ async def validated_call(
     return call
 
 
-async def read_job(
+async def read_job_packet(
     session: AsyncSession,
     job: HumanReviewJobRow,
     run: InvestigationRunRow,
     *,
     clock: Callable[[], datetime],
-) -> HumanReviewJobView:
+) -> tuple[HumanReviewJobView, PreparationSource]:
+    """一次来源核验同时供意见查询与后续路由使用，不跨事务缓存。"""
     source, artifact, availability = await job_source(session, job, run, clock=clock)
     attempts = list(
         await session.scalars(
@@ -234,7 +235,7 @@ async def read_job(
         if result
         else "pending"
     )
-    return HumanReviewJobView.model_validate(
+    view = HumanReviewJobView.model_validate(
         {
             **{
                 k: getattr(job, k)
@@ -259,3 +260,15 @@ async def read_job(
         },
         from_attributes=True,
     )
+    return view, source
+
+
+async def read_job(
+    session: AsyncSession,
+    job: HumanReviewJobRow,
+    run: InvestigationRunRow,
+    *,
+    clock: Callable[[], datetime],
+) -> HumanReviewJobView:
+    view, _ = await read_job_packet(session, job, run, clock=clock)
+    return view
