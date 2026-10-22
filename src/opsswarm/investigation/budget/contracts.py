@@ -47,6 +47,7 @@ class CallOperation(StrEnum):
     ANALYZE_CHANGE = "analyze_change"
     SYNTHESIZE = "synthesize"
     REVIEW = "review"
+    HUMAN_REVIEW = "human_review"
     READ_LOG_EVIDENCE = "read_log_evidence"
     READ_METRIC_EVIDENCE = "read_metric_evidence"
     READ_CHANGE_EVIDENCE = "read_change_evidence"
@@ -59,6 +60,9 @@ class CallReservationRecord(TaskModel):
     id: UUID
     investigation_run_id: UUID
     investigation_attempt_id: UUID
+    human_review_attempt_id: UUID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     task_id: UUID | None
     task_attempt_id: UUID | None
     sequence: int

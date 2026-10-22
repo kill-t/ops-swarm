@@ -383,6 +383,29 @@ Invoke-RestMethod -Uri "$waitUrl/preparations/commands?limit=20" -Headers $waitH
 
 使用 Compose 时可启动 `human-preparation-worker`，它仅使用业务数据库；需要先构建当前运行镜像并执行最新迁移。每等待版本最多一个准备任务、每任务最多三次尝试，租约默认 600 秒且不会延长原运行 deadline。后续补充或取消使旧输入 stale，历史工件仍可查询。实际模型重评和共享账本的新阶段归属仍待后续实现，不能重跑原 graph-v15 代替恢复。
 
+第 114 步增加 [实际人工重评](docs/architecture/114-human-input-reassessment.md)。工程师必须另行提交显式重评命令；准备就绪本身不会调用模型。准备 GET 响应提供 `artifact_sha256` 完整工件散列，命令须精确绑定该散列与最新等待版本：
+
+```powershell
+$preparedView = Invoke-RestMethod -Uri "$waitUrl/preparations/$($preparation.job.id)" -Headers $waitHeaders
+$waitState = Invoke-RestMethod -Uri $waitUrl -Headers $waitHeaders
+$reviewCommand = @{
+  action = "reassess"
+  handoff_id = $waitState.handoff_id
+  source_sha256 = $waitState.source_sha256
+  expected_wait_version = $waitState.state_version
+  preparation_sha256 = $preparedView.artifact_sha256
+  idempotency_key = [guid]::NewGuid().ToString()
+  reason = "按完整人工约束进行独立重评"
+} | ConvertTo-Json
+$reviewUrl = "$waitUrl/preparations/$($preparation.job.id)/reassessments"
+$reviewJob = Invoke-RestMethod -Method Post -Uri $reviewUrl -Headers $waitHeaders -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($reviewCommand))
+uv run python -m opsswarm.investigation.human_review.main --once
+Invoke-RestMethod -Uri "$reviewUrl/$($reviewJob.job.id)" -Headers $waitHeaders
+Invoke-RestMethod -Uri "$reviewUrl/commands?limit=20" -Headers $waitHeaders
+```
+
+Worker 模型、输出方式、价格和 profile 必须匹配原运行的固定配置，SDK 重试关闭；新调用继续使用原共享账本与原 deadline。CLI 从环境变量加载配置。Compose 可显式启用 `human-reassessment` profile 并启动 `human-review-worker`；需先构建当前镜像、执行最新迁移并配置相同模型。调用前预留累计次数、Token 与费用，返回后再次校验；未知或超预留用量不归零。补充、取消或租约失效后的结果不会发布，失联预留记 unknown；每任务最多三次尝试，成功调用可跨尝试复用。结果独立保存，原假设、审查、图和审批保持历史；本片没有后续路由或执行资格。
+
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 
 每次领取都创建 `investigation_attempts`，成功、失败或租约过期后结算。只读查询：

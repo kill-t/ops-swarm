@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 114 步增加 [可信人工输入实际重评](114-human-input-reassessment.md)：可信命令创建独立任务/尝试，在原共享账本预留并实际消费完整输入，独立保存意见；取消/迟到隔离与成功调用复用通过。迁移为 `0070_human_input_reassessment`，原预算与旧图保持，意见没有后续路由或执行资格。
+
 第 113 步增加 [可信人工重评输入准备](113-human-input-preparation.md)，迁移为 `0069_human_input_preparation`：准备任务、独立尝试、不可变输入工件及逐请求业务结果四表，精确绑定交接与人工事件前缀；固定来源、授权正文与延迟成功闭环保护原子提交，有事实拒绝降级。旧运行、租约、调用账本与 checkpoint 不修改，准备就绪不等于恢复执行。
 
 第 112 步增加 `investigation_human_wait_events` 连续版本事件与 `investigation_human_wait_commands` 逐请求业务审计，迁移为 `0068_human_wait_commands`。补充保持等待，可信取消使父运行 cancelled；原交接、work 与 handed_off 尝试保留。原始有界正文与授权散列绑定，成功事实及业务拒绝独立审计；来源外键、不可变、连续版本和延迟双向状态守卫保护原子提交，有事实拒绝降级。详见 [人工等待命令](112-trusted-human-wait-commands.md)。

@@ -1,6 +1,9 @@
 """从有界预留账本读取预算状态，不推断供应商用量。"""
 
+from __future__ import annotations
+
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import select
@@ -29,6 +32,9 @@ from opsswarm.investigation.loop.contracts import (
 )
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+
+if TYPE_CHECKING:
+    from opsswarm.investigation.human_prepare.contracts import PreparationManifest
 
 
 class CallBudgetQueries:
@@ -64,7 +70,8 @@ class CallBudgetQueries:
 
     async def get_interaction(self, run_id: UUID, call_id: UUID) -> CallInteraction:
         async with self._factory() as session:
-            if await session.get(InvestigationRunRow, run_id) is None:
+            run = await session.get(InvestigationRunRow, run_id)
+            if run is None:
                 raise InvestigationRunNotFound(run_id)
             row = await session.scalar(
                 select(CallReservationRow).where(
@@ -74,6 +81,8 @@ class CallBudgetQueries:
             )
             if row is None:
                 raise TaskFactConflict("call_interaction_not_found", "该运行不存在指定调用")
+            if row.operation == "human_review":
+                await _human_review_manifest(session, run, row)
             return CallInteraction.model_validate(
                 {
                     "investigation_run_id": run_id,
@@ -83,7 +92,9 @@ class CallBudgetQueries:
                 }
             )
 
-    async def get_context_manifest(self, run_id: UUID, call_id: UUID) -> ContextManifest | None:
+    async def get_context_manifest(
+        self, run_id: UUID, call_id: UUID
+    ) -> ContextManifest | PreparationManifest | None:
         async with self._factory() as session:
             run = await session.get(InvestigationRunRow, run_id)
             if run is None:
@@ -99,6 +110,8 @@ class CallBudgetQueries:
             await _validate_experience_context(session, run, row)
             if row.context_manifest is None:
                 return None
+            if row.operation == "human_review":
+                return await _human_review_manifest(session, run, row)
             manifest = ContextManifest.model_validate(row.context_manifest)
             if (
                 manifest.investigation_run_id != run_id
@@ -112,6 +125,9 @@ class CallBudgetQueries:
 async def _validate_experience_context(
     session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
 ) -> None:
+    if row.operation == "human_review":
+        await _human_review_manifest(session, run, row)
+        return
     if row.operation != "coordinate" or run.coordination_experience_policy_version is None:
         return
     # 历史调用查询也复核冻结工件，但不要求调用成功，失败预留同样是审计事实。
@@ -172,3 +188,33 @@ async def read_budget_snapshot(
         if model_policy
         else None,
     )
+
+
+async def _human_review_manifest(
+    session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
+) -> PreparationManifest:
+    from opsswarm.investigation.human_review.queries import job_source
+    from opsswarm.investigation.human_review.store import utc_now
+    from opsswarm.investigation.human_review.tables import HumanReviewAttemptRow, HumanReviewJobRow
+
+    attempt = (
+        await session.get(HumanReviewAttemptRow, row.human_review_attempt_id)
+        if row.human_review_attempt_id
+        else None
+    )
+    job = await session.get(HumanReviewJobRow, attempt.job_id) if attempt else None
+    if job is None:
+        raise TaskFactConflict("human_review_context_invalid", "重评调用缺少真实阶段身份")
+    source, artifact, _ = await job_source(session, job, run, clock=utc_now)
+    prepared = artifact.prepared_input
+    if (
+        row.investigation_run_id != run.id
+        or row.investigation_attempt_id != source.handoff.investigation_attempt_id
+        or prepared.model_input is None
+        or prepared.allocation is None
+        or row.model_input != prepared.model_input.model_dump(mode="json")
+        or row.context_manifest != prepared.manifest.model_dump(mode="json")
+        or row.model_allocation != prepared.allocation.model_dump(mode="json")
+    ):
+        raise TaskFactConflict("human_review_context_invalid", "重评调用不匹配完整准备材料")
+    return prepared.manifest

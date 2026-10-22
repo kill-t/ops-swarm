@@ -23,44 +23,59 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
-            "((operation IN ('read_log_evidence','read_metric_evidence','read_change_evidence',"
-            "'read_log_runbook','read_metric_runbook','read_change_runbook')) "
-            "= (tool_request IS NOT NULL)) AND "
-            "(tool_request IS NULL OR (jsonb_typeof(tool_request) = 'object' AND "
-            "octet_length(tool_request::text) <= 8192)) AND "
-            "(call_result IS NULL OR (status <> 'reserved' AND "
-            "jsonb_typeof(call_result) = 'object' AND octet_length(call_result::text) <= 65536 AND "
-            "COALESCE(call_result ->> 'kind', '') = kind AND "
-            "((kind = 'model' AND ((operation = 'coordinate' AND "
-            "COALESCE(model_input ->> 'version', '') IN "
+            "(operation='human_review') = (human_review_attempt_id IS NOT NULL)",
+            name="ck_call_reservations_human_owner",
+        ),
+        ForeignKeyConstraint(
+            ["human_review_attempt_id", "investigation_run_id"],
+            [
+                "investigation_human_review_attempts.id",
+                "investigation_human_review_attempts.investigation_run_id",
+            ],
+            name="fk_call_reservations_human_attempt",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "((operation IN ('read_log_evidence','read_metric_evidence',"
+            "'read_change_evidence','read_log_runbook','read_metric_runbook',"
+            "'read_change_runbook')) = (tool_request IS NOT NULL)) AND (tool_request "
+            "IS NULL OR (jsonb_typeof(tool_request) = 'object' AND "
+            "octet_length(tool_request::text) <= 8192)) AND (call_result IS NULL OR "
+            "(status <> 'reserved' AND jsonb_typeof(call_result) = 'object' AND "
+            "octet_length(call_result::text) <= 65536 AND COALESCE(call_result ->> "
+            "'kind', '') = kind AND ((kind = 'model' AND ((operation = 'coordinate' "
+            "AND COALESCE(model_input ->> 'version', '') IN "
             "('coordination-model-input-v1','coordination-experience-input-v1') AND "
-            "COALESCE(call_result ->> 'version', '') = 'coordination-model-result-v1') OR "
-            "(operation = 'synthesize' AND NOT (model_input ? 'version') AND "
             "COALESCE(call_result ->> 'version', '') = "
-            "'open-hypothesis-synthesis-result-v1') OR "
-            "(operation = 'review' AND NOT (model_input ? 'version') AND "
-            "COALESCE(call_result ->> 'version', '') = 'hypothesis-review-result-v1') OR "
-            "(operation NOT IN ('coordinate', 'synthesize', 'review') AND "
-            "COALESCE(model_input ->> 'version', '') IN "
-            "('evidence-loop-input-v1','runbook-loop-input-v1')))) OR "
-            "(kind = 'tool' AND tool_request IS NOT NULL))))",
+            "'coordination-model-result-v1') OR (operation = 'synthesize' AND NOT "
+            "(model_input ? 'version') AND COALESCE(call_result ->> 'version', '') = "
+            "'open-hypothesis-synthesis-result-v1') OR (operation IN ('review', "
+            "'human_review') AND NOT (model_input ? 'version') AND "
+            "COALESCE(call_result ->> 'version', '') = "
+            "'hypothesis-review-result-v1') OR (operation NOT IN ('coordinate', "
+            "'synthesize', 'review', 'human_review') AND COALESCE(model_input ->> "
+            "'version', '') IN ('evidence-loop-input-v1','runbook-loop-input-v1')))) "
+            "OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),
         CheckConstraint(
-            "invocation_index BETWEEN 0 AND 99 AND "
-            "(operation <> 'coordinate' OR invocation_index = 0) AND "
-            "(operation <> 'review' OR invocation_index IN (0, 1, 2))",
+            "invocation_index BETWEEN 0 AND 99 AND (operation <> 'coordinate' OR "
+            "invocation_index = 0) AND (operation <> 'review' OR invocation_index IN "
+            "(0, 1, 2)) AND (operation <> 'human_review' OR invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
-            "idempotency_key = investigation_attempt_id::text || ':' || "
-            "COALESCE(task_attempt_id::text, 'root') || ':' || operation || "
-            "CASE WHEN invocation_index = 0 THEN '' ELSE ':' || invocation_index::text END",
+            "CASE WHEN operation='human_review' THEN idempotency_key='human-review:' "
+            "|| human_review_attempt_id::text ELSE idempotency_key = "
+            "investigation_attempt_id::text || ':' || COALESCE(task_attempt_id::text,"
+            " 'root') || ':' || operation || CASE WHEN invocation_index = 0 THEN '' "
+            "ELSE ':' || invocation_index::text END END",
             name="ck_call_reservations_invocation_key",
         ),
         CheckConstraint(
-            "context_manifest IS NULL OR (model_input IS NOT NULL AND kind = 'model' AND "
-            "jsonb_typeof(context_manifest) = 'object' AND "
+            "context_manifest IS NULL OR (model_input IS NOT NULL AND kind = 'model' "
+            "AND jsonb_typeof(context_manifest) = 'object' AND "
             "octet_length(context_manifest::text) <= 32768)",
             name="ck_call_reservations_context_manifest",
         ),
@@ -78,9 +93,10 @@ class CallReservationRow(Base):
             "jsonb_typeof(model_input) = 'object' AND "
             "octet_length(model_input::text) <= 524288 AND "
             "jsonb_typeof(model_allocation) = 'object' AND "
-            "octet_length(model_allocation::text) <= 8192)) AND "
-            "(model_usage IS NULL OR (model_allocation IS NOT NULL AND status <> 'reserved' AND "
-            "jsonb_typeof(model_usage) = 'object' AND octet_length(model_usage::text) <= 8192))",
+            "octet_length(model_allocation::text) <= 8192)) AND (model_usage IS NULL "
+            "OR (model_allocation IS NOT NULL AND status <> 'reserved' AND "
+            "jsonb_typeof(model_usage) = 'object' AND "
+            "octet_length(model_usage::text) <= 8192))",
             name="ck_call_reservations_model_budget",
         ),
         ForeignKeyConstraint(
@@ -117,19 +133,19 @@ class CallReservationRow(Base):
             name="ck_call_reservations_error",
         ),
         CheckConstraint(
-            "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence', "
-            "'read_metric_evidence', 'read_change_evidence', 'read_log_runbook', "
-            "'read_metric_runbook', 'read_change_runbook') AND kind = 'tool') OR "
-            "(operation IN ('coordinate', 'analyze_log', 'analyze_metric', 'analyze_change', "
-            "'synthesize', 'review') "
-            "AND kind = 'model')",
+            "(operation IN ('query_logs', 'query_metrics', 'list_changes', "
+            "'read_log_evidence', 'read_metric_evidence', 'read_change_evidence', "
+            "'read_log_runbook', 'read_metric_runbook', 'read_change_runbook') AND "
+            "kind = 'tool') OR (operation IN ('coordinate', 'analyze_log', "
+            "'analyze_metric', 'analyze_change', 'synthesize', 'review', "
+            "'human_review') AND kind = 'model')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
-            "(operation IN ('coordinate', 'synthesize', 'review') AND task_id IS NULL AND "
-            "task_attempt_id IS NULL) OR "
-            "(operation NOT IN ('coordinate', 'synthesize', 'review') AND "
-            "task_id IS NOT NULL AND task_attempt_id IS NOT NULL)",
+            "(operation IN ('coordinate', 'synthesize', 'review', 'human_review') "
+            "AND task_id IS NULL AND task_attempt_id IS NULL) OR (operation NOT IN "
+            "('coordinate', 'synthesize', 'review', 'human_review') AND task_id IS "
+            "NOT NULL AND task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
         ),
     )
@@ -139,6 +155,7 @@ class CallReservationRow(Base):
     investigation_attempt_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True), nullable=False
     )
+    human_review_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)

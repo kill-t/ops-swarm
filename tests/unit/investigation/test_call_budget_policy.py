@@ -39,6 +39,7 @@ def test_policy_rejects_invalid_or_unversioned_limits(field, value):
         (CallOperation.ANALYZE_LOG, 12, 0, 0, "model_call_budget_exceeded"),
         (CallOperation.SYNTHESIZE, 12, 0, 0, "model_call_budget_exceeded"),
         (CallOperation.REVIEW, 12, 0, 0, "model_call_budget_exceeded"),
+        (CallOperation.HUMAN_REVIEW, 12, 0, 0, "model_call_budget_exceeded"),
         (CallOperation.QUERY_LOGS, 0, 18, 0, "tool_call_budget_exceeded"),
         (CallOperation.QUERY_METRICS, 0, 0, 6, "task_tool_budget_exceeded"),
     ],
@@ -62,7 +63,13 @@ def test_deadline_and_operation_contract():
         require_capacity(policy, operation, models=0, tools=0, task_tools=0)
         assert operation_kind(operation) in ("model", "tool")
         assert (operation_role(operation) is None) == (
-            operation in (CallOperation.COORDINATE, CallOperation.SYNTHESIZE, CallOperation.REVIEW)
+            operation
+            in (
+                CallOperation.COORDINATE,
+                CallOperation.SYNTHESIZE,
+                CallOperation.REVIEW,
+                CallOperation.HUMAN_REVIEW,
+            )
         )
 
 

@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import and_, exists, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -65,11 +65,44 @@ async def terminal_source(
         .where(AgentTaskRow.investigation_run_id == run.id, AgentTaskRow.status != "succeeded")
         .limit(1)
     )
+    # 已交接后允许真实新阶段请求在途；其归属仍由完整业务链接约束。
+    from opsswarm.investigation.human_prepare.tables import HumanPreparationJobRow
+    from opsswarm.investigation.human_review.tables import HumanReviewAttemptRow, HumanReviewJobRow
+
+    human_owner = exists(
+        select(HumanReviewAttemptRow.id)
+        .join(HumanReviewJobRow, HumanReviewJobRow.id == HumanReviewAttemptRow.job_id)
+        .join(
+            HumanPreparationJobRow,
+            HumanPreparationJobRow.id == HumanReviewJobRow.preparation_job_id,
+        )
+        .join(
+            InvestigationTerminalHandoffRow,
+            InvestigationTerminalHandoffRow.id == HumanPreparationJobRow.handoff_id,
+        )
+        .where(
+            HumanReviewAttemptRow.id == CallReservationRow.human_review_attempt_id,
+            HumanReviewAttemptRow.investigation_run_id == run.id,
+            HumanReviewJobRow.investigation_run_id == run.id,
+            HumanPreparationJobRow.investigation_run_id == run.id,
+            InvestigationTerminalHandoffRow.investigation_run_id == run.id,
+            InvestigationTerminalHandoffRow.investigation_attempt_id
+            == CallReservationRow.investigation_attempt_id,
+            HumanReviewJobRow.policy_version == "human-input-reassessment-v1",
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
             CallReservationRow.investigation_run_id == run.id,
             CallReservationRow.status == "reserved",
+            not_(
+                and_(
+                    CallReservationRow.operation == "human_review",
+                    CallReservationRow.human_review_attempt_id.is_not(None),
+                    human_owner,
+                )
+            ),
         )
         .limit(1)
     )

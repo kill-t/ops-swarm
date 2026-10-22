@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+第 114 步增加 [可信人工输入实际重评](114-human-input-reassessment.md)：可信命令创建独立任务/尝试，在原共享账本预留并实际消费完整输入，独立保存意见；取消/迟到隔离与成功调用复用通过。迁移为 `0070_human_input_reassessment`，原预算与旧图保持，意见没有后续路由或执行资格。
+
 第 113 步增加 [可信人工重评输入准备](113-human-input-preparation.md)：可信工程师 `POST /api/v1/investigations/{run_id}/human-wait/preparations` 创建精确等待版本的独立准备任务，首次 201、完整命令重放 200、业务冲突 409、未知运行 404。`GET /preparations/{job_id}` 返回完整待重评输入与历史/当前诊断，`GET /preparations/commands` 游标查询业务结果；三个入口始终要求 Bearer。准备就绪不等于恢复执行或预算预留。
 
 第 112 步增加 `GET /api/v1/investigations/{run_id}/human-wait` 和 `/human-wait/commands` 状态/命令审计查询、`POST /human-wait/supplements` 与 `/human-wait/cancel`。四个入口始终要求可信 Bearer；写入限工程师，绑定精确交接、等待版本和幂等键，首次 201、重放 200、冲突 409、未知运行 404。原始正文最多 64 KiB，拒绝结果与授权准入分开保存。只实现补充与取消，恢复执行后置。详见 [人工等待命令](112-trusted-human-wait-commands.md)。

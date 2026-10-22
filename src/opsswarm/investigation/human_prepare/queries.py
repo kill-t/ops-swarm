@@ -221,6 +221,7 @@ async def read_job(
                 PreparationAttemptView.model_validate(a, from_attributes=True) for a in attempts
             ),
             "artifact": artifact,
+            "artifact_sha256": stored.content_sha256 if stored is not None else None,
             "availability": availability,
             "availability_reason": reason,
         }

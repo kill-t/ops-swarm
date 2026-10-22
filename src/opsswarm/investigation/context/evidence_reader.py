@@ -40,6 +40,8 @@ class ContextEvidenceReader:
             raise TaskFactConflict("context_evidence_corrupt", "调用清单无法校验") from None
         if manifest is None:
             return None
+        if not isinstance(manifest, ContextManifest):
+            raise TaskFactConflict("context_evidence_unavailable", "人工重评没有专业证据读取权限")
         refs = self._references(manifest)
         ids = {r.material_id for r in refs}
         if (

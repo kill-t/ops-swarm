@@ -148,6 +148,7 @@ class PreparationJobView(HumanWaitModel):
     last_error_code: str | None
     attempts: tuple[PreparationAttemptView, ...] = Field(max_length=3)
     artifact: PreparationArtifact | None
+    artifact_sha256: Hash | None = None
     availability: Literal["pending", "failed", "ready", "blocked", "stale"]
     availability_reason: str | None
 

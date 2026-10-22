@@ -120,6 +120,8 @@ class CallBudgetStore:
         invocation_index: int = 0,
         tool_request: ToolRequest | None = None,
     ) -> CallGrant:
+        if operation == CallOperation.HUMAN_REVIEW:
+            raise TaskFactConflict("call_scope_invalid", "人工重评必须使用独立阶段租约入口")
         if operation == CallOperation.COORDINATE and invocation_index != 0:
             raise TaskFactConflict(
                 "coordination_invocation_invalid", "首轮协调调用的调用序号必须为零"
@@ -289,7 +291,11 @@ class CallBudgetStore:
                     CallReservationRow.investigation_run_id == run_id,
                 )
             )
-            if row is None or row.investigation_attempt_id != parent.id:
+            if (
+                row is None
+                or row.investigation_attempt_id != parent.id
+                or row.human_review_attempt_id is not None
+            ):
                 raise TaskFactConflict("call_reservation_not_owned", "预留不属于当前父尝试")
             if model_usage is not None and row.model_allocation is None:
                 raise TaskFactConflict("model_usage_not_allowed", "该调用没有模型输入预留")
