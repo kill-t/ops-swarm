@@ -23,6 +23,20 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
+            "(operation='evaluate_candidate') = (candidate_attempt_id IS NOT NULL)",
+            name="ck_call_reservations_candidate_owner",
+        ),
+        ForeignKeyConstraint(
+            ["candidate_attempt_id", "investigation_run_id"],
+            [
+                "investigation_candidate_evaluation_attempts.id",
+                "investigation_candidate_evaluation_attempts.investigation_run_id",
+            ],
+            name="fk_call_reservations_candidate_attempt",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
             "(operation='human_review') = (human_review_attempt_id IS NOT NULL)",
             name="ck_call_reservations_human_owner",
         ),
@@ -53,8 +67,11 @@ class CallReservationRow(Base):
             "'open-hypothesis-synthesis-result-v1') OR (operation IN ('review', "
             "'human_review') AND NOT (model_input ? 'version') AND "
             "COALESCE(call_result ->> 'version', '') = "
-            "'hypothesis-review-result-v1') OR (operation NOT IN ('coordinate', "
-            "'synthesize', 'review', 'human_review') AND COALESCE(model_input ->> "
+            "'hypothesis-review-result-v1') OR (operation = 'evaluate_candidate' "
+            "AND NOT (model_input ? 'version') AND COALESCE(call_result ->> "
+            "'version', '') = 'candidate-model-result-v1') OR (operation NOT IN ('coordinate', "
+            "'synthesize', 'review', 'human_review', 'evaluate_candidate') AND "
+            "COALESCE(model_input ->> "
             "'version', '') IN ('evidence-loop-input-v1','runbook-loop-input-v1')))) "
             "OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
@@ -62,12 +79,14 @@ class CallReservationRow(Base):
         CheckConstraint(
             "invocation_index BETWEEN 0 AND 99 AND (operation <> 'coordinate' OR "
             "invocation_index = 0) AND (operation <> 'review' OR invocation_index IN "
-            "(0, 1, 2)) AND (operation <> 'human_review' OR invocation_index = 0)",
+            "(0, 1, 2)) AND (operation NOT IN ('human_review', 'evaluate_candidate') "
+            "OR invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
             "CASE WHEN operation='human_review' THEN idempotency_key='human-review:' "
-            "|| human_review_attempt_id::text ELSE idempotency_key = "
+            "|| human_review_attempt_id::text WHEN operation='evaluate_candidate' THEN "
+            "idempotency_key='candidate:' || candidate_attempt_id::text ELSE idempotency_key = "
             "investigation_attempt_id::text || ':' || COALESCE(task_attempt_id::text,"
             " 'root') || ':' || operation || CASE WHEN invocation_index = 0 THEN '' "
             "ELSE ':' || invocation_index::text END END",
@@ -138,13 +157,15 @@ class CallReservationRow(Base):
             "'read_log_runbook', 'read_metric_runbook', 'read_change_runbook') AND "
             "kind = 'tool') OR (operation IN ('coordinate', 'analyze_log', "
             "'analyze_metric', 'analyze_change', 'synthesize', 'review', "
-            "'human_review') AND kind = 'model')",
+            "'human_review', 'evaluate_candidate') AND kind = 'model')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
-            "(operation IN ('coordinate', 'synthesize', 'review', 'human_review') "
+            "(operation IN ('coordinate', 'synthesize', 'review', 'human_review', "
+            "'evaluate_candidate') "
             "AND task_id IS NULL AND task_attempt_id IS NULL) OR (operation NOT IN "
-            "('coordinate', 'synthesize', 'review', 'human_review') AND task_id IS "
+            "('coordinate', 'synthesize', 'review', 'human_review', 'evaluate_candidate') "
+            "AND task_id IS "
             "NOT NULL AND task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
         ),
@@ -155,6 +176,7 @@ class CallReservationRow(Base):
     investigation_attempt_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True), nullable=False
     )
+    candidate_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     human_review_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))

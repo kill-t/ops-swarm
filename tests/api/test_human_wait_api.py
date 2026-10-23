@@ -70,8 +70,12 @@ async def wait_context(
     claimed = await claim(store, clock)
     replies = ReviewReplies(
         db,
-        (EvidenceKind.LOG,),
-        route_case="human",
+        (EvidenceKind.LOG, EvidenceKind.CHANGE)
+        if getattr(request, "param", None) == "candidate_with_change"
+        else (EvidenceKind.LOG,),
+        route_case="candidate"
+        if getattr(request, "param", None) in {"candidate", "candidate_with_change"}
+        else "human",
         synthesis_counter_evidence=getattr(request, "param", None) != "human_clean",
     )
     if getattr(request, "param", None) == "three_round":

@@ -82,6 +82,9 @@ from opsswarm.incidents import (
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.api import create_call_budget_router
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.candidate.api import create_candidate_router
+from opsswarm.investigation.candidate.contracts import CandidateError
+from opsswarm.investigation.candidate.store import CandidateStore
 from opsswarm.investigation.context.evidence_api import create_context_evidence_router
 from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.human_prepare.api import create_human_preparation_router
@@ -164,6 +167,7 @@ def create_app(
     operator_authorization_store: OperatorAuthorizationStore | None = None,
     human_wait_store: HumanWaitStore | None = None,
     human_preparation_store: HumanPreparationStore | None = None,
+    candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
     experience_store: ExperienceStore | None = None,
     experience_review_store: ExperienceReviewStore | None = None,
@@ -221,6 +225,7 @@ def create_app(
             application.state.call_budget_queries = call_budget_queries
             application.state.human_wait_store = human_wait_store
             application.state.human_preparation_store = human_preparation_store
+            application.state.candidate_store = candidate_store
             application.state.human_review_store = human_review_store
             application.state.experience_store = experience_store
             application.state.experience_review_store = experience_review_store
@@ -241,6 +246,9 @@ def create_app(
         )
         application.state.human_preparation_store = (
             human_preparation_store or HumanPreparationStore(database.session_factory, clock=clock)
+        )
+        application.state.candidate_store = candidate_store or CandidateStore(
+            database.session_factory, clock=clock
         )
         application.state.human_review_store = human_review_store or HumanReviewStore(
             database.session_factory, clock=clock
@@ -310,6 +318,7 @@ def create_app(
     )
     app.state.human_wait_store = human_wait_store
     app.state.human_preparation_store = human_preparation_store
+    app.state.candidate_store = candidate_store
     app.state.human_review_store = human_review_store
     app.state.incident_store = incident_store
     app.state.investigation_store = investigation_store
@@ -329,6 +338,7 @@ def create_app(
     app.include_router(create_human_wait_router())
     app.include_router(create_human_preparation_router())
     app.include_router(create_human_review_router())
+    app.include_router(create_candidate_router())
     app.include_router(create_identity_router())
     app.include_router(create_experience_router())
     app.include_router(create_experience_review_router())
@@ -366,10 +376,11 @@ def create_app(
             ),
         )
 
+    @app.exception_handler(CandidateError)
     @app.exception_handler(HumanRoutingError)
     @app.exception_handler(HumanReviewError)
     async def handle_human_review_error(
-        _: Request, error: HumanReviewError | HumanRoutingError
+        _: Request, error: HumanReviewError | HumanRoutingError | CandidateError
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,

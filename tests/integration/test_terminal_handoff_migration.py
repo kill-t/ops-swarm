@@ -189,6 +189,6 @@ async def test_0067_downgrade_preserves_handoff_events(database_session_factory)
         await asyncio.to_thread(command.downgrade, config(), "0066_coordination_experience")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0071_human_reassessment_routing"
+            "0072_candidate_evaluation"
         )
         assert await session.scalar(text("SELECT count(*) FROM agent_task_events")) == 1

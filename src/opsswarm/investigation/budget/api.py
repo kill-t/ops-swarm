@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.investigation.budget.contracts import CallBudgetSnapshot
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.candidate.contracts import CandidateManifest
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.human_prepare.contracts import PreparationManifest
 from opsswarm.investigation.loop.contracts import AnyModelInput, CallInteraction
@@ -53,14 +54,14 @@ def create_call_budget_router() -> APIRouter:
 
     @router.get(
         "/api/v1/investigations/{run_id}/calls/{call_id}/context-manifest",
-        response_model=ContextManifest | PreparationManifest | None,
+        response_model=ContextManifest | PreparationManifest | CandidateManifest | None,
         responses={404: {"model": ApiErrorResponse}, 422: {"model": ApiErrorResponse}},
     )
     async def read_context_manifest(
         run_id: UUID,
         call_id: UUID,
         request: Request,
-    ) -> ContextManifest | PreparationManifest | None | JSONResponse:
+    ) -> ContextManifest | PreparationManifest | CandidateManifest | None | JSONResponse:
         queries = getattr(request.app.state, "call_budget_queries", None)
         if not isinstance(queries, CallBudgetQueries):
             raise RuntimeError("CallBudgetQueries 尚未初始化")

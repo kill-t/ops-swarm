@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID, uuid5
 
-from sqlalchemy import and_, exists, not_, select
+from sqlalchemy import String, and_, exists, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -91,16 +91,44 @@ async def terminal_source(
             HumanReviewJobRow.policy_version == "human-input-reassessment-v1",
         )
     )
+    from opsswarm.investigation.candidate.tables import CandidateAttemptRow, CandidateJobRow
+
+    candidate_owner = exists(
+        select(CandidateAttemptRow.id)
+        .join(CandidateJobRow, CandidateJobRow.id == CandidateAttemptRow.job_id)
+        .join(
+            InvestigationTerminalHandoffRow,
+            InvestigationTerminalHandoffRow.investigation_run_id
+            == CandidateJobRow.investigation_run_id,
+        )
+        .where(
+            CandidateAttemptRow.id == CallReservationRow.candidate_attempt_id,
+            CandidateAttemptRow.investigation_run_id == run.id,
+            CandidateJobRow.investigation_run_id == run.id,
+            CandidateJobRow.policy_version == "candidate-evaluation-v1",
+            CandidateJobRow.source["handoff"]["id"].astext
+            == InvestigationTerminalHandoffRow.id.cast(String),
+            InvestigationTerminalHandoffRow.investigation_attempt_id
+            == CallReservationRow.investigation_attempt_id,
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
             CallReservationRow.investigation_run_id == run.id,
             CallReservationRow.status == "reserved",
             not_(
-                and_(
-                    CallReservationRow.operation == "human_review",
-                    CallReservationRow.human_review_attempt_id.is_not(None),
-                    human_owner,
+                or_(
+                    and_(
+                        CallReservationRow.operation == "human_review",
+                        CallReservationRow.human_review_attempt_id.is_not(None),
+                        human_owner,
+                    ),
+                    and_(
+                        CallReservationRow.operation == "evaluate_candidate",
+                        CallReservationRow.candidate_attempt_id.is_not(None),
+                        candidate_owner,
+                    ),
                 )
             ),
         )

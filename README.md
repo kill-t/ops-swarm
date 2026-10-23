@@ -412,7 +412,20 @@ Worker 模型、输出方式、价格和 profile 必须匹配原运行的固定�
 Invoke-RestMethod -Uri "$reviewUrl/$($reviewJob.job.id)/route" -Headers $waitHeaders
 ```
 
-响应 `record.decision.route` 区分 `await_human`、`follow_up`、`candidate_evaluation`，固定 `dispatch_status=not_dispatched`。原轮次/任务容量、反证、未解决人工约束、原时限及共享预算都参与判断；完整约束和预算快照可追溯。`availability` 区分 pending/current/stale，`current_blocking_reason_codes` 单独诊断当前预算/约束，不改写历史决定。current 只表示输入仍适用，既不代表已分派，也不授权执行。补充/取消后旧路由保留为 stale；原 run/work/attempt 和 checkpoint 保持，候选评估及预算追加仍待后续。
+响应 `record.decision.route` 区分 `await_human`、`follow_up`、`candidate_evaluation`，固定 `dispatch_status=not_dispatched`。原轮次/任务容量、反证、未解决人工约束、原时限及共享预算都参与判断；完整约束和预算快照可追溯。`availability` 区分 pending/current/stale，`current_blocking_reason_codes` 单独诊断当前预算/约束，不改写历史决定。current 只表示输入仍适用，既不代表已分派，也不授权执行。补充/取消后旧路由保留为 stale；原 run/work/attempt 和 checkpoint 保持，候选评估由下述第 116 步显式消费，预算追加仍待后续。
+
+第 116 步增加 [受限候选评估](docs/architecture/116-candidate-evaluation.md)。原终端交接或当前重评候选路由均可作为来源，工程师须另行提交命令；`source_sha256` 绑定**完整来源记录**散列，而非旧 `source_sha256` 字段。原终端来源为 `source_kind=terminal_handoff`、`expected_wait_version=null`；重评来源为 `human_route` 和精确等待版本。其余字段为 `action=evaluate_candidate`、`source_id`、`idempotency_key`、`reason`。
+
+```powershell
+$candidateUrl = "http://127.0.0.1:8000/api/v1/investigations/$runId/candidate-evaluations"
+# 正文以待评估的完整来源及其规范 JSON 散列构造，使用工程师 Bearer。
+$candidateJob = Invoke-RestMethod -Method Post -Uri $candidateUrl -Headers $waitHeaders -ContentType "application/json" -Body $candidateBody
+uv run python -m opsswarm.investigation.candidate.main --once
+Invoke-RestMethod -Uri "$candidateUrl/$($candidateJob.job.id)" -Headers $waitHeaders
+Invoke-RestMethod -Uri "$candidateUrl/commands" -Headers $waitHeaders
+```
+
+独立 Worker 实际消费完整调查材料、当前审查、人工前缀及固定三项能力目录。模型只提能力与证据，参数、风险与验证规则由候选明确引用的结构化证据推导；不支持或缺参时等待人工，安全候选仅形成 `planning_review`，始终 `execution_eligible=false`。它不创建 ActionPlan/审批，不把开放假设转成既有根因。来源变化、事故关闭、过期或失租后拒绝发布；新阶段真实尝试与旧父来源分别记录，继续共享原预算，成功调用可复用。Compose 可显式启动 `candidate-evaluation` profile 的 `candidate-evaluation-worker`；模型配置要求同原运行，SDK 重试关闭，需使用最新镜像与迁移。未升级用户业务库。
 
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 

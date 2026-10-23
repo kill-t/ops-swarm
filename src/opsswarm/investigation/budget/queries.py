@@ -34,6 +34,7 @@ from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 
 if TYPE_CHECKING:
+    from opsswarm.investigation.candidate.contracts import CandidateManifest
     from opsswarm.investigation.human_prepare.contracts import PreparationManifest
 
 
@@ -81,6 +82,8 @@ class CallBudgetQueries:
             )
             if row is None:
                 raise TaskFactConflict("call_interaction_not_found", "该运行不存在指定调用")
+            if row.operation == "evaluate_candidate":
+                await _candidate_manifest(session, run, row)
             if row.operation == "human_review":
                 await _human_review_manifest(session, run, row)
             return CallInteraction.model_validate(
@@ -94,7 +97,7 @@ class CallBudgetQueries:
 
     async def get_context_manifest(
         self, run_id: UUID, call_id: UUID
-    ) -> ContextManifest | PreparationManifest | None:
+    ) -> ContextManifest | PreparationManifest | CandidateManifest | None:
         async with self._factory() as session:
             run = await session.get(InvestigationRunRow, run_id)
             if run is None:
@@ -110,6 +113,8 @@ class CallBudgetQueries:
             await _validate_experience_context(session, run, row)
             if row.context_manifest is None:
                 return None
+            if row.operation == "evaluate_candidate":
+                return await _candidate_manifest(session, run, row)
             if row.operation == "human_review":
                 return await _human_review_manifest(session, run, row)
             manifest = ContextManifest.model_validate(row.context_manifest)
@@ -125,6 +130,9 @@ class CallBudgetQueries:
 async def _validate_experience_context(
     session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
 ) -> None:
+    if row.operation == "evaluate_candidate":
+        await _candidate_manifest(session, run, row)
+        return
     if row.operation == "human_review":
         await _human_review_manifest(session, run, row)
         return
@@ -218,3 +226,30 @@ async def _human_review_manifest(
     ):
         raise TaskFactConflict("human_review_context_invalid", "重评调用不匹配完整准备材料")
     return prepared.manifest
+
+
+async def _candidate_manifest(
+    session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
+) -> CandidateManifest:
+    from opsswarm.investigation.candidate.queries import job_source
+    from opsswarm.investigation.candidate.store import utc_now
+    from opsswarm.investigation.candidate.tables import CandidateAttemptRow, CandidateJobRow
+
+    attempt = (
+        await session.get(CandidateAttemptRow, row.candidate_attempt_id)
+        if row.candidate_attempt_id
+        else None
+    )
+    job = await session.get(CandidateJobRow, attempt.job_id) if attempt else None
+    if job is None:
+        raise TaskFactConflict("candidate_context_invalid", "候选调用缺少真实阶段身份")
+    source, packet, _ = await job_source(session, job, run, clock=utc_now)
+    if (
+        row.investigation_run_id != run.id
+        or row.investigation_attempt_id != source.handoff.investigation_attempt_id
+        or row.model_input != packet.model_input.model_dump(mode="json")
+        or row.model_allocation != packet.allocation.model_dump(mode="json")
+        or row.context_manifest != packet.manifest.model_dump(mode="json")
+    ):
+        raise TaskFactConflict("candidate_context_invalid", "候选调用不匹配完整冻结输入")
+    return packet.manifest

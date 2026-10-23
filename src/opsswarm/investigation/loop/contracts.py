@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, JsonValue, TypeAdapter
 
 from opsswarm.investigation.budget.model_contracts import ModelInput, TextModelMessage
+from opsswarm.investigation.candidate.output import CandidateModelResult
 from opsswarm.investigation.coordination.contracts import (
     CoordinationModelInput,
     CoordinationModelResult,
@@ -100,6 +101,7 @@ CallResult = (
     | CoordinationModelResult
     | SynthesisModelResult
     | ReviewModelResult
+    | CandidateModelResult
 )
 CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 

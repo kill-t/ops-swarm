@@ -69,6 +69,7 @@ def test_deadline_and_operation_contract():
                 CallOperation.SYNTHESIZE,
                 CallOperation.REVIEW,
                 CallOperation.HUMAN_REVIEW,
+                CallOperation.EVALUATE_CANDIDATE,
             )
         )
 

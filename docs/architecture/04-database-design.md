@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第 116 步实现与边界见 [候选评估意图的受限消费](116-candidate-evaluation.md)：双来源可信准入、独立任务与原共享预算实际模型评估，确定性能力/参数校验，产物不授予执行资格。
+
 第 115 步增加不可变 `investigation_human_review_routes`，迁移 `0071_human_reassessment_routing`；精确绑定成功重评、原准备来源与等待版本，保存确定性意图和原共享预算快照。详见 [重评后续路由](115-human-reassessment-routing.md)。
 
 第 114 步增加 [可信人工输入实际重评](114-human-input-reassessment.md)：可信命令创建独立任务/尝试，在原共享账本预留并实际消费完整输入，独立保存意见；取消/迟到隔离与成功调用复用通过。迁移为 `0070_human_input_reassessment`，原预算与旧图保持，意见没有后续路由或执行资格。
