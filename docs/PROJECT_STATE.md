@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-23。最新完成切片为第 116 步候选评估意图的受限消费，基线为 main 的 `b83312d`（第 115 步）。本文随第 116 步独立提交保存；实际提交与工作区须以 Git 核对，结果以 [第 116 步验收记录](progress/116-candidate-evaluation.md) 为准。
+核对日期：2026-10-24。最新完成切片为第117步候选评估结果的可信规划准入，基线为main的e35a1f0（第116步）。本文随第117步独立提交保存；实际提交与工作区以Git核对，结果以[第117步验收记录](progress/117-candidate-plan-admission.md)为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -24,7 +24,7 @@
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一 head 为 `0072_candidate_evaluation`；第 116 步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0073_candidate_plan_admission`；第117步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -59,6 +59,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 第 115 步在第 114 步（提交 `da93df0`）之上新增重评后续路由。原审查规则与原最高轮/任务数保留，外层按人工 constraint、原截止时间和共享预算最低容量确定等待/补查/候选评估意图，全部 not_dispatched。成功意见和意图原子提交，旧成功结果由原重评 Worker 无模型补齐；work→job→Incident 锁、SKIP LOCKED、有界公平扫描与来源拒绝隔离保护并发。可信 GET 区分历史决定、当前适用性与当前阻断，补充/取消后历史不改。未创建新的补查任务、候选或授权。
 
 第 116 步增加双来源可信候选任务和独立模型评估：来源为原 await_candidate 交接或第 115 步当前候选意图，固定完整记录散列与等待版本。参数、风险和验证规则由候选明确引用的证据构建；产物 planning_review/await_human，始终 execution_eligible=false。独立执行身份、完整来源与上下文、原预算预留和迟到隔离已验收，结果见本片记录；未创建规划、审批或操作，原 run/work/attempt/图保持。
+
+第117步在第116步独立候选结果上增加可信ActionPlan草案准入。原始正文/规范命令/主体及run/job路径精确绑定可信授权；work→job→Incident锁下核验结果hash、等待和事故版本、完整来源、原预算及deadline，不新增模型或工具调用。独立草案保留开放假设、步骤、前置条件和未解问题，固定draft且无审批/执行资格，旧流程按旧表隔离。来源、事故版本或截止变化后历史不改而投影stale，精确重放允许读取；写后时限/凭据过期整体回滚。
 
 ## 5. 当前能力与限制
 
@@ -138,6 +140,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 | 入口 | 边界 |
 | --- | --- |
+| [planning/candidate/store.py](../src/opsswarm/planning/candidate/store.py)、[queries.py](../src/opsswarm/planning/candidate/queries.py)、[policy.py](../src/opsswarm/planning/candidate/policy.py)、[budget.py](../src/opsswarm/planning/candidate/budget.py)、[tables.py](../src/opsswarm/planning/candidate/tables.py) | 可信草案、精确候选/版本/当前性与原预算核验；独立表隔离旧审批执行，固定不可授权 |
 | [candidate/store.py](../src/opsswarm/investigation/candidate/store.py)、[source.py](../src/opsswarm/investigation/candidate/source.py)、[queries.py](../src/opsswarm/investigation/candidate/queries.py)、[evaluation.py](../src/opsswarm/investigation/candidate/evaluation.py)、[job_store.py](../src/opsswarm/investigation/candidate/job_store.py)、[ledger.py](../src/opsswarm/investigation/candidate/ledger.py)、[main.py](../src/opsswarm/investigation/candidate/main.py) | 双来源显式候选命令、固定完整上下文、白名单评估、真实尝试与原预算；产物无执行资格 |
 | [persistence/source_validation.py](../src/opsswarm/investigation/persistence/source_validation.py)、[source_revision.py](../src/opsswarm/investigation/persistence/source_revision.py) | 单次来源遍历复用、行修订门禁、ORM 新鲜度、异常/事务失效与有界结果；不跨操作缓存或替代租约 |
 | [experience/context_store.py](../src/opsswarm/experience/context_store.py)、[context_contracts.py](../src/opsswarm/experience/context_contracts.py) | 首轮协调经验的临时选择、原子冻结与历史恢复；精确引用不可变确认工件，空选择保持冻结 |
@@ -183,7 +186,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第 117 步：**候选评估结果的可信规划准入**。明确候选版本、证据、当前适用性与可信请求绑定，再衔接规划及审批。保留开放假设与旧 RootCause 路径，不通过强制映射或历史审批赋予执行资格。预算追加、补查意图实际分派及图内恢复继续独立推进。
+第118步：**候选草案的可信审批准入与精确来源绑定**。设计独立草案的审批资格、版本/证据/当前适用性复核和新批准摘要，明确与旧审批路径的兼容边界，再进入受控执行；不可借用历史审批或静默把草案变为已批准。原预算追加、补查意图实际分派与图内恢复仍独立推进。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -191,7 +194,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`。第 116 步去重 1,742 项相关 Python 测试通过：全单元 1,401、迁移相关 319、新候选 API/Worker 18、旧重评/路由兼容 4。完整回归、最终原生绑定专项复核、重复项与开发中失败分别记入 [验收记录](progress/116-candidate-evaluation.md)。Ruff 通过、737 文件格式一致、mypy 419 源文件通过；唯一 head 0072；Compose profile 配置与候选 CLI help 通过。本片没有前端改动，也没有部署演示或升级用户业务数据库。数据库测试由 [tests/conftest.py](../tests/conftest.py) 启动隔离 PostgreSQL 17.6 与 checkpoint 数据库，需要 Docker；Windows 使用 Selector 事件循环。
+使用仓库 `.venv/Scripts/`。第117步去重1,827项相关Python测试通过：全单元1,446、迁移363、新草案API 15、旧链路API 3；首轮与重复复核不叠加，详见[验收记录](progress/117-candidate-plan-admission.md)。Ruff通过、751文件格式一致、mypy 428源文件通过；唯一head 0073。本片没有前端、Compose或CLI变更，没有部署演示或升级用户业务库。数据库测试由[tests/conftest.py](../tests/conftest.py)启动隔离PostgreSQL 17.6及checkpoint库，Windows使用Selector事件循环。
 
 ```powershell
 git status --short
@@ -203,10 +206,10 @@ git log -5 --oneline
 git diff --check
 ```
 
-第 116 步主要测试入口为 [候选 API/Worker](../tests/api/test_candidate_evaluation_api.py)、[领域与上下文](../tests/unit/investigation/test_candidate_evaluation.py)、[SDK](../tests/unit/investigation/test_candidate_model.py)、[Worker 假端口](../tests/unit/investigation/test_candidate_worker.py) 与 [正式迁移](../tests/integration/test_candidate_evaluation_migration.py)。未重新运行的历史动态图慢速恢复或完整发布不宣称本轮通过。SDK 假传输和假模型不是现场、生产或付费模型结果。`output/` 是未跟踪用户目录，不属于本片功能或提交范围。
+第117步主要测试入口为[草案API](../tests/api/test_candidate_plan_api.py)、[纯构建规则](../tests/unit/planning/test_candidate_plan.py)、[预算边界](../tests/unit/planning/test_candidate_plan_budget.py)和[原生迁移](../tests/integration/test_candidate_plan_migration.py)。未重新执行完整发布或全部动态图恢复，不把假模型与临时数据库描述为现场/生产验收。`output/`为用户未跟踪目录，本片未读取、未提交。
 
 动态池默认关闭。开启需要 frozen、function_calling 模型，建议处理 240 秒、租约 300 秒、停止宽限 5m；运行建议显式 max_model_calls=16、max_duration_seconds=900 及足够模型预算。旧默认 300 秒总时限不因 Worker 参数变化而延长；具体命令见 README，未升级用户 Compose 数据库。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读 AGENTS.md、项目状态、进度索引及第 116 步设计/验收，核对 Git、实际代码和 0072_candidate_evaluation。双来源候选评估由可信命令和独立 Worker 实际消费，参数只来自候选明确引用的证据，产物始终无执行资格；原 work/handed_off 尝试与图不重开。下一片 117 设计并实现候选结果的可信规划准入，保留开放假设、当前适用性、精确版本与原预算，兼容旧规划/审批路径。不自动追加预算、创建第四轮、沿用旧审批或把已 END 的图当 interrupt。
+> 请阅读AGENTS.md、项目状态、进度索引和第117步设计/验收，核对Git与0073_candidate_plan_admission。双来源候选已经能通过可信显式命令生成独立、可查询的ActionPlan草案，保留原开放假设、证据、前置条件与未解问题，原共享预算不重置。草案固定draft且无审批/执行资格；旧action_plans/steps和旧链路不改，原图不重开。下一片118设计并实现候选草案可信审批准入，明确精确版本/来源/当前性和新的批准摘要，不沿用旧授权，不自动追加预算或把已END图当interrupt。

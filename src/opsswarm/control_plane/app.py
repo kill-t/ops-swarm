@@ -116,6 +116,9 @@ from opsswarm.planning import (
     UnsafeRollbackTarget,
     UnsupportedPlanningRootCause,
 )
+from opsswarm.planning.candidate.api import create_candidate_plan_router
+from opsswarm.planning.candidate.contracts import PlanError
+from opsswarm.planning.candidate.store import CandidatePlanStore
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.reports import (
     IncidentReportError,
@@ -167,6 +170,7 @@ def create_app(
     operator_authorization_store: OperatorAuthorizationStore | None = None,
     human_wait_store: HumanWaitStore | None = None,
     human_preparation_store: HumanPreparationStore | None = None,
+    candidate_plan_store: CandidatePlanStore | None = None,
     candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
     experience_store: ExperienceStore | None = None,
@@ -225,6 +229,7 @@ def create_app(
             application.state.call_budget_queries = call_budget_queries
             application.state.human_wait_store = human_wait_store
             application.state.human_preparation_store = human_preparation_store
+            application.state.candidate_plan_store = candidate_plan_store
             application.state.candidate_store = candidate_store
             application.state.human_review_store = human_review_store
             application.state.experience_store = experience_store
@@ -246,6 +251,9 @@ def create_app(
         )
         application.state.human_preparation_store = (
             human_preparation_store or HumanPreparationStore(database.session_factory, clock=clock)
+        )
+        application.state.candidate_plan_store = candidate_plan_store or CandidatePlanStore(
+            database.session_factory, clock=clock
         )
         application.state.candidate_store = candidate_store or CandidateStore(
             database.session_factory, clock=clock
@@ -318,6 +326,7 @@ def create_app(
     )
     app.state.human_wait_store = human_wait_store
     app.state.human_preparation_store = human_preparation_store
+    app.state.candidate_plan_store = candidate_plan_store
     app.state.candidate_store = candidate_store
     app.state.human_review_store = human_review_store
     app.state.incident_store = incident_store
@@ -339,6 +348,7 @@ def create_app(
     app.include_router(create_human_preparation_router())
     app.include_router(create_human_review_router())
     app.include_router(create_candidate_router())
+    app.include_router(create_candidate_plan_router())
     app.include_router(create_identity_router())
     app.include_router(create_experience_router())
     app.include_router(create_experience_review_router())
@@ -376,11 +386,12 @@ def create_app(
             ),
         )
 
+    @app.exception_handler(PlanError)
     @app.exception_handler(CandidateError)
     @app.exception_handler(HumanRoutingError)
     @app.exception_handler(HumanReviewError)
     async def handle_human_review_error(
-        _: Request, error: HumanReviewError | HumanRoutingError | CandidateError
+        _: Request, error: HumanReviewError | HumanRoutingError | CandidateError | PlanError
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,

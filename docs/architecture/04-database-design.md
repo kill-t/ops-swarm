@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第117步实现与边界见 [候选评估结果的可信规划准入](117-candidate-plan-admission.md)：独立不可变ActionPlan草案、精确候选及人工版本绑定，不映射旧根因、不授予审批或执行资格。
+
 第 116 步实现与边界见 [候选评估意图的受限消费](116-candidate-evaluation.md)：双来源可信准入、独立任务与原共享预算实际模型评估，确定性能力/参数校验，产物不授予执行资格。
 
 第 115 步增加不可变 `investigation_human_review_routes`，迁移 `0071_human_reassessment_routing`；精确绑定成功重评、原准备来源与等待版本，保存确定性意图和原共享预算快照。详见 [重评后续路由](115-human-reassessment-routing.md)。

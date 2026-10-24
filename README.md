@@ -427,6 +427,27 @@ Invoke-RestMethod -Uri "$candidateUrl/commands" -Headers $waitHeaders
 
 独立 Worker 实际消费完整调查材料、当前审查、人工前缀及固定三项能力目录。模型只提能力与证据，参数、风险与验证规则由候选明确引用的结构化证据推导；不支持或缺参时等待人工，安全候选仅形成 `planning_review`，始终 `execution_eligible=false`。它不创建 ActionPlan/审批，不把开放假设转成既有根因。来源变化、事故关闭、过期或失租后拒绝发布；新阶段真实尝试与旧父来源分别记录，继续共享原预算，成功调用可复用。Compose 可显式启动 `candidate-evaluation` profile 的 `candidate-evaluation-worker`；模型配置要求同原运行，SDK 重试关闭，需使用最新镜像与迁移。未升级用户业务库。
 
+第117步增加 [候选草案可信准入](docs/architecture/117-candidate-plan-admission.md)。可信工程师可从当前成功且为 `planning_review` 的候选生成独立单步骤 `ActionPlan` 草案；服务重算原证据、参数和风险，不接受客户端计划正文，不发送模型请求或追加预算。
+
+```powershell
+$candidate = Invoke-RestMethod -Uri "$candidateUrl/$($candidateJob.job.id)" -Headers $waitHeaders
+$planUrl = "$candidateUrl/$($candidateJob.job.id)/action-plan"
+# incidentVersion 必须取当前 Incident.version，不能沿用过期版本。
+$planBody = @{
+    action = "create_plan"
+    candidate_result_sha256 = $candidate.result.content_sha256
+    expected_wait_version = $candidate.wait_version
+    expected_incident_version = $incidentVersion
+    idempotency_key = "candidate-plan-001"
+    reason = "生成待审草案，保留前置条件与未解问题"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri $planUrl -Headers $waitHeaders -ContentType "application/json" -Body $planBody
+Invoke-RestMethod -Uri $planUrl -Headers $waitHeaders
+Invoke-RestMethod -Uri "$planUrl/commands" -Headers $waitHeaders
+```
+
+草案存入独立 `candidate_action_plans`，与旧根因计划表隔离；保留开放假设ID、候选完整结果散列、证据引用、前置条件和未解问题，固定 `draft`，`approval_eligible=false`、`execution_eligible=false`。旧审批或执行接口不能消费其ID。取消、补充、事故版本变化或原截止时间经过后，历史内容保留并返回 stale，精确重放仍为200；新命令不沿用过期来源。可信审批绑定留待下一片；不把候选可行性描述为根因证明，也未升级用户Compose业务库。
+
 任务创建时会把 `data_source_mode` 写入 `investigation_runs`。默认 `frozen` 保持历史行为并计算版本化评测指标；新建 `live + v2` 的日志与指标来源由 `LiveInvestigationDataSource` 分别委托独立单工具 MCP，变更仍委托原适配器，任一来源失败都会进入既有任务重试，不回退为直连或冻结证据。历史 `task-evidence-live-v1` 恢复时仍直连 Loki 和 Prometheus，`task-evidence-live-mcp-log-v1` 仍只有日志走 MCP。变更来源默认仍是本地模拟器，显式选择 `simulator_and_github` 后才会补充固定 GitHub 仓库证据。现场运行仍保存结论、Evidence Board 和 `result.tool_call_count`，但 `metrics` 固定为空，因为现场没有冻结真值。
 
 每次领取都创建 `investigation_attempts`，成功、失败或租约过期后结算。只读查询：

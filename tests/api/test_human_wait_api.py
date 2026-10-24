@@ -71,12 +71,13 @@ async def wait_context(
     replies = ReviewReplies(
         db,
         (EvidenceKind.LOG, EvidenceKind.CHANGE)
-        if getattr(request, "param", None) == "candidate_with_change"
+        if getattr(request, "param", None) in {"candidate_with_change", "human_clean_with_change"}
         else (EvidenceKind.LOG,),
         route_case="candidate"
         if getattr(request, "param", None) in {"candidate", "candidate_with_change"}
         else "human",
-        synthesis_counter_evidence=getattr(request, "param", None) != "human_clean",
+        synthesis_counter_evidence=getattr(request, "param", None)
+        not in {"human_clean", "human_clean_with_change"},
     )
     if getattr(request, "param", None) == "three_round":
         from tests.integration.test_dynamic_third_round_routing_graph import (
