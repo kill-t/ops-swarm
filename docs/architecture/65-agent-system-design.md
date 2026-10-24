@@ -1,5 +1,7 @@
 # OpsSwarm Agent 系统最终设计：轻量 Harness、分层记忆与受控工具
 
+第119步实现与边界见 [候选审批可信决定与过期收敛](119-candidate-approval-decision.md)：独立人工决定绑定原请求及新事故阶段，执行和父运行结算后置。
+
 第118步实现与边界见 [候选草案可信审批请求准入](118-candidate-approval-admission.md)：绑定精确草案、原输入和事故迁移事件，独立待审批事实；批准、拒绝和执行仍待后续验收。
 
 第117步实现与边界见 [候选评估结果的可信规划准入](117-candidate-plan-admission.md)：独立不可变ActionPlan草案、精确候选及人工版本绑定，不映射旧根因、不授予审批或执行资格。
