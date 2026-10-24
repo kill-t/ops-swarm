@@ -375,7 +375,7 @@ async def test_0065_new_fact_prevents_downgrade_without_losing_data(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0073_candidate_plan_admission"
+            == "0074_candidate_approval"
         )
         assert (
             await session.scalar(text(f"SELECT id FROM {table} WHERE id = :id"), {"id": record_id})

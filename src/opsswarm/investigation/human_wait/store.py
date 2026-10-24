@@ -8,6 +8,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from opsswarm.approval.candidate.queries import permits_wait_input
 from opsswarm.identity.models import OperatorAccessError, OperatorPrincipal, require_permission
 from opsswarm.identity.tables import OperatorAuthorizationRow
 from opsswarm.incidents.persistence.tables import IncidentRow
@@ -188,7 +189,10 @@ class HumanWaitStore:
                         .with_for_update()
                     )
                     now = self._check_principal(principal)
-                    if incident is None or incident.status != "investigating":
+                    if incident is None or (
+                        incident.status != "investigating"
+                        and not await permits_wait_input(session, run, incident, clock=self._clock)
+                    ):
                         raise HumanWaitError("human_wait_not_available", "事故不再允许修改人工等待")
                     # 可能等待事故锁；时序和声明观察时间也需使用写入前的实际时间。
                     evaluate_wait_command(
