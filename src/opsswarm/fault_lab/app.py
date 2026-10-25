@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from opsswarm import __version__
+from opsswarm.database import Database, DatabaseSettings
 from opsswarm.fault_lab.controller import (
     DatabasePoolValueConflict,
     FaultController,
@@ -38,6 +40,9 @@ from opsswarm.fault_lab.redis_dependency import (
     RedisDependencyBackend,
     RemoteRedisDependencyBackend,
 )
+from opsswarm.fault_lab.release.api import create_release_router
+from opsswarm.fault_lab.release.contracts import LabReleaseSettings, ReleaseError
+from opsswarm.fault_lab.release.store import LabReleaseStore
 from opsswarm.fault_lab.runtime_metadata import (
     RuntimeArtifactInstance,
     RuntimeInventoryProofUnavailableResponse,
@@ -108,10 +113,18 @@ def create_app(
     runtime_metadata_settings: RuntimeMetadataSettings | None = None,
     runtime_proof_refresher: RuntimeInventoryProofRefresher | None = None,
     runtime_clock: Callable[[], datetime] = _utc_now,
+    lab_release_store: LabReleaseStore | None = None,
+    lab_release_settings: LabReleaseSettings | None = None,
 ) -> FastAPI:
     """创建故障演练应用；生产入口默认访问真实 Redis。"""
 
     fault_controller = controller if controller is not None else FaultController()
+    release_settings = lab_release_settings or LabReleaseSettings()
+    owned_release_database: Database | None = None
+    release_store = lab_release_store
+    if release_store is None and release_settings.enabled:
+        owned_release_database = Database(DatabaseSettings().database_url)
+        release_store = LabReleaseStore(owned_release_database.session_factory, clock=runtime_clock)
     fault_metrics = FaultLabMetrics()
     fault_event_logger = event_logger if event_logger is not None else FaultLabEventLogger()
     runtime_settings = (
@@ -181,10 +194,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         try:
+            if release_store is not None:
+                await release_store.initialize()
             yield
         finally:
-            await dependency_backend.close()
-            fault_event_logger.close()
+            try:
+                await dependency_backend.close()
+            finally:
+                try:
+                    fault_event_logger.close()
+                finally:
+                    if owned_release_database is not None:
+                        await owned_release_database.dispose()
 
     app = FastAPI(
         title="OpsSwarm Fault Lab - order-service",
@@ -192,6 +213,22 @@ def create_app(
         description="仅用于本地 Docker Compose 的确定性故障演练服务。",
         lifespan=lifespan,
     )
+    app.state.lab_release_store = release_store
+    app.include_router(create_release_router())
+
+    @app.exception_handler(ReleaseError)
+    async def handle_release_error(_: object, error: ReleaseError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code, content={"error_code": error.code, "message": str(error)}
+        )
+
+    async def fault_snapshot() -> FaultSnapshot:
+        snapshot = fault_controller.snapshot()
+        if release_store is not None:
+            # 新模式只以持久版本决定发布故障，不能把进程缓存当作第二个当前状态。
+            state = await release_store.get()
+            snapshot = replace(snapshot, release_500_enabled=state.release_500_enabled)
+        return snapshot
 
     @app.get("/health", response_model=HealthResponse, tags=["系统"])
     def get_health() -> HealthResponse:
@@ -312,7 +349,7 @@ def create_app(
     @app.get("/metrics", include_in_schema=False)
     async def get_metrics() -> Response:
         payload = fault_metrics.render(
-            snapshot=fault_controller.snapshot(),
+            snapshot=await fault_snapshot(),
             redis_available=await dependency_backend.is_available(),
         )
         return Response(content=payload, media_type=CONTENT_TYPE_LATEST)
@@ -331,7 +368,7 @@ def create_app(
         tags=["订单"],
     )
     async def get_order(order_id: OrderId) -> OrderResponse | JSONResponse:
-        snapshot = fault_controller.snapshot()
+        snapshot = await fault_snapshot()
         if snapshot.release_500_enabled:
             fault_metrics.record_order(result="failed", failure_reason="release_500")
             fault_event_logger.order_failure(fault=FaultKind.RELEASE_500, snapshot=snapshot)
@@ -377,15 +414,18 @@ def create_app(
         response_model=FaultStatus,
         tags=["故障控制"],
     )
-    def get_release_500() -> FaultStatus:
-        return _to_fault_status(fault_controller.snapshot())
+    async def get_release_500() -> FaultStatus:
+        return _to_fault_status(await fault_snapshot())
 
     @app.put(
         "/__admin/faults/release-500",
         response_model=FaultStatus,
         tags=["故障控制"],
     )
-    def update_release_500(request: FaultUpdate) -> FaultStatus:
+    async def update_release_500(request: FaultUpdate) -> FaultStatus:
+        if release_store is not None:
+            result = await release_store.set_legacy_fault(enabled=request.enabled)
+            return FaultStatus(enabled=result.current.release_500_enabled)
         snapshot = fault_controller.set_release_500(enabled=request.enabled)
         logger.info("更新故障开关 fault=release_500 enabled=%s", request.enabled)
         return _to_fault_status(snapshot)

@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-25。最新完成切片为第122步新核验依据的独立可信审批，基线为main的e90bcf0（第121步）。本文随第122步独立提交保存；实际提交与工作区以Git核对，结果以[第122步验收记录](progress/122-condition-basis-approval.md)为准。
+核对日期：2026-10-25。最新完成切片为第123步本地发布演练状态与版本CAS，基线为main的d797be7（第122步）。本文随第123步独立提交保存；实际提交与工作区以Git核对，结果以[第123步验收记录](progress/123-lab-release-state-cas.md)为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读[第123步设计](architecture/123-lab-release-state-cas.md)和[验收记录](progress/123-lab-release-state-cas.md)，再读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -24,7 +24,7 @@
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0078_condition_approval`；第122步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0079_lab_release_state`；第123步只在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -71,6 +71,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 第121步从精确原计划生成固定条件目录，可信engineer按完整条目追加最多8个不可变核验版本，前驱版本/hash以CAS保护。来源区分原证据、人工观察与真实同批准预检；状态分别为verified、unresolved、not_applicable，汇总ready_for_review、blocked或plan_revision_required。最高版本损坏不能回退；适用性区分当前、被替代、失效与到期。所有内容固定approval_required=true和execution_eligible=false，新审批必须绑定精确核验版本，原119批准不覆盖新依据。原预算/期限和写后认证仍强制，原Incident/事件、父图与旧执行表保持，尚无核验审批或实际执行。
 
 第122步为最新有效ready_for_review核验建立独立可信工程师请求和审批者approve/reject/expire决定，绑定核验ID/版本/hash、原计划/决定和原事故版本。请求期限等于核验期限，原预算不重置；新版本、来源变化或到期使旧批准失效。请求/决定及各自applied审计原子提交，历史不可变；已有决定的请求投影recorded，负面决定允许在预算耗尽后收敛但不能跳过历史完整性。最高版本损坏、三资源授权、并发单胜、写后截止/认证回滚和换键拒绝降级均通过。没有Incident迁移或新事故事件，原父图及活动槽位保持，内容execution_eligible仍false；不是实际执行或图恢复。
+
+第123步补齐显式启用的本地发布演练版本/CAS。PostgreSQL保存stable/rc1版本、单调revision、命令序号与不可变命令；版本及修订共同防止漂移/ABA，重放区分历史结果与当前适用性。新模式旧开关、订单及指标共享持久状态，重启不重置，存储失败/损坏不回退健康；默认内存兼容模式保持。应用配置启用、启动/退出及失败清理、原生原子状态守卫和多实例并发已验证。它是模拟行为版本，不改变真实镜像/签名清单，不消费候选审批，也未接入候选执行或父运行收尾。
 
 ## 5. 当前能力与限制
 
@@ -150,6 +152,7 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 | 入口 | 边界 |
 | --- | --- |
+| [fault_lab/release/store.py](../src/opsswarm/fault_lab/release/store.py)、[policy.py](../src/opsswarm/fault_lab/release/policy.py)、[contracts.py](../src/opsswarm/fault_lab/release/contracts.py)、[tables.py](../src/opsswarm/fault_lab/release/tables.py)、[fault_lab/app.py](../src/opsswarm/fault_lab/app.py) | 显式启用的持久模拟版本、修订CAS和不可变命令；旧开关/订单/指标一致，独立于真实镜像身份；未接候选执行 |
 | [approval/conditions/store.py](../src/opsswarm/approval/conditions/store.py)、[queries.py](../src/opsswarm/approval/conditions/queries.py)、[sources.py](../src/opsswarm/approval/conditions/sources.py)、[policy.py](../src/opsswarm/approval/conditions/policy.py)、[contracts.py](../src/opsswarm/approval/conditions/contracts.py) | 精确核验版本的独立可信请求/决定、原期限与当前性、负面收敛及不可变审计；批准不执行操作 |
 | [execution/conditions/store.py](../src/opsswarm/execution/conditions/store.py)、[queries.py](../src/opsswarm/execution/conditions/queries.py)、[sources.py](../src/opsswarm/execution/conditions/sources.py)、[policy.py](../src/opsswarm/execution/conditions/policy.py)、[contracts.py](../src/opsswarm/execution/conditions/contracts.py) | 固定原文目录、可信完整核验版本及来源/前驱/时效，全部新依据须新审批，不授予执行资格 |
 | [execution/candidate/store.py](../src/opsswarm/execution/candidate/store.py)、[observer.py](../src/opsswarm/execution/candidate/observer.py)、[policy.py](../src/opsswarm/execution/candidate/policy.py) | 固定本地GET只读预检和30秒观测，不执行操作，原未核验条件继续阻断 |
@@ -201,7 +204,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第123步：**候选执行所需的本地发布版本状态与CAS**。现有release-500故障开关不能证明部署版本，旧执行器关闭开关后回显target_version也不能证明真实回滚。先明确隔离演练发布状态的持久化、版本漂移、重启及幂等/CAS语义，保留原MVP兼容行为；再把当前精确核验批准接入候选专用执行任务、租约/结果和恢复验证。父运行收尾、活动槽位释放、前端、预算追加和图内恢复仍独立交付。
+第124步：**首个候选专用发布执行链路**。先固定当前有效核验批准、原计划/当前演练版本和CAS修订的绑定，明确可信准入、持久任务、幂等、租约与失败/迟到路径，再接独立Worker和固定适配器。不得借用旧执行器回显版本作为结果，不修改真实镜像身份；原预算不重置。恢复验证、父运行收尾、活动槽位释放、前端、预算追加和图恢复仍按后续边界交付。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -209,7 +212,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`。第122步本轮按JUnit用例标识去重1,919项相关测试通过：全量单元1,862、新原生21、审批API13（主链5、边界8）、相关旧链路23（121原生18、双来源核验2、旧闭环3）。最终领域72和完整性API1补跑均与前述用例重叠，不重复计数，详见[验收记录](progress/122-condition-basis-approval.md)。Ruff通过、815文件格式一致、Mypy471源文件通过，唯一head为0078_condition_approval。预算耗尽使用追加unknown审计，在途预算使用显式快照注入；不把非法父调用作为合法来源。未重跑全部历史迁移/完整发布；仅隔离Testcontainers PostgreSQL17.6和假模型，未升级用户Compose数据库、调用真实模型或连接生产系统。Windows使用Selector事件循环。
+使用仓库 `.venv/Scripts/`。第123步本轮按JUnit用例标识去重1,976项相关测试通过：全量单元1,905、旧演练API新增40、新发布PostgreSQL/API25、相关旧链路6。兼容报告97项中57项与单元重叠，前置元数据1项亦与旧链路重叠，均不重复计数；详见[验收记录](progress/123-lab-release-state-cas.md)。Ruff通过、825文件格式一致、Mypy477源文件通过，唯一head为0079_lab_release_state，Compose示例配置检查通过。仅隔离Testcontainers PostgreSQL17.6和假模型，未启动/升级用户Compose服务或数据库，也未做新的真实模型、现场发布或生产验收。Windows使用Selector事件循环。
 
 ```powershell
 git status --short
@@ -221,10 +224,10 @@ git log -5 --oneline
 git diff --check
 ```
 
-第122步主要测试入口为[审批API](../tests/api/test_condition_approval_api.py)、[审批纯规则](../tests/unit/approval/test_condition_approval.py)和[原生迁移](../tests/integration/test_condition_approval_migration.py)。核验、独立审批与预检暂未进入前端；新批准仍不提供执行资格。output/为用户未跟踪目录，本片未读取、未提交。
+第123步主要测试入口为[发布演练API](../tests/api/test_lab_release_api.py)、[CAS纯规则](../tests/unit/fault_lab/test_release.py)和[原生迁移](../tests/integration/test_lab_release_migration.py)。OPSSWARM_LAB_RELEASE_ENABLED默认false，开启前按[README](../README.md)先执行正式迁移；默认旧内存模式保持，新模拟版本不是实际镜像证明或候选执行资格。output/为用户未跟踪目录，本片未读取、未提交。
 
 动态池默认关闭。开启需要 frozen、function_calling 模型，建议处理 240 秒、租约 300 秒、停止宽限 5m；运行建议显式 max_model_calls=16、max_duration_seconds=900 及足够模型预算。旧默认 300 秒总时限不因 Worker 参数变化而延长；具体命令见 README，未升级用户 Compose 数据库。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读AGENTS.md、项目状态、进度索引和第122步设计/验收，核对Git与0078_condition_approval。已有固定目录、最多8版可信完整核验及独立工程师请求/审批者批准、拒绝、显式过期；新审批绑定精确核验ID/版本/hash和原计划/决定，期限等于核验期限，原预算不重置。核验替代、来源失效或到期后旧批准不可沿用；verified仍是人工判断，新内容execution_eligible=false。下一片123先为本地演练补齐发布版本状态及CAS，明确持久化、重启、参数漂移与幂等语义；现有release-500开关与回显target_version不能证明部署版本。保留旧MVP，再接入当前批准之上的候选专用执行任务、租约/结果与恢复验证。父run/work/handed_off尝试、图和活动槽位本片不改；父运行收尾/终端取消、前端、预算追加与图内恢复尚待交付。
+> 请阅读AGENTS.md、项目状态、进度索引和第123步设计/验收，核对Git与0079_lab_release_state。第122步已有精确核验审批，第123步已有显式启用的持久模拟版本/修订CAS、完整命令幂等及重启/多实例一致性，默认旧内存模式保留。新状态source=local-release-simulation-v1，只改变本地演练行为，不是真实镜像或CI/CD证明；旧执行器回显target_version仍不能作为新执行结果。下一片124建设首个候选专用发布执行链路，先明确当前有效核验批准、原计划/当前版本、CAS修订、可信准入及持久任务/幂等/租约/失败边界，再接独立Worker和固定适配器；原预算不重置，不沿用替代/过期审批。父图、父run/work/handed_off尝试及活动槽位本片保持，恢复验证、父运行收尾、前端、预算追加与图恢复尚待交付。

@@ -424,6 +424,8 @@ services:
     ports:
       - "127.0.0.1:18001:8000"
     environment:
+      OPSSWARM_LAB_RELEASE_ENABLED: ${OPSSWARM_LAB_RELEASE_ENABLED:-false}
+      OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
       OPSSWARM_FAULT_LAB_LOG_PATH: /var/log/opsswarm/order-service.jsonl
       OPSSWARM_FAULT_LAB_REDIS_URL: redis://redis-proxy:6379/0
       OPSSWARM_FAULT_LAB_REDIS_PROXY_ADMIN_URL: http://redis-proxy:8474
@@ -460,6 +462,7 @@ services:
       start_period: 5s
     networks:
       - lab
+      - control
 
   prometheus:
     image: prom/prometheus:v3.13.2

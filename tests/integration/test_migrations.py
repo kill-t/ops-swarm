@@ -22,7 +22,8 @@ def truncate_business_data(database_url: str) -> None:
     )
     with psycopg.connect(native_url, autocommit=True) as connection:
         connection.execute(
-            "TRUNCATE TABLE operator_authorizations, change_records, investigation_attempts, "
+            "TRUNCATE TABLE lab_release_states, operator_authorizations, "
+            "change_records, investigation_attempts, "
             "evaluation_attempts, evaluation_results, "
             "evaluation_runs, "
             "evaluation_experiments, evaluation_cases, work_items, investigation_runs, "
@@ -44,7 +45,7 @@ def test_alembic_migration_matches_sqlalchemy_metadata(migrated_database_url: st
     )
     with psycopg.connect(native_url) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0078_condition_approval",
+            "0079_lab_release_state",
         )
 
 

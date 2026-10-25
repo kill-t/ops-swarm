@@ -715,6 +715,27 @@ Invoke-RestMethod `
 
 ## 运行故障模拟切片
 
+### 可选持久发布演练与CAS
+
+第123步增加[持久发布演练状态](docs/architecture/123-lab-release-state-cas.md)，默认关闭。开启前先执行正式迁移，再启动order-service；以下命令仅供本地演练，不会由开发助手自动升级用户数据库：
+
+```powershell
+docker compose --env-file .env.example up -d --wait control-db
+docker compose --env-file .env.example run --rm control-migrate
+$env:OPSSWARM_LAB_RELEASE_ENABLED = "true"
+docker compose --env-file .env.example up -d --build --wait order-service
+$release = Invoke-RestMethod http://127.0.0.1:18001/__admin/simulated-release
+$releaseCommand = @{
+  expected_version = $release.version
+  expected_revision = $release.revision
+  target_version = "2026.01.01-rc1"
+  idempotency_key = "demo-release-" + [guid]::NewGuid().ToString()
+} | ConvertTo-Json
+Invoke-RestMethod -Method Put -Uri http://127.0.0.1:18001/__admin/simulated-release -ContentType 'application/json' -Body $releaseCommand
+```
+
+固定演练版本为stable（健康）和2026.01.01-rc1（模拟500）。CAS同时比较版本和修订号，精确重放保留历史command并另返current/effect_current；旧开关也写入同一持久状态，重启不清零，存储故障503。恢复stable仍须先GET并使用当前修订和新命令键。旧默认内存模式保留；此接口是隔离演练管理入口，不消费候选审批，不改变真实runtime-metadata或签名清单，也不代表候选已经执行。
+
 ### 本地运行
 
 ```powershell
