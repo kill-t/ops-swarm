@@ -237,7 +237,7 @@ async def test_0075_refusal_hash_and_immutable_safe_downgrade(database_session_f
         await asyncio.to_thread(command.downgrade, requests.config(), "0074_candidate_approval")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0076_candidate_preflight"
+            "0077_candidate_conditions"
         )
 
 

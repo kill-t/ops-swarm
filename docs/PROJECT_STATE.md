@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-25。最新完成切片为第120步候选受控执行准入与当前参数前置核验，基线为main的f0e8edd（第119步）。本文随第120步独立提交保存；实际提交与工作区以Git核对，结果以[第120步验收记录](progress/120-candidate-execution-preflight.md)为准。
+核对日期：2026-10-25。最新完成切片为第121步版本化执行条件与可信核验事实，基线为main的928be5f（第120步）。本文随第121步独立提交保存；实际提交与工作区以Git核对，结果以[第121步验收记录](progress/121-candidate-condition-verification.md)为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -67,6 +67,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 第119步增加独立不可变approved/rejected/expired决定、可信approver命令和原子事故迁移/审计。批准须原输入、事故版本、原预算与期限有效，迁移mitigating后按决定阶段current投影；拒绝可收敛stale输入，到期须显式expire命令回investigating，GET无写入。原成功用量完整性与累计容量分开检查，unknown不补零；错误正文/权限/版本及写后超时或认证到期均拒绝或回滚。原请求/草案与父图不改，未交付候选执行、撤销批准、新前端、父活动槽位释放或定时过期Worker。
 
 第120步建立独立可信执行前检查：executor绑定精确approved决定、mitigating事故版本、原输入/累计预算/期限，读取本地演练当前参数并保存不可变观测与业务审计。只允许三个固定GET，响应有界、总超时、失败不回退冻结证据；配置/Redis比较当前参数，release开关不能证明版本。全部原自由文本条件及未解问题保持未核验阻断，报告始终blocked且execution_eligible=false；同键重放与GET只读原观测，30秒观测期限不续原批准。新操作身份不借旧表，原Incident及事件、父run/work/attempt/图均不改；来源损坏409、已有事实不降级，写后认证/期限失败原子回滚。当前不是实际执行或父活动槽位释放。
+
+第121步从精确原计划生成固定条件目录，可信engineer按完整条目追加最多8个不可变核验版本，前驱版本/hash以CAS保护。来源区分原证据、人工观察与真实同批准预检；状态分别为verified、unresolved、not_applicable，汇总ready_for_review、blocked或plan_revision_required。最高版本损坏不能回退；适用性区分当前、被替代、失效与到期。所有内容固定approval_required=true和execution_eligible=false，新审批必须绑定精确核验版本，原119批准不覆盖新依据。原预算/期限和写后认证仍强制，原Incident/事件、父图与旧执行表保持，尚无核验审批或实际执行。
 
 ## 5. 当前能力与限制
 
@@ -146,6 +148,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 | 入口 | 边界 |
 | --- | --- |
+| [execution/conditions/store.py](../src/opsswarm/execution/conditions/store.py)、[queries.py](../src/opsswarm/execution/conditions/queries.py)、[sources.py](../src/opsswarm/execution/conditions/sources.py)、[policy.py](../src/opsswarm/execution/conditions/policy.py)、[contracts.py](../src/opsswarm/execution/conditions/contracts.py) | 固定原文目录、可信完整核验版本及来源/前驱/时效，全部新依据须新审批，不授予执行资格 |
+| [execution/candidate/store.py](../src/opsswarm/execution/candidate/store.py)、[observer.py](../src/opsswarm/execution/candidate/observer.py)、[policy.py](../src/opsswarm/execution/candidate/policy.py) | 固定本地GET只读预检和30秒观测，不执行操作，原未核验条件继续阻断 |
 | [approval/decision/store.py](../src/opsswarm/approval/decision/store.py)、[queries.py](../src/opsswarm/approval/decision/queries.py)、[policy.py](../src/opsswarm/approval/decision/policy.py)、[tables.py](../src/opsswarm/approval/decision/tables.py) | 可信批准/拒绝/显式过期及不可变决定、事件与审计；独立决定阶段适用性，不授予执行资格或改变父图 |
 | [approval/candidate/store.py](../src/opsswarm/approval/candidate/store.py)、[queries.py](../src/opsswarm/approval/candidate/queries.py)、[policy.py](../src/opsswarm/approval/candidate/policy.py)、[tables.py](../src/opsswarm/approval/candidate/tables.py) | 独立待审批请求、精确来源/事件/阶段与原期限，可信原子事务及历史失效；status固定pending，决定另片保存 |
 | [planning/candidate/store.py](../src/opsswarm/planning/candidate/store.py)、[queries.py](../src/opsswarm/planning/candidate/queries.py)、[policy.py](../src/opsswarm/planning/candidate/policy.py)、[budget.py](../src/opsswarm/planning/candidate/budget.py)、[tables.py](../src/opsswarm/planning/candidate/tables.py) | 可信草案、精确候选/版本/当前性与原预算核验；独立表隔离旧审批执行，固定不可授权 |
@@ -194,7 +198,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第121步：**版本化执行条件与可信核验事实**。逐项绑定原前置条件和未解问题及其精确内容/来源，明确可信核验、未解决/不适用的业务含义、当前有效性和失效/重新审批关系，不能把119的已阅读确认或120的参数观测当作条件成立。之后建立候选专用执行、发布版本状态/CAS、租约/幂等结果及恢复验证，不借旧ActionStep/ApprovalRequest。父运行收尾、终端取消与活动槽位释放、前端、预算追加和图内恢复继续独立交付。
+第122步：**新核验依据的独立可信审批**。为最新且current的ready_for_review核验批次创建独立审批事实，精确绑定批次ID/hash、原计划和决定、mitigating事故版本、原输入/预算/期限。不得对旧119请求再次approve；新版本替代、来源失效或到期使覆盖旧核验的授权失效，plan_revision_required不得直接批准。之后继续候选专用执行、发布版本状态/CAS、租约/结果和恢复验证。父运行收尾、活动槽位释放、前端、预算追加和图内恢复仍独立交付。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -202,7 +206,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`。第120步本轮去重2,177项相关Python测试通过：单元分批1,661（全量基线1,652+查询边界9）、新原生30、候选API16、旧闭环API3及历史迁移467；重复运行不叠加，详见[验收记录](progress/120-candidate-execution-preflight.md)。Ruff通过、789文件格式一致、Mypy453源文件通过，唯一head为0076_candidate_preflight。仅隔离Testcontainers PostgreSQL 17.6、假模型/传输与进程内演练服务；未升级用户Compose数据库、未发布或连接生产系统。Windows使用Selector事件循环。
+使用仓库 `.venv/Scripts/`。第121步本轮去重1,852项相关测试通过：单元分批1,790（全量基线1,756与最终领域129合并，重叠95）、新原生18、核验API9、相关旧链路35（120原生30+双来源预检2+旧闭环3）。最终原生命令及API补跑不重复计数，详见[验收记录](progress/121-candidate-condition-verification.md)。Ruff通过、802文件格式一致、Mypy462源文件通过，唯一head为0077_candidate_conditions。未重跑全部历史迁移/完整发布；仅隔离Testcontainers PostgreSQL17.6、假模型/模拟传输，未升级用户Compose数据库、调用真实模型或连接生产系统。Windows使用Selector事件循环。
 
 ```powershell
 git status --short
@@ -214,10 +218,10 @@ git log -5 --oneline
 git diff --check
 ```
 
-第120步主要测试入口为[检查API](../tests/api/test_candidate_preflight_api.py)、[纯规则与只读HTTP](../tests/unit/execution/test_candidate_preflight.py)、[查询异常边界](../tests/unit/execution/test_candidate_preflight_queries.py)和[原生迁移](../tests/integration/test_candidate_preflight_migration.py)。候选检查暂未进入旧审批中心或作战室，不称为前端执行闭环。output/为用户未跟踪目录，本片未读取、未提交。
+第121步主要测试入口为[核验API](../tests/api/test_candidate_conditions_api.py)、[目录/来源/纯策略](../tests/unit/execution/test_candidate_conditions.py)和[原生迁移](../tests/integration/test_candidate_conditions_migration.py)。核验及预检暂未进入旧审批中心/作战室，ready_for_review不是执行资格。output/为用户未跟踪目录，本片未读取、未提交。
 
 动态池默认关闭。开启需要 frozen、function_calling 模型，建议处理 240 秒、租约 300 秒、停止宽限 5m；运行建议显式 max_model_calls=16、max_duration_seconds=900 及足够模型预算。旧默认 300 秒总时限不因 Worker 参数变化而延长；具体命令见 README，未升级用户 Compose 数据库。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读AGENTS.md、项目状态、进度索引和第120步设计/验收，核对Git与0076_candidate_preflight。可信executor已有独立只读执行前检查，绑定精确approved决定、mitigating事故版本、原输入/预算/期限；原始命令、当前参数观测与全部未验证条件可追溯，始终blocked且无执行资格。配置/Redis可比较当前值，release开关不是版本证明。GET/同键重放不再观测，不续期；损坏历史409且不降级，写后期限/认证失败全回滚。下一片121定义版本化执行条件与可信核验事实及失效/重新审批关系，不能用已阅读确认或预检当条件满足。后续候选专用执行须另建版本状态、CAS、租约/幂等结果和恢复验证；父run/work/handed_off尝试、图、原预算及旧草案/请求/决定保持。父运行结算/终端取消与活动槽位释放、前端、预算追加和图恢复尚待交付。
+> 请阅读AGENTS.md、项目状态、进度索引和第121步设计/验收，核对Git与0077_candidate_conditions。已有固定条件目录、可信工程师完整核验版本及证据/人工/预检三类来源，前驱CAS、最多8版、历史完整重建和时效通过；verified仍是人工判断，不是客观证明，not_applicable要求计划修订审视。全部新核验approval_required=true、execution_eligible=false，旧119批准只保留旧历史/阶段语义，120阻断不改。下一片122建立新核验依据独立审批，绑定最新current ready_for_review批次及完整摘要、原计划/决定、事故/输入/预算/期限；不得对旧请求再approve，不沿用被替代或到期核验授权。之后仍须候选专用执行、发布版本状态/CAS、租约/结果和验证；父run/work/handed_off尝试、图与原预算不改。父运行收尾/终端取消及活动槽位释放、前端、预算追加与图恢复尚待交付。
