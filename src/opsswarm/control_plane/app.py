@@ -30,6 +30,9 @@ from opsswarm.approval import (
 from opsswarm.approval.candidate.api import create_candidate_approval_router
 from opsswarm.approval.candidate.contracts import RequestError
 from opsswarm.approval.candidate.store import CandidateApprovalStore
+from opsswarm.approval.conditions.api import create_condition_approval_router
+from opsswarm.approval.conditions.contracts import ApprovalError as ConditionApprovalError
+from opsswarm.approval.conditions.store import ConditionApprovalStore
 from opsswarm.approval.decision.api import create_candidate_decision_router
 from opsswarm.approval.decision.contracts import DecisionError
 from opsswarm.approval.decision.store import CandidateDecisionStore
@@ -187,6 +190,7 @@ def create_app(
     candidate_decision_store: CandidateDecisionStore | None = None,
     candidate_preflight_store: CandidatePreflightStore | None = None,
     candidate_condition_store: CandidateConditionStore | None = None,
+    condition_approval_store: ConditionApprovalStore | None = None,
     candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
     experience_store: ExperienceStore | None = None,
@@ -245,6 +249,7 @@ def create_app(
             application.state.call_budget_queries = call_budget_queries
             application.state.human_wait_store = human_wait_store
             application.state.human_preparation_store = human_preparation_store
+            application.state.condition_approval_store = condition_approval_store
             application.state.candidate_condition_store = candidate_condition_store
             application.state.candidate_preflight_store = candidate_preflight_store
             application.state.candidate_decision_store = candidate_decision_store
@@ -271,6 +276,10 @@ def create_app(
         )
         application.state.human_preparation_store = (
             human_preparation_store or HumanPreparationStore(database.session_factory, clock=clock)
+        )
+        application.state.condition_approval_store = (
+            condition_approval_store
+            or ConditionApprovalStore(database.session_factory, clock=clock)
         )
         application.state.candidate_condition_store = (
             candidate_condition_store
@@ -362,6 +371,7 @@ def create_app(
     )
     app.state.human_wait_store = human_wait_store
     app.state.human_preparation_store = human_preparation_store
+    app.state.condition_approval_store = condition_approval_store
     app.state.candidate_condition_store = candidate_condition_store
     app.state.candidate_preflight_store = candidate_preflight_store
     app.state.candidate_decision_store = candidate_decision_store
@@ -388,6 +398,7 @@ def create_app(
     app.include_router(create_human_preparation_router())
     app.include_router(create_human_review_router())
     app.include_router(create_candidate_router())
+    app.include_router(create_condition_approval_router())
     app.include_router(create_candidate_condition_router())
     app.include_router(create_candidate_preflight_router())
     app.include_router(create_candidate_decision_router())
@@ -430,6 +441,7 @@ def create_app(
             ),
         )
 
+    @app.exception_handler(ConditionApprovalError)
     @app.exception_handler(ConditionError)
     @app.exception_handler(PreflightError)
     @app.exception_handler(DecisionError)
@@ -447,7 +459,8 @@ def create_app(
         | RequestError
         | DecisionError
         | PreflightError
-        | ConditionError,
+        | ConditionError
+        | ConditionApprovalError,
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,
