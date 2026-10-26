@@ -749,6 +749,19 @@ uv run python -m opsswarm.execution.release_jobs.main --once
 
 Worker首次写前持久标记，远端窗口不超过原准备/凭据/租约期限，注册后再核验才执行。响应未知或重领只GET，不自动换键/重发；unknown终态当前需人工调查，无自动重开接口。结果表示模拟操作历史，尚未客观验证恢复，也未结算父运行。新迁移仅在隔离测试库验收；本片未自动启用Compose Worker服务或升级用户数据库。
 
+### 候选执行后的业务恢复验证
+
+第128步增加[独立只读恢复验证](docs/architecture/128-candidate-recovery-verification.md)。启动Worker后自动发现第127步终态执行，为每个原执行保存唯一验证任务及不可变结果：
+
+```powershell
+uv run python -m opsswarm.verification.candidate.main --once
+uv run python -m opsswarm.verification.candidate.main
+```
+
+使用`OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL`配置本地订单服务（默认`http://127.0.0.1:18001`），单请求总超时由`OPSSWARM_VERIFIER_REQUEST_TIMEOUT_SECONDS`控制，默认3秒、最多10秒。Worker只GET固定订单业务探针；每次尝试最多3份、间隔至少2秒，最多3次尝试。采样窗口从原执行完成开始120秒且不超过原运行期限，重启不会续期。版本已回退但订单仍500会记为未恢复，来源不可用记为source_failed；unknown不会自动重发或被标成健康。
+
+可信Bearer可查询`GET .../release-execution-request/execution-job/recovery-verification`，包含任务、尝试、样本和结果；未被Worker发现时为空视图。此接口不触发探针，没有新增HTTP写命令。恢复结果不修改父运行或Incident，不能将有限演练样本表述为生产恢复或因果证明；默认Compose尚未自动启用此Worker。
+
 ### 本地运行
 
 ```powershell

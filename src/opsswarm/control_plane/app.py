@@ -159,6 +159,9 @@ from opsswarm.verification import (
     VerificationRunNotFound,
     VerificationWorkItemNotFound,
 )
+from opsswarm.verification.candidate.api import create_candidate_recovery_router
+from opsswarm.verification.candidate.contracts import RecoveryError
+from opsswarm.verification.candidate.store import CandidateRecoveryStore
 from opsswarm.verification.persistence import VerificationStore
 from opsswarm.verification.service import VerificationService
 from opsswarm.workroom import WorkroomStore
@@ -198,6 +201,7 @@ def create_app(
     candidate_condition_store: CandidateConditionStore | None = None,
     candidate_release_request_store: CandidateReleaseRequestStore | None = None,
     release_execution_store: ReleaseExecutionStore | None = None,
+    candidate_recovery_store: CandidateRecoveryStore | None = None,
     condition_approval_store: ConditionApprovalStore | None = None,
     candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
@@ -259,6 +263,7 @@ def create_app(
             application.state.human_preparation_store = human_preparation_store
             application.state.condition_approval_store = condition_approval_store
             application.state.candidate_release_request_store = candidate_release_request_store
+            application.state.candidate_recovery_store = candidate_recovery_store
             application.state.release_execution_store = release_execution_store
             application.state.candidate_condition_store = candidate_condition_store
             application.state.candidate_preflight_store = candidate_preflight_store
@@ -294,6 +299,10 @@ def create_app(
         application.state.candidate_release_request_store = (
             candidate_release_request_store
             or CandidateReleaseRequestStore(database.session_factory, clock=clock)
+        )
+        application.state.candidate_recovery_store = (
+            candidate_recovery_store
+            or CandidateRecoveryStore(database.session_factory, clock=clock)
         )
         application.state.release_execution_store = (
             release_execution_store
@@ -393,6 +402,7 @@ def create_app(
     app.state.human_preparation_store = human_preparation_store
     app.state.condition_approval_store = condition_approval_store
     app.state.candidate_release_request_store = candidate_release_request_store
+    app.state.candidate_recovery_store = candidate_recovery_store
     app.state.release_execution_store = release_execution_store
     app.state.candidate_condition_store = candidate_condition_store
     app.state.candidate_preflight_store = candidate_preflight_store
@@ -423,6 +433,7 @@ def create_app(
     app.include_router(create_condition_approval_router())
     app.include_router(create_candidate_release_router())
     app.include_router(create_release_execution_router())
+    app.include_router(create_candidate_recovery_router())
     app.include_router(create_candidate_condition_router())
     app.include_router(create_candidate_preflight_router())
     app.include_router(create_candidate_decision_router())
@@ -466,6 +477,7 @@ def create_app(
         )
 
     @app.exception_handler(ReleaseRequestError)
+    @app.exception_handler(RecoveryError)
     @app.exception_handler(ExecutionJobError)
     @app.exception_handler(ConditionApprovalError)
     @app.exception_handler(ConditionError)
@@ -488,7 +500,8 @@ def create_app(
         | ConditionError
         | ConditionApprovalError
         | ReleaseRequestError
-        | ExecutionJobError,
+        | ExecutionJobError
+        | RecoveryError,
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,

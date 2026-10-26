@@ -29,7 +29,7 @@ async def test_follow_up_plan_source_schema_is_present(database_session_factory)
             )
         )
 
-    assert head == "0082_candidate_release_job"
+    assert head == "0083_candidate_recovery"
     assert column == ("YES", "uuid")
     assert {
         "fk_coordination_plans_source_review_route",

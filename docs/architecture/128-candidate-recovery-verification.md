@@ -1,0 +1,23 @@
+# 候选发布后的客观恢复验证
+
+## 目标与边界
+
+基线9c612ba。独立只读Worker发现127已结算执行任务，为每个执行任务生成唯一恢复验证任务，绑定原operation、执行结果完整SHA256和固定策略candidate-recovery-v1。HTTP只查询，不在请求内探测；不新增人工写命令，不沿用历史授权执行变更。父run/work/handed_off尝试、Incident、审批、执行结果、图与活动槽位均保持。
+
+版本CAS和effect_current只证明模拟发布效果。验证读取本地订单业务端点/orders/opsswarm-verification-probe，不读取进程/health代替业务恢复；这是隔离演练探针，不描述为生产证据，也不能证明恢复的因果关系。
+
+## 固定窗口与有界尝试
+
+窗口从127 completed_at开始，结束为min(completed_at+120秒，原run.started_at+固定max_duration_seconds)。延迟启动、重试、进程重启均不能续期。最多3次独立尝试，每次30秒租约、最多3份样本，相邻采样请求至少2秒，最多9次只读请求。租约和窗口在每次网络请求前、样本落库与终态提交时检查。样本逐次保存，失租样本保留历史，不拼接不同尝试形成成功；新尝试从头采样。原模型/专业工具账本保持，这些确定性业务探针与既有验证器一样受独立固定采样上限及原运行时限约束，不创建模型调用或重置原预算。
+
+首次任务固定窗口和执行引用；每次领取/采样/结算/查询完整重建127及124历史，不依赖旧凭据或审批仍有当前写权限。原事实损坏整笔拒绝，不能伪造来源失败。父work行锁与验证job锁保证并发领取单胜；旧token、旧尝试、到期租约拒绝迟到保存。宿主与PostgreSQL之间允许最多1秒的新写时间偏差，仅用于拒绝伪造未来created/started/finished；租约与采样窗口的数据库实际截止仍严格检查，不能借偏差续期。第3次失租或固定窗口耗尽由后续扫描持久收敛source_failed，避免永久running。
+
+## 结果与协议
+
+execution_unknown和not_executed不探测；已应用但superseded保存not_recovered及execution_superseded原因，表示该原操作的恢复未确认，不把无样本描述为当前健康失败。applied_current采集同一尝试3份订单样本：三次2xx且严格订单正文正确才recovered；任何5xx为not_recovered；网络、协议、窗口或重试耗尽为source_failed。保存每份请求/观测时刻、固定来源路径、HTTP状态和有界结构化材料，不存任意正文或异常。结果永远parent_advanced=false。
+
+GET沿127任务路径增加/recovery-verification，返回任务、最多3尝试、最多9样本和不可变结果；未被独立Worker发现时返回空视图。即使legacy_local也要求可信Bearer和read权限。新表candidate_recovery_jobs、candidate_recovery_attempts、candidate_recovery_samples、candidate_recovery_results；0083_candidate_recovery迁移提供不可变身份、连续尝试/样本、终态闭环与数据库时钟租约约束，有数据禁止降级。
+
+## 验收与后续
+
+纯策略和严格有界HTTP测试、真实PostgreSQL迁移与约束、实际126执行接业务订单端点、健康/仍500/来源失败/执行未知、并发领取、逐样本持久化、失租重领与迟到拒绝、窗口耗尽、历史损坏、只读鉴权及父事实隔离。父运行收尾和验证失败回流为后续切片；本片不覆盖unknown人工解决、取消、前端或图恢复。
