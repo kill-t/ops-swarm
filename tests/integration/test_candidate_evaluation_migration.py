@@ -301,7 +301,7 @@ async def test_0072_downgrade_preserves_candidate_facts(database_session_factory
         await asyncio.to_thread(command.downgrade, config(), "0071_human_reassessment_routing")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0079_lab_release_state"
+            "0080_candidate_release_request"
         )
         assert (
             await session.scalar(

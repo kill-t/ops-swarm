@@ -1,5 +1,6 @@
 # OpsSwarm 数据库设计
 
+第124步新增[候选发布执行可信准入](124-candidate-release-execution-admission.md)：精确核验批准、原步骤与只读版本/CAS绑定成不可变prepared请求，严格来源/预算/期限及审计保护；dispatch_eligible=false，未派发，远端回执与Worker后续交付。
 第123步新增[本地发布演练状态与CAS](123-lab-release-state-cas.md)：显式启用PostgreSQL持久版本/修订和不可变命令，旧开关、订单及指标共享状态，拒绝版本漂移/ABA和故障回退；演练标签不代表真实镜像，候选专用执行后续交付。
 第122步新增[新核验依据的独立可信审批](122-condition-basis-approval.md)：工程师请求与审批者批准/拒绝/显式过期均精确绑定核验ID、版本和摘要，核验被替代或失效后旧批准不可沿用；原期限、预算与父图保持，实际执行后续交付。
 第121步实现与边界见 [执行条件可信核验](121-candidate-condition-verification.md)：原文固定目录、完整连续核验版本和三类来源可追溯；任何新核验均须新审批覆盖，原批准/预检不改，不授予执行资格。

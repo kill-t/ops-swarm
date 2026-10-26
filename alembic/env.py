@@ -20,6 +20,7 @@ from opsswarm.evaluation.persistence import tables as evaluation_tables  # noqa:
 from opsswarm.execution.candidate import tables as candidate_preflight_tables  # noqa: F401
 from opsswarm.execution.conditions import tables as candidate_condition_tables  # noqa: F401
 from opsswarm.execution.persistence import tables as execution_tables  # noqa: F401
+from opsswarm.execution.release import tables as candidate_release_tables  # noqa: F401
 from opsswarm.experience import context_tables as experience_context_tables  # noqa: F401
 from opsswarm.experience import lifecycle_tables as experience_lifecycle_tables  # noqa: F401
 from opsswarm.experience import replacement_tables as experience_replacement_tables  # noqa: F401

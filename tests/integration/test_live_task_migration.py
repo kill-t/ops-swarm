@@ -36,7 +36,7 @@ async def test_downgrade_preserves_live_cutoff(database_session_factory):
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0079_lab_release_state"
+            == "0080_candidate_release_request"
         )
 
 
