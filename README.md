@@ -736,6 +736,8 @@ Invoke-RestMethod -Method Put -Uri http://127.0.0.1:18001/__admin/simulated-rele
 
 固定演练版本为stable（健康）和2026.01.01-rc1（模拟500）。CAS同时比较版本和修订号，精确重放保留历史command并另返current/effect_current；旧开关也写入同一持久状态，重启不清零，存储故障503。恢复stable仍须先GET并使用当前修订和新命令键。旧默认内存模式保留；此接口是隔离演练管理入口，不消费候选审批，不改变真实runtime-metadata或签名清单，也不代表候选已经执行。
 
+第125步增加[发布命令只读回执](docs/architecture/125-release-receipt-reconciliation.md)：使用原命令的idempotency_key查询`GET /__admin/simulated-release/commands/{idempotency_key}`。存在返回200与完整历史命令/current/effect_current；不存在返回带演练来源的404封套，查询不会产生写入。它不能证明尚在途的请求已经停止，不能据404自动重发；effect_current只表示模拟版本与修订仍匹配，不是恢复健康证明。
+
 ### 本地运行
 
 ```powershell

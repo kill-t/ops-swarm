@@ -1,13 +1,17 @@
 """有限发布演练管理接口，不承担业务执行授权。"""
 
-from fastapi import APIRouter, Request, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Path, Request, Response
 
 from opsswarm.fault_lab.release.contracts import (
+    Key,
     ReleaseCommand,
     ReleaseError,
     ReleaseResult,
     ReleaseState,
 )
+from opsswarm.fault_lab.release.receipts import ReleaseReceipt
 from opsswarm.fault_lab.release.store import LabReleaseStore
 
 
@@ -24,6 +28,16 @@ def create_release_router() -> APIRouter:
     @router.get("")
     async def get_simulated_release(request: Request) -> ReleaseState:
         return await get_store(request).get()
+
+    @router.get("/commands/{idempotency_key}", responses={404: {"model": ReleaseReceipt}})
+    async def get_simulated_release_receipt(
+        idempotency_key: Annotated[Key, Path()], request: Request, response: Response
+    ) -> ReleaseReceipt:
+        result = await get_store(request).get_receipt(idempotency_key)
+        response.headers["Cache-Control"] = "no-store"
+        if result.status == "not_found":
+            response.status_code = 404
+        return result
 
     @router.put("", status_code=201, responses={200: {"model": ReleaseResult}})
     async def change_simulated_release(

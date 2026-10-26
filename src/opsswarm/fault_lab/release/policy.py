@@ -1,11 +1,22 @@
 """不依赖HTTP、数据库或框架的版本比较与修订规则。"""
 
+import hashlib
+import json
+
 from opsswarm.fault_lab.release.contracts import (
     LegacyFaultCommand,
     ReleaseCommand,
     ReleaseError,
     ReleaseVersion,
 )
+
+
+def command_hash(command: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            command, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def transition(
