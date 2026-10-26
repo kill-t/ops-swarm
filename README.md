@@ -738,7 +738,16 @@ Invoke-RestMethod -Method Put -Uri http://127.0.0.1:18001/__admin/simulated-rele
 
 第125步增加[发布命令只读回执](docs/architecture/125-release-receipt-reconciliation.md)：使用原命令的idempotency_key查询`GET /__admin/simulated-release/commands/{idempotency_key}`。存在返回200与完整历史命令/current/effect_current；不存在返回带演练来源的404封套，查询不会产生写入。它不能证明尚在途的请求已经停止，不能据404自动重发；effect_current只表示模拟版本与修订仍匹配，不是恢复健康证明。
 
-第126步增加[远端受限派发](docs/architecture/126-bounded-release-dispatch.md)：`POST /__admin/simulated-release/dispatches`注册operation_id、完整rc1→stable CAS和不超过30秒的not_before/expires_at；随后GET/PUT/DELETE同一路径下的`/{operation_id}`分别查询、执行原命令和取消未应用操作。窗口不可续期，数据库时钟在锁后及提交约束校验，结果丢失使用原ID/键只读查询。此处是隔离演练管理协议，尚未接入控制面审批后的Worker；生产环境不得使用。
+第126步增加[远端受限派发](docs/architecture/126-bounded-release-dispatch.md)：`POST /__admin/simulated-release/dispatches`注册operation_id、完整rc1→stable CAS和不超过30秒的not_before/expires_at；随后GET/PUT/DELETE同一路径下的`/{operation_id}`分别查询、执行原命令和取消未应用操作。窗口不可续期，数据库时钟在锁后及提交约束校验，结果丢失使用原ID/键只读查询。此处是隔离演练管理协议，控制面通过第127步独立Worker接入；生产环境不得使用。
+
+第127步增加[控制面可信执行任务与Worker](docs/architecture/127-candidate-release-worker.md)。对精确124请求调用`POST .../release-execution-request/execution-job`只入队，正文包含request_id、request_content_sha256、expected_incident_version、idempotency_key和reason；GET该路径及`/commands`查询状态、最多3个尝试、原始审计及执行结果。当前配置必须有同版本executor凭据，旧authorization不会自动成为长期委派。运行独立Worker：
+
+```powershell
+uv run python -m opsswarm.execution.release_jobs.main --once
+# 持续处理时省略 --once；仍须显式配置本地数据库、演练地址和操作者认证。
+```
+
+Worker首次写前持久标记，远端窗口不超过原准备/凭据/租约期限，注册后再核验才执行。响应未知或重领只GET，不自动换键/重发；unknown终态当前需人工调查，无自动重开接口。结果表示模拟操作历史，尚未客观验证恢复，也未结算父运行。新迁移仅在隔离测试库验收；本片未自动启用Compose Worker服务或升级用户数据库。
 
 ### 本地运行
 

@@ -1,5 +1,6 @@
 # OpsSwarm 数据库设计
 
+第127步新增[候选发布可信任务与独立Worker](127-candidate-release-worker.md)：精确准备请求、当前凭据/审批/预算重验、首次写前持久标记、单次POST/PUT与仅GET恢复，完整远端材料和结果落库；旧false字段及父链保持，客观恢复验证后续交付。
 第126步新增[远端持久窗口与受限派发](126-bounded-release-dispatch.md)：固定原命令/截止、实际CAS、取消隔离与同事务回执，原生守卫阻止规范候选键越期或取消后写入；管理端不替代业务审批，控制面Worker后续接入。
 第125步新增[发布操作只读回执与对账](125-release-receipt-reconciliation.md)：按稳定键查询原持久命令，缺失404不写、完整来源/摘要和历史适用性校验；有界客户端与纯对账不授予派发权限，Worker及远端派发约束仍待实现。
 第124步新增[候选发布执行可信准入](124-candidate-release-execution-admission.md)：精确核验批准、原步骤与只读版本/CAS绑定成不可变prepared请求，严格来源/预算/期限及审计保护；dispatch_eligible=false，未派发，远端回执与Worker后续交付。
