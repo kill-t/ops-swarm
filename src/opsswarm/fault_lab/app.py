@@ -42,6 +42,7 @@ from opsswarm.fault_lab.redis_dependency import (
 )
 from opsswarm.fault_lab.release.api import create_release_router
 from opsswarm.fault_lab.release.contracts import LabReleaseSettings, ReleaseError
+from opsswarm.fault_lab.release.dispatch_api import create_dispatch_router
 from opsswarm.fault_lab.release.store import LabReleaseStore
 from opsswarm.fault_lab.runtime_metadata import (
     RuntimeArtifactInstance,
@@ -214,12 +215,18 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.lab_release_store = release_store
+    app.state.lab_release_dispatch_store = (
+        None if release_store is None else release_store.dispatches
+    )
     app.include_router(create_release_router())
+    app.include_router(create_dispatch_router())
 
     @app.exception_handler(ReleaseError)
     async def handle_release_error(_: object, error: ReleaseError) -> JSONResponse:
         return JSONResponse(
-            status_code=error.status_code, content={"error_code": error.code, "message": str(error)}
+            status_code=error.status_code,
+            content={"error_code": error.code, "message": str(error)},
+            headers={"Cache-Control": "no-store"},
         )
 
     async def fault_snapshot() -> FaultSnapshot:

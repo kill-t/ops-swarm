@@ -65,5 +65,5 @@ async def test_0060_refuses_downgrade_after_runbook_policy_is_persisted(
         await asyncio.to_thread(command.downgrade, config(), "0059_telemetry_mcp_metric_policy")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0080_candidate_release_request"
+            "0081_lab_release_dispatch"
         )

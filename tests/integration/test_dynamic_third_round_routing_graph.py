@@ -390,5 +390,5 @@ async def test_third_round_route_fact_blocks_downgrade_without_v15_run(
         )
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0080_candidate_release_request"
+            "0081_lab_release_dispatch"
         )

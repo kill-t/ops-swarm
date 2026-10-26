@@ -1,5 +1,6 @@
 # OpsSwarm Agent 系统最终设计：轻量 Harness、分层记忆与受控工具
 
+第126步新增[远端持久窗口与受限派发](126-bounded-release-dispatch.md)：固定原命令/截止、实际CAS、取消隔离与同事务回执，原生守卫阻止规范候选键越期或取消后写入；管理端不替代业务审批，控制面Worker后续接入。
 第125步新增[发布操作只读回执与对账](125-release-receipt-reconciliation.md)：按稳定键查询原持久命令，缺失404不写、完整来源/摘要和历史适用性校验；有界客户端与纯对账不授予派发权限，Worker及远端派发约束仍待实现。
 第124步新增[候选发布执行可信准入](124-candidate-release-execution-admission.md)：精确核验批准、原步骤与只读版本/CAS绑定成不可变prepared请求，严格来源/预算/期限及审计保护；dispatch_eligible=false，未派发，远端回执与Worker后续交付。
 第123步新增[本地发布演练状态与CAS](123-lab-release-state-cas.md)：显式启用PostgreSQL持久版本/修订和不可变命令，旧开关、订单及指标共享状态，拒绝版本漂移/ABA和故障回退；演练标签不代表真实镜像，候选专用执行后续交付。

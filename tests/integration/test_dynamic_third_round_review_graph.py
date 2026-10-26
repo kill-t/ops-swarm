@@ -394,7 +394,7 @@ async def test_third_round_review_call_blocks_downgrade_without_v14_run(
         await asyncio.to_thread(command.downgrade, migration_config(), "0055_third_round_synthesis")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0080_candidate_release_request"
+            "0081_lab_release_dispatch"
         )
 
 
@@ -470,5 +470,5 @@ async def test_third_round_review_fact_blocks_downgrade_without_v14_or_slot_two(
         await asyncio.to_thread(command.downgrade, migration_config(), "0055_third_round_synthesis")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0080_candidate_release_request"
+            "0081_lab_release_dispatch"
         )

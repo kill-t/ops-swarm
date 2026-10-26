@@ -738,6 +738,8 @@ Invoke-RestMethod -Method Put -Uri http://127.0.0.1:18001/__admin/simulated-rele
 
 第125步增加[发布命令只读回执](docs/architecture/125-release-receipt-reconciliation.md)：使用原命令的idempotency_key查询`GET /__admin/simulated-release/commands/{idempotency_key}`。存在返回200与完整历史命令/current/effect_current；不存在返回带演练来源的404封套，查询不会产生写入。它不能证明尚在途的请求已经停止，不能据404自动重发；effect_current只表示模拟版本与修订仍匹配，不是恢复健康证明。
 
+第126步增加[远端受限派发](docs/architecture/126-bounded-release-dispatch.md)：`POST /__admin/simulated-release/dispatches`注册operation_id、完整rc1→stable CAS和不超过30秒的not_before/expires_at；随后GET/PUT/DELETE同一路径下的`/{operation_id}`分别查询、执行原命令和取消未应用操作。窗口不可续期，数据库时钟在锁后及提交约束校验，结果丢失使用原ID/键只读查询。此处是隔离演练管理协议，尚未接入控制面审批后的Worker；生产环境不得使用。
+
 ### 本地运行
 
 ```powershell

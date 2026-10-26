@@ -17,6 +17,7 @@ from opsswarm.fault_lab.release.contracts import (
     ReleaseResult,
     ReleaseState,
 )
+from opsswarm.fault_lab.release.dispatch_store import LabReleaseDispatchStore
 from opsswarm.fault_lab.release.policy import command_hash as command_hash
 from opsswarm.fault_lab.release.policy import transition
 from opsswarm.fault_lab.release.queries import read_command, read_receipt, read_state
@@ -33,6 +34,7 @@ class LabReleaseStore:
         self, factory: async_sessionmaker[AsyncSession], *, clock: Callable[[], datetime] = utc_now
     ) -> None:
         self._factory, self._clock = factory, clock
+        self.dispatches = LabReleaseDispatchStore(factory)
 
     def _now(self) -> datetime:
         value = self._clock()
