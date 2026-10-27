@@ -31,6 +31,7 @@ from opsswarm.fault_lab.release import dispatch_tables as lab_dispatch_tables  #
 from opsswarm.fault_lab.release import tables as lab_release_tables  # noqa: F401
 from opsswarm.follow_up.persistence import tables as follow_up_tables  # noqa: F401
 from opsswarm.identity import tables as operator_identity_tables  # noqa: F401
+from opsswarm.incidents.convergence import tables as candidate_convergence_tables  # noqa: F401
 from opsswarm.incidents.persistence import tables  # noqa: F401
 from opsswarm.investigation.budget import tables as investigation_budget_tables  # noqa: F401
 from opsswarm.investigation.candidate import tables as candidate_tables  # noqa: F401

@@ -773,7 +773,20 @@ uv run python -m opsswarm.investigation.settlement.main
 
 可信Bearer可调用`GET /api/v1/investigations/{run_id}/candidate-settlement`读取收尾事实；GET不会触发推进，没有新增HTTP写入口。`settled`表示本次候选阶段已收尾，独立`disposition`区分`recovery_verified`、`reinvestigation_required`和`human_resolution_required`。原128五类结果与原因保留，不能把来源失败/执行未知改称恢复；后续意图尚未实际启动。
 
-旧交接、handed_off尝试、执行和恢复样本保持，旧历史仍可查询而当前写资格失效。Incident仍维持原`mitigating`状态、版本和事件，活动唯一索引继续保留`settled`槽位；事故恢复/失败迁移、槽位释放及回流另片交付。此进程只有数据库事务，不调用模型/网络或恢复LangGraph，也不自动添加默认Compose服务。
+旧交接、handed_off尝试、执行和恢复样本保持，旧历史仍可查询而当前写资格失效。第129步收尾本身维持原`mitigating`状态、版本和事件，并继续占用`settled`活动槽位；后续事故迁移和成功槽位释放见下方第130步，失败回流仍待后续交付。此进程只有数据库事务，不调用模型/网络或恢复LangGraph，也不自动添加默认Compose服务。
+
+### 候选处置结果与事故收敛
+
+第130步提供[独立事故收敛](docs/architecture/130-candidate-incident-convergence.md)，消费第129步收尾事实，GET只查询，独立进程负责状态推进：
+
+```powershell
+uv run python -m opsswarm.incidents.convergence.main --once
+uv run python -m opsswarm.incidents.convergence.main
+```
+
+可信Bearer可读取`GET /api/v1/investigations/{run_id}/incident-convergence`。新鲜恢复证据通过`mitigating → verifying → resolved`两跳，并在同事务释放活动槽位；验证失败则`mitigating → verifying → investigating`，继续保留槽位，供后续受原预算约束的回流处理。未知、未执行、数据源失败、效果替代、过期或采样后的新告警都不会自动宣布恢复。
+
+时效取原128窗口和最早观测后120秒的较早者，数据库提交时再次检查，不能靠收尾时间续期。原128/129记录、父run时刻、预算和图不变；未来人工close或同指纹告警重开后历史仍可读。此进程不重新采样/执行或创建调查，不自动关闭事故，也不启动默认Compose服务。
 
 ### 本地运行
 

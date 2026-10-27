@@ -24,8 +24,8 @@ from opsswarm.investigation.settlement.contracts import (
     SettlementView,
 )
 from opsswarm.investigation.settlement.eligibility import eligible_recoveries
-from opsswarm.investigation.settlement.parent_state import parent_settlement
 from opsswarm.investigation.settlement.policy import disposition, settlement_id
+from opsswarm.investigation.settlement.queries import read_settlement
 from opsswarm.investigation.settlement.tables import CandidateSettlementRow
 from opsswarm.investigation.tasks.artifact_tables import AgentTaskEventRow
 from opsswarm.investigation.tasks.events import append_task_event
@@ -61,18 +61,7 @@ class CandidateSettlementStore:
             return SettlementView(record=await self._read(session, run))
 
     async def _read(self, session: AsyncSession, run: InvestigationRunRow) -> SettlementRecord:
-        record = await parent_settlement(session, run)
-        row = await session.get(RecoveryJobRow, record.recovery_job_id)
-        assert row is not None
-        source = await execution_source(session, run, row.id, clock=self._clock)
-        await recovery_view(session, row, run, source)
-        assert source.result is not None
-        request = await session.get(CandidateReleaseRequestRow, source.result.request_id)
-        if request is None or request.incident_version != record.incident_version:
-            raise SettlementError(
-                "candidate_settlement_integrity_violation", "收尾与原事故版本不一致"
-            )
-        return record
+        return await read_settlement(session, run, clock=self._clock)
 
     async def settle_next(self) -> bool:
         skipped: list[UUID] = []

@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第130步新增[候选处置结果与Incident受控收敛](130-candidate-incident-convergence.md)：精确历史样本/新告警及提交时效校验，合法两跳到resolved或investigating，成功分支原子释放活动槽位；未知/过期/新告警保留，失败继续持槽，原128/129及父时刻不改。
+
 第129步新增[候选恢复结论与父运行收尾](129-candidate-parent-settlement.md)：独立事务保存精确执行/恢复引用、后续意图和可重放进度事件，父run置settled，旧交接/结果/样本保持；历史可读而当前写资格失效，Incident与活动槽位继续保持。
 
 第128步新增[候选发布后的客观恢复验证](128-candidate-recovery-verification.md)：独立只读Worker绑定精确执行结果/operation，固定原期限内采样窗口、最多3次租约尝试与逐样本持久化，区分恢复、未恢复、来源失败、执行未知和未执行；不推进父运行。

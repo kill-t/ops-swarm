@@ -100,6 +100,9 @@ from opsswarm.incidents import (
     IncidentVersionConflict,
     InvalidIncidentTransition,
 )
+from opsswarm.incidents.convergence.api import create_candidate_incident_convergence_router
+from opsswarm.incidents.convergence.contracts import ConvergenceError
+from opsswarm.incidents.convergence.store import CandidateIncidentConvergenceStore
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.api import create_call_budget_router
 from opsswarm.investigation.budget.queries import CallBudgetQueries
@@ -206,6 +209,7 @@ def create_app(
     release_execution_store: ReleaseExecutionStore | None = None,
     candidate_recovery_store: CandidateRecoveryStore | None = None,
     candidate_settlement_store: CandidateSettlementStore | None = None,
+    candidate_incident_convergence_store: CandidateIncidentConvergenceStore | None = None,
     condition_approval_store: ConditionApprovalStore | None = None,
     candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
@@ -267,6 +271,9 @@ def create_app(
             application.state.human_preparation_store = human_preparation_store
             application.state.condition_approval_store = condition_approval_store
             application.state.candidate_release_request_store = candidate_release_request_store
+            application.state.candidate_incident_convergence_store = (
+                candidate_incident_convergence_store
+            )
             application.state.candidate_settlement_store = candidate_settlement_store
             application.state.candidate_recovery_store = candidate_recovery_store
             application.state.release_execution_store = release_execution_store
@@ -304,6 +311,10 @@ def create_app(
         application.state.candidate_release_request_store = (
             candidate_release_request_store
             or CandidateReleaseRequestStore(database.session_factory, clock=clock)
+        )
+        application.state.candidate_incident_convergence_store = (
+            candidate_incident_convergence_store
+            or CandidateIncidentConvergenceStore(database.session_factory, clock=clock)
         )
         application.state.candidate_settlement_store = (
             candidate_settlement_store
@@ -411,6 +422,7 @@ def create_app(
     app.state.human_preparation_store = human_preparation_store
     app.state.condition_approval_store = condition_approval_store
     app.state.candidate_release_request_store = candidate_release_request_store
+    app.state.candidate_incident_convergence_store = candidate_incident_convergence_store
     app.state.candidate_settlement_store = candidate_settlement_store
     app.state.candidate_recovery_store = candidate_recovery_store
     app.state.release_execution_store = release_execution_store
@@ -445,6 +457,7 @@ def create_app(
     app.include_router(create_release_execution_router())
     app.include_router(create_candidate_recovery_router())
     app.include_router(create_candidate_settlement_router())
+    app.include_router(create_candidate_incident_convergence_router())
     app.include_router(create_candidate_condition_router())
     app.include_router(create_candidate_preflight_router())
     app.include_router(create_candidate_decision_router())
@@ -488,6 +501,7 @@ def create_app(
         )
 
     @app.exception_handler(ReleaseRequestError)
+    @app.exception_handler(ConvergenceError)
     @app.exception_handler(SettlementError)
     @app.exception_handler(RecoveryError)
     @app.exception_handler(ExecutionJobError)
@@ -514,7 +528,8 @@ def create_app(
         | ReleaseRequestError
         | ExecutionJobError
         | RecoveryError
-        | SettlementError,
+        | SettlementError
+        | ConvergenceError,
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,

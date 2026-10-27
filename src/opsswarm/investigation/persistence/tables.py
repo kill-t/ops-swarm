@@ -160,6 +160,11 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_settled_scope",
         ),
         CheckConstraint(
+            "candidate_slot_released_at IS NULL OR "
+            "(status = 'settled' AND isfinite(candidate_slot_released_at))",
+            name="ck_investigation_runs_candidate_slot",
+        ),
+        CheckConstraint(
             "status NOT IN ('await_human', 'await_candidate') OR "
             "(workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' "
             "AND data_source_mode = 'frozen')",
@@ -221,7 +226,8 @@ class InvestigationRunRow(Base):
             "incident_id",
             unique=True,
             postgresql_where=text(
-                "status IN ('queued', 'running', 'await_human', 'await_candidate', 'settled')"
+                "status IN ('queued', 'running', 'await_human', 'await_candidate') OR "
+                "(status = 'settled' AND candidate_slot_released_at IS NULL)"
             ),
         ),
         Index("ix_investigation_runs_incident_created", "incident_id", text("created_at DESC")),
@@ -255,6 +261,7 @@ class InvestigationRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    candidate_slot_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

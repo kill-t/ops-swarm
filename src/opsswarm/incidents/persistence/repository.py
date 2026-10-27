@@ -200,7 +200,8 @@ class IncidentStore:
                         incident.id,
                         action=IncidentAction.REOPEN,
                         expected_version=incident.version,
-                        occurred_at=submission.ingested_at,
+                        # 等待事故锁的告警保留接收时刻，重开迁移仍须单调。
+                        occurred_at=max(submission.ingested_at, incident.updated_at),
                         actor=system_actor,
                         reason="恢复后同一指纹告警触发重新调查",
                     )

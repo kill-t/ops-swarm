@@ -1,0 +1,27 @@
+# 候选处置结果与Incident受控收敛
+
+## 目标与边界
+
+基线14101c5。独立数据库进程消费129唯一收尾事实，完整重建128样本、127执行与原审批历史，保存不可变事故收敛决定；GET不触发推进。没有新模型、网络采样、执行或LangGraph恢复，128/129正文及父run原settled时刻不变。
+
+新鲜recovered经既有complete_mitigation、confirm_recovery两跳到resolved；新鲜business_probe_failed经complete_mitigation、fail_verification回investigating。不存在failed事故状态，不能跳过verifying，也不自动close。只有recovered释放活动槽位；失败仍持有槽位，供后续保留原预算的有界回流处理，不提前开放新的无来源调查。未执行、执行未知、来源失败和效果被替代只记录held_uncertain，不迁移事故或释放槽位。
+
+## 时效与并发
+
+冻结candidate-incident-convergence-v1，支持结论的同一最终尝试三份业务样本必须完整；fresh_until=min(128固定window_end，三份observed_at最早值+120秒)。created_at及数据库实际提交时刻均必须严格早于fresh_until才允许健康相关迁移。不能用128/129生成时刻续期。过期记录held_stale，不刷新样本；迁移前后崩溃整事务回滚，重扫时重新判断。
+
+事故当前status/version必须等于129的mitigating/incident_version，否则held_incident_changed。采样最后一份observed_at之后收到的任何新告警（按服务端ingested_at）阻止健康相关迁移，记录held_new_alert；保留最新告警ID/入库时刻作为当时材料。创建时校验当前最新告警；历史只按已保存告警ID核对当时引用，不用未来数据重新选MAX。这样既不因close/reopen或后续告警破坏旧决定，也不会拒绝已接收但等待事故锁的迟入库请求。该请求仍保留接收时刻，resolved后的重开迁移取max(接收时刻,事故当前更新时间)保持状态时间单调。
+
+先锁父work，再沿原candidate/Incident顺序锁定并重验129完整来源；告警入库同样持有Incident锁，避免确认恢复跨越新告警。未知/过期等分支也形成唯一事实，因此不会因永久不合格来源饿死后续任务。每run一次决定、无自动覆盖/重开，后续新证据或人工解决另片提供。
+
+## 持久化与协议
+
+0085_candidate_convergence新增candidate_incident_convergences（run主键、incident、content JSONB及SHA256、created_at）和run.candidate_slot_released_at投影。content固定run/incident、129摘要、前后事故状态/版本、outcome/reason、fresh_until、最新告警引用、actions、slot_released、策略和created_at。动作事件使用既有incident.status_changed、相邻版本、固定system actor_id=candidate-convergence:{run_id}、固定原因和原action payload；事件先落库再由既有SSE重放。
+
+收敛事实、全部事故迁移/事件及成功分支槽位投影同事务闭环，原生重建来源/纯判定、实际时钟和原子性。只有匹配recovered事实可把marker从NULL设置为该created_at；父run的status/completed_at/updated_at及旧字段保持。调整129原生run guard和仅针对首次进入settled的xmin规则，保留129历史核验；活动索引对settled且marker为空继续占用。旧版本路径保持，带数据不允许降级。
+
+GET /api/v1/investigations/{run_id}/incident-convergence使用可信Bearer/read（legacy_local同样要求），未处理为空；独立CLI支持--once与持续扫描，不新增HTTP写入口或默认Compose服务。历史查询验证完整129/128及持久事件，不长期要求Incident当前仍保持当时终态。
+
+## 验收与后续
+
+覆盖双候选来源、合法两跳/事件/版本、成功槽位释放、失败保留、未知/未执行/来源失败/替代、时效边界/真实提交超期/新告警、Incident版本冲突、并发幂等、事务回滚、完整历史和SSE事件可读、当前资格失效及原生孤立/伪造事实拒绝；用真实隔离PostgreSQL与假模型/固定HTTP传输，不连接生产。后续提供有界验证失败回流、新证据与人工解决，不重置原预算或沿用旧批准执行新动作。
