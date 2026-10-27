@@ -42,6 +42,7 @@ from opsswarm.investigation.human_review import tables as human_review_tables  #
 from opsswarm.investigation.human_routing import tables as human_routing_tables  # noqa: F401
 from opsswarm.investigation.human_wait import tables as human_wait_tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
+from opsswarm.investigation.reinvestigation import tables as reinvestigation_tables  # noqa: F401
 from opsswarm.investigation.review import tables as review_tables  # noqa: F401
 from opsswarm.investigation.review_routing import tables as review_routing_tables  # noqa: F401
 from opsswarm.investigation.settlement import tables as settlement_tables  # noqa: F401

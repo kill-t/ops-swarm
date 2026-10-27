@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第131步新增[验证失败的有界回流准入与原预算继承](131-bounded-reinvestigation-admission.md)：可信命令绑定130明确失败、原预算根/完整账本/总截止，固定最多一次准入及逐请求审计；尚未分派，原父运行与活动槽位保持，未来实际调用必须在原账本预留。
+
 第130步新增[候选处置结果与Incident受控收敛](130-candidate-incident-convergence.md)：精确历史样本/新告警及提交时效校验，合法两跳到resolved或investigating，成功分支原子释放活动槽位；未知/过期/新告警保留，失败继续持槽，原128/129及父时刻不改。
 
 第129步新增[候选恢复结论与父运行收尾](129-candidate-parent-settlement.md)：独立事务保存精确执行/恢复引用、后续意图和可重放进度事件，父run置settled，旧交接/结果/样本保持；历史可读而当前写资格失效，Incident与活动槽位继续保持。

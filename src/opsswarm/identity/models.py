@@ -54,6 +54,7 @@ ROLE_PERMISSIONS: dict[OperatorRole, frozenset[OperatorPermission]] = {
 }
 
 WRITE_PERMISSIONS: dict[str, OperatorPermission] = {
+    "request_candidate_reinvestigation": OperatorPermission.MANAGE_INCIDENT,
     "create_candidate_release_execution_job": OperatorPermission.EXECUTE_ACTION,
     "prepare_candidate_release_execution": OperatorPermission.EXECUTE_ACTION,
     "create_condition_approval_request": OperatorPermission.REQUEST_APPROVAL,
@@ -90,6 +91,9 @@ WRITE_PERMISSIONS: dict[str, OperatorPermission] = {
 TRUSTED_OPERATIONS = frozenset(
     {
         "get_operator_identity",
+        "request_candidate_reinvestigation",
+        "get_candidate_reinvestigation_admission",
+        "list_candidate_reinvestigation_commands",
         "get_candidate_incident_convergence",
         "get_candidate_settlement",
         "get_candidate_recovery_verification",

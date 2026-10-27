@@ -788,6 +788,14 @@ uv run python -m opsswarm.incidents.convergence.main
 
 时效取原128窗口和最早观测后120秒的较早者，数据库提交时再次检查，不能靠收尾时间续期。原128/129记录、父run时刻、预算和图不变；未来人工close或同指纹告警重开后历史仍可读。此进程不重新采样/执行或创建调查，不自动关闭事故，也不启动默认Compose服务。
 
+### 验证失败的回流准入
+
+第131步提供[有界回流准入](docs/architecture/131-bounded-reinvestigation-admission.md)。可信engineer向`POST /api/v1/investigations/{run_id}/reinvestigation-admission`提交`action=request_reinvestigation`、130的`convergence_sha256`、`expected_incident_version`、`idempotency_key`和`reason`。GET同路径查看不可变请求及当前适用性，GET `/commands`按游标读取逐请求业务审计。
+
+只有130明确验证失败、事故版本仍匹配且没有后续告警时才可新建。每根运行最多一次准入；相同主体与完整命令精确重放返回原请求，换键或换主体不会增加次数。请求绑定原账本和原总截止，未知模型用量继续占用，至少保留一次完整协调调用容量；GET或重放不续期。
+
+准入的`dispatch_status=not_dispatched`，原settled运行继续持槽。本片未创建新的调查或预算预留，实际分派将以独立阶段在原账本重新检查和预留；不能把准入当成处置授权或已开始重新调查。
+
 ### 本地运行
 
 ```powershell
