@@ -43,6 +43,7 @@ from opsswarm.investigation.human_wait import tables as human_wait_tables  # noq
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.investigation.review import tables as review_tables  # noqa: F401
 from opsswarm.investigation.review_routing import tables as review_routing_tables  # noqa: F401
+from opsswarm.investigation.settlement import tables as settlement_tables  # noqa: F401
 from opsswarm.investigation.synthesis import tables as synthesis_tables  # noqa: F401
 from opsswarm.investigation.tasks import artifact_tables as task_artifact_tables  # noqa: F401
 from opsswarm.investigation.tasks import evidence_tables as task_evidence_tables  # noqa: F401

@@ -45,7 +45,7 @@ def test_alembic_migration_matches_sqlalchemy_metadata(migrated_database_url: st
     )
     with psycopg.connect(native_url) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0083_candidate_recovery",
+            "0084_candidate_settlement",
         )
 
 

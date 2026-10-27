@@ -11,6 +11,7 @@ from opsswarm.investigation.tasks.artifact_tables import AgentTaskEventRow
 from opsswarm.investigation.tasks.contracts import TaskModel
 
 TaskEventType = Literal[
+    "run.candidate_settled",
     "run.handed_off",
     "run.human_input_saved",
     "run.cancelled",

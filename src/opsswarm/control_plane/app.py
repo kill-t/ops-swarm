@@ -119,6 +119,9 @@ from opsswarm.investigation.human_wait.api import create_human_wait_router
 from opsswarm.investigation.human_wait.contracts import HumanWaitError
 from opsswarm.investigation.human_wait.store import HumanWaitStore
 from opsswarm.investigation.persistence import InvestigationStore
+from opsswarm.investigation.settlement.api import create_candidate_settlement_router
+from opsswarm.investigation.settlement.contracts import SettlementError
+from opsswarm.investigation.settlement.store import CandidateSettlementStore
 from opsswarm.investigation.tasks.api import create_collaboration_router
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.observability import (
@@ -202,6 +205,7 @@ def create_app(
     candidate_release_request_store: CandidateReleaseRequestStore | None = None,
     release_execution_store: ReleaseExecutionStore | None = None,
     candidate_recovery_store: CandidateRecoveryStore | None = None,
+    candidate_settlement_store: CandidateSettlementStore | None = None,
     condition_approval_store: ConditionApprovalStore | None = None,
     candidate_store: CandidateStore | None = None,
     human_review_store: HumanReviewStore | None = None,
@@ -263,6 +267,7 @@ def create_app(
             application.state.human_preparation_store = human_preparation_store
             application.state.condition_approval_store = condition_approval_store
             application.state.candidate_release_request_store = candidate_release_request_store
+            application.state.candidate_settlement_store = candidate_settlement_store
             application.state.candidate_recovery_store = candidate_recovery_store
             application.state.release_execution_store = release_execution_store
             application.state.candidate_condition_store = candidate_condition_store
@@ -299,6 +304,10 @@ def create_app(
         application.state.candidate_release_request_store = (
             candidate_release_request_store
             or CandidateReleaseRequestStore(database.session_factory, clock=clock)
+        )
+        application.state.candidate_settlement_store = (
+            candidate_settlement_store
+            or CandidateSettlementStore(database.session_factory, clock=clock)
         )
         application.state.candidate_recovery_store = (
             candidate_recovery_store
@@ -402,6 +411,7 @@ def create_app(
     app.state.human_preparation_store = human_preparation_store
     app.state.condition_approval_store = condition_approval_store
     app.state.candidate_release_request_store = candidate_release_request_store
+    app.state.candidate_settlement_store = candidate_settlement_store
     app.state.candidate_recovery_store = candidate_recovery_store
     app.state.release_execution_store = release_execution_store
     app.state.candidate_condition_store = candidate_condition_store
@@ -434,6 +444,7 @@ def create_app(
     app.include_router(create_candidate_release_router())
     app.include_router(create_release_execution_router())
     app.include_router(create_candidate_recovery_router())
+    app.include_router(create_candidate_settlement_router())
     app.include_router(create_candidate_condition_router())
     app.include_router(create_candidate_preflight_router())
     app.include_router(create_candidate_decision_router())
@@ -477,6 +488,7 @@ def create_app(
         )
 
     @app.exception_handler(ReleaseRequestError)
+    @app.exception_handler(SettlementError)
     @app.exception_handler(RecoveryError)
     @app.exception_handler(ExecutionJobError)
     @app.exception_handler(ConditionApprovalError)
@@ -501,7 +513,8 @@ def create_app(
         | ConditionApprovalError
         | ReleaseRequestError
         | ExecutionJobError
-        | RecoveryError,
+        | RecoveryError
+        | SettlementError,
     ) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,

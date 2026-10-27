@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-26。最新完成切片为第128步候选发布客观恢复验证，基线为main的9c612ba（第127步）。本文随第128步独立提交保存；实际提交与工作区以Git核对，结果以[第128步验收记录](progress/128-candidate-recovery-verification.md)为准。
+核对日期：2026-10-27。最新完成切片为第129步候选恢复结论与父运行持久收尾，基线为main的5a439da（第128步）。本文随第129步独立提交保存；实际提交与工作区以Git核对，结果以[第129步验收记录](progress/129-candidate-parent-settlement.md)为准。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读[第128步设计](architecture/128-candidate-recovery-verification.md)和[验收记录](progress/128-candidate-recovery-verification.md)，再读[第127步设计](architecture/127-candidate-release-worker.md)和[验收记录](progress/127-candidate-release-worker.md)，再读[第126步设计](architecture/126-bounded-release-dispatch.md)和[验收记录](progress/126-bounded-release-dispatch.md)，再读[第125步设计](architecture/125-release-receipt-reconciliation.md)和[验收记录](progress/125-release-receipt-reconciliation.md)，再读[第124步设计](architecture/124-candidate-release-execution-admission.md)和[验收记录](progress/124-candidate-release-execution-admission.md)，再读[第123步设计](architecture/123-lab-release-state-cas.md)和[验收记录](progress/123-lab-release-state-cas.md)，再读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读[第129步设计](architecture/129-candidate-parent-settlement.md)和[验收记录](progress/129-candidate-parent-settlement.md)，再读[第128步设计](architecture/128-candidate-recovery-verification.md)和[验收记录](progress/128-candidate-recovery-verification.md)，再读[第127步设计](architecture/127-candidate-release-worker.md)和[验收记录](progress/127-candidate-release-worker.md)，再读[第126步设计](architecture/126-bounded-release-dispatch.md)和[验收记录](progress/126-bounded-release-dispatch.md)，再读[第125步设计](architecture/125-release-receipt-reconciliation.md)和[验收记录](progress/125-release-receipt-reconciliation.md)，再读[第124步设计](architecture/124-candidate-release-execution-admission.md)和[验收记录](progress/124-candidate-release-execution-admission.md)，再读[第123步设计](architecture/123-lab-release-state-cas.md)和[验收记录](progress/123-lab-release-state-cas.md)，再读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -24,7 +24,7 @@
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0083_candidate_recovery`；第128步仅在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0084_candidate_settlement`；第129步仅在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -83,6 +83,8 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 第127步将精确124准备请求接成可信执行任务及独立Worker，固定凭据版本/原窗口并重验审批最高版本、原预算/期限，首次POST前提交永久派发标记，注册后再核验才唯一PUT。重领只GET，三次失租收敛，完整远端材料和执行结果不可变保存；真实126正常CAS、丢响应/ABA及四个崩溃边界已验收。原false字段和父run/Incident/预算/图保持，结果仅证明模拟操作历史；尚无客观恢复验证、父收尾或活动槽位释放。unknown终态没有自动重开/业务取消接口。
 
 第128步增加独立只读恢复Worker，自动发现127终态并绑定原执行/结果摘要/operation；120秒窗口受原运行总期限约束，最多3个30秒尝试、每次3份订单业务样本且间隔至少2秒。逐次样本持久化，重试不续期或跨尝试拼接，明确recovered/not_recovered/source_failed/execution_unknown/not_executed；版本/effect_current不是健康证明。原生和应用均重建完整历史、拒绝迟到及伪造材料，结果不推进父链，不能证明生产可用率或恢复因果。新Worker/GET入口见第128篇；unknown人工处理、父运行收尾和回流仍待后续。
+
+第129步新增独立数据库收尾进程，完整重建原执行/恢复历史并确认当前依据，在父work锁和单事务内保存唯一收尾事实、run.candidate_settled进度事件及父run.status=settled/completed_at。独立outcome/reason保留原五类结果，disposition区分验证恢复、需要重新调查和需要人工解决；后续意图尚未实际执行。原交接/work/handed_off尝试、127/128正文与false字段、预算和图保持。旧历史GET通过窄校验兼容新终态，当前写资格失效；Incident仍mitigating且活动索引包含settled，事故状态和槽位收敛仍待后续。SQL先过滤永久失格材料，避免八条旧记录阻塞后续合格来源。
 
 ## 5. 当前能力与限制
 
@@ -156,12 +158,13 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第 110 步在单次 v3 来源遍历中复用成功的计划、假设、审查及路由 DTO；命中前以有界行版本和完整集合重查动态来源，包括冻结经验审核授权，变化即拒绝。每次业务操作、会话、事务及 savepoint 都重新核验，不缓存父租约或授权决定。两种冻结三轮路径连同跨租约 checkpoint 恢复分别约 77/100 秒，保持 13 次模型及 6 次工具账本，通过 180 秒、25,000 条业务 SQL 上界；该记录补齐第 109 步同类实验的超时缺口，不修改历史试验结果。
 
-尚未完成：更多负载性能验收；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；可审计预算追加及补查意图实际分派；规划 Agent、多步骤处置、父运行收尾及验证失败回流；复杂场景工作台和完整工程版发布。人工等待已支持补充、取消、完整输入准备、独立模型重评意见及未分派后续意图，第127步已接入候选发布执行，第128步增加独立客观验证，父运行收尾仍待交付；graph-v15 已到 END，历史业务审批不等于 LangGraph interrupt/resume。
+尚未完成：更多负载性能验收；专业交互历史裁剪；其他角色经验上下文；更多场景手册与 v3 接入；可审计预算追加及补查意图实际分派；规划 Agent、多步骤处置、Incident结果收敛及验证失败回流；复杂场景工作台和完整工程版发布。人工等待已支持补充、取消、完整输入准备、独立模型重评意见及未分派后续意图，第127步已接入候选发布执行，第128步增加独立客观验证，第129步完成候选父运行收尾；Incident收敛及活动槽位释放仍待交付；graph-v15 已到 END，历史业务审批不等于 LangGraph interrupt/resume。
 
 ## 6. 下一步代码导航
 
 | 入口 | 边界 |
 | --- | --- |
+| [settlement/store.py](../src/opsswarm/investigation/settlement/store.py)、[eligibility.py](../src/opsswarm/investigation/settlement/eligibility.py)、[parent_state.py](../src/opsswarm/investigation/settlement/parent_state.py)、[0084迁移](../alembic/versions/0084_candidate_settlement.py) | 唯一精确收尾、SQL资格过滤、进度事件/父终态同事务；兼容历史读取，不关闭Incident或释放槽位 |
 | [candidate/store.py](../src/opsswarm/verification/candidate/store.py)、[worker.py](../src/opsswarm/verification/candidate/worker.py)、[probe.py](../src/opsswarm/verification/candidate/probe.py)、[queries.py](../src/opsswarm/verification/candidate/queries.py)、[0083迁移](../alembic/versions/0083_candidate_recovery.py) | 固定窗口与独立尝试、逐次订单业务样本及不可变判断；不结算父链 |
 | [release_jobs/store.py](../src/opsswarm/execution/release_jobs/store.py)、[job_store.py](../src/opsswarm/execution/release_jobs/job_store.py)、[worker.py](../src/opsswarm/execution/release_jobs/worker.py)、[client.py](../src/opsswarm/execution/release_jobs/client.py)、[main.py](../src/opsswarm/execution/release_jobs/main.py) | 可信执行任务、当前凭据/来源重验、单次派发与仅GET恢复、不可变材料及结果；不验证健康或结算父链 |
 | [fault_lab/release/dispatch_store.py](../src/opsswarm/fault_lab/release/dispatch_store.py)、[dispatch_queries.py](../src/opsswarm/fault_lab/release/dispatch_queries.py)、[dispatch_contracts.py](../src/opsswarm/fault_lab/release/dispatch_contracts.py)、[0081迁移](../alembic/versions/0081_lab_release_dispatch.py) | 远端不可变窗口、实际CAS/取消/回执及原生截止闭环；是隔离管理协议，127控制面Worker已接入 |
@@ -219,7 +222,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第129步：**候选恢复验证与父运行的持久收尾**。精确绑定128恢复结果和127执行历史，明确恢复、未恢复及未知结论的后续状态与审计；保持原交接/尝试/审批事实和总预算，不把有限样本当作故障根因证明。验证失败回流、unknown人工收敛/业务取消、活动槽位、前端和图恢复继续分片交付。
+第130步：**候选处置结果与Incident的受控收敛**。父run已settled不等于事故恢复，需明确恢复证据时效、未恢复/未知分支、合法事故迁移和活动槽位边界；不复用历史批准执行新动作，不改写129/128事实或重置预算。自动失败回流、unknown人工解决/取消、多步骤、前端和图恢复继续分片。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -227,7 +230,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`。第128步验收结果见[切片记录](progress/128-candidate-recovery-verification.md)：按JUnit用例去重2,289项有通过记录：全量单元2,263及窗口7、原生4、独立SQL对抗/跨租约提交1、恢复API覆盖8、旧链路6。API整批7通过/1项在原127准备阶段unknown，主Agent最终真实反例2项通过补足该用例（1重叠），失败记录和时限限制保留。Ruff/格式/Mypy通过，唯一head为0083_candidate_recovery，CLI --help通过。仅隔离PostgreSQL17.6、假模型及ASGI，未升级用户Compose库、调用真实模型或操作生产。
+使用仓库 `.venv/Scripts/`。第129步验收见[切片记录](progress/129-candidate-parent-settlement.md)：2,321项用例取得通过记录，全量单元2,295、最终API/扫描9、原生11及旧链路6。原生批次1项早期夹具错误经精确专项修正通过，记录保留；跨日Docker设置错误不计入通过。Ruff、905文件格式、Mypy530源文件及前端类型/构建通过；唯一head0084_candidate_settlement、CLI --help通过。仅隔离PostgreSQL17.6、假模型与固定HTTP传输，未升级用户Compose库、调用真实模型或操作生产。
 
 ```powershell
 git status --short
@@ -239,10 +242,10 @@ git log -5 --oneline
 git diff --check
 ```
 
-第128步主要测试入口为[恢复API](../tests/api/test_candidate_recovery_api.py)、[探针](../tests/unit/verification/test_candidate_recovery_probe.py)、[窗口](../tests/unit/verification/test_candidate_recovery_window.py)、[原生迁移](../tests/integration/test_candidate_recovery_migration.py)和[SQL对抗/提交截止](../tests/integration/test_candidate_recovery_guards.py)。独立Worker命令见README，默认不启动新Compose服务；output/未读取、未提交。
+第129步主要入口为[API/父事实隔离](../tests/api/test_candidate_settlement_api.py)、[原生迁移](../tests/integration/test_candidate_settlement_migration.py)、[扫描公平性](../tests/integration/test_candidate_settlement_scan.py)及[纯意图策略](../tests/unit/investigation/test_candidate_settlement_policy.py)。独立进程命令见README，不自动新增Compose服务；output/未读取、未提交。
 
 动态池默认关闭。开启需要 frozen、function_calling 模型，建议处理 240 秒、租约 300 秒、停止宽限 5m；运行建议显式 max_model_calls=16、max_duration_seconds=900 及足够模型预算。旧默认 300 秒总时限不因 Worker 参数变化而延长；具体命令见 README，未升级用户 Compose 数据库。
 
 ## 10. 可直接用于继续开发的任务
 
-> 请阅读AGENTS.md、项目状态、进度索引和第128步设计/验收，核对Git与0083_candidate_recovery。127可信执行任务已接固定远端窗口、单次写出/仅GET恢复与不可变结果；128独立恢复Worker固定原执行后120秒且不越原总期限，最多3次30秒尝试、每次3样本，逐样本落库、不跨尝试拼接，重建完整来源并明确恢复/未恢复/来源失败/执行未知/未执行。GET不触发探测，unknown不重发，业务探针受冻结上限而原Agent账本不重置；1秒时钟偏差容忍不改变严格截止。下一片129做父运行持久收尾，必须保存独立事实而非改写128结果或旧交接。失败回流、unknown人工解决/取消、活动槽位、前端与图恢复仍待交付。
+> 请阅读AGENTS.md、项目状态、进度索引和第129步设计/验收，核对Git与0084_candidate_settlement。127独立执行、128独立客观验证及129父收尾均已实现。129复用run UUID作稳定身份，精确绑定原执行/恢复摘要、operation、handoff与旧父时刻，完整历史校验后原子保存唯一事实、进度事件和父settled终态。三类disposition只是后续意图，不是已经回流或人工解决；旧false字段和交接/work/attempt、预算、图不改。历史读取通过窄父状态校验避免递归，当前写资格不放宽；SQL资格过滤防旧失格记录饿死新任务。Incident仍mitigating，settled仍在活动唯一索引内。下一片130做Incident结果受控收敛，先明确证据时效、恢复/未恢复/未知分支和槽位边界，不把父收尾直接当事故关闭。自动回流、unknown人工解决/取消、多步骤、前端与图恢复仍待交付。

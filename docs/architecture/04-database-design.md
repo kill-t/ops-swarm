@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+第129步新增[候选恢复结论与父运行收尾](129-candidate-parent-settlement.md)：独立事务保存精确执行/恢复引用、后续意图和可重放进度事件，父run置settled，旧交接/结果/样本保持；历史可读而当前写资格失效，Incident与活动槽位继续保持。
+
 第128步新增[候选发布后的客观恢复验证](128-candidate-recovery-verification.md)：独立只读Worker绑定精确执行结果/operation，固定原期限内采样窗口、最多3次租约尝试与逐样本持久化，区分恢复、未恢复、来源失败、执行未知和未执行；不推进父运行。
 
 第127步新增[候选发布可信任务与独立Worker](127-candidate-release-worker.md)：精确准备请求、当前凭据/审批/预算重验、首次写前持久标记、单次POST/PUT与仅GET恢复，完整远端材料和结果落库；旧false字段及父链保持，客观恢复验证后续交付。

@@ -171,6 +171,13 @@ async def validated_handoff(
     cancellation = events[-1] if events and events[-1].action == "cancel" else None
     expected_status = "cancelled" if cancellation else waiting_status(record.destination)
     expected_completion = cancellation.created_at if cancellation else None
+    if run.status == "settled":
+        from opsswarm.investigation.settlement.parent_state import parent_settlement
+
+        settlement = await parent_settlement(session, run)
+        if cancellation is not None or settlement.handoff_id != record.id:
+            raise TaskFactConflict("handoff_integrity_violation", "收尾与原交接或取消状态冲突")
+        expected_status, expected_completion = "settled", settlement.created_at
     if (
         record.id != uuid5(run.id, "terminal-handoff:v1")
         or record.destination != route.decision.route

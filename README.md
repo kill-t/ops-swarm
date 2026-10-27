@@ -762,6 +762,19 @@ uv run python -m opsswarm.verification.candidate.main
 
 可信Bearer可查询`GET .../release-execution-request/execution-job/recovery-verification`，包含任务、尝试、样本和结果；未被Worker发现时为空视图。此接口不触发探针，没有新增HTTP写命令。恢复结果不修改父运行或Incident，不能将有限演练样本表述为生产恢复或因果证明；默认Compose尚未自动启用此Worker。
 
+### 候选恢复结论与父运行收尾
+
+第129步增加[父运行持久收尾](docs/architecture/129-candidate-parent-settlement.md)。独立进程发现已完成的候选恢复验证，完整重建原事实、确认当前依据后，在同一事务保存唯一收尾记录、进度事件并将父run置为`settled`：
+
+```powershell
+uv run python -m opsswarm.investigation.settlement.main --once
+uv run python -m opsswarm.investigation.settlement.main
+```
+
+可信Bearer可调用`GET /api/v1/investigations/{run_id}/candidate-settlement`读取收尾事实；GET不会触发推进，没有新增HTTP写入口。`settled`表示本次候选阶段已收尾，独立`disposition`区分`recovery_verified`、`reinvestigation_required`和`human_resolution_required`。原128五类结果与原因保留，不能把来源失败/执行未知改称恢复；后续意图尚未实际启动。
+
+旧交接、handed_off尝试、执行和恢复样本保持，旧历史仍可查询而当前写资格失效。Incident仍维持原`mitigating`状态、版本和事件，活动唯一索引继续保留`settled`槽位；事故恢复/失败迁移、槽位释放及回流另片交付。此进程只有数据库事务，不调用模型/网络或恢复LangGraph，也不自动添加默认Compose服务。
+
 ### 本地运行
 
 ```powershell

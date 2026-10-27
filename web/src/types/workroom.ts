@@ -1,6 +1,6 @@
 export type InvestigationMode = "single_agent" | "multi_agent";
 export type InvestigationDataSourceMode = "frozen" | "live";
-export type InvestigationRunStatus = "queued" | "running" | "await_human" | "await_candidate" | "cancelled" | "succeeded" | "failed";
+export type InvestigationRunStatus = "queued" | "running" | "await_human" | "await_candidate" | "settled" | "cancelled" | "succeeded" | "failed";
 export type HypothesisStatus = "supported" | "contested" | "insufficient_evidence";
 export type RootCause =
   | "release_500_regression"

@@ -26,7 +26,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from opsswarm.database.base import Base
 
-RUN_STATUS_SQL = "'queued', 'running', 'succeeded', 'failed'"
+RUN_STATUS_SQL = (
+    "'queued', 'running', 'succeeded', 'failed', 'await_human', 'await_candidate', "
+    "'cancelled', 'settled'"
+)
 WORK_STATUS_SQL = "'pending', 'running', 'completed', 'failed'"
 ATTEMPT_STATUS_SQL = "'running', 'succeeded', 'failed', 'lease_expired'"
 
@@ -151,6 +154,12 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_cancelled_scope",
         ),
         CheckConstraint(
+            "status <> 'settled' OR (workflow_version = 'v3' AND "
+            "graph_version = 'dynamic-investigation-graph-v15' AND data_source_mode = 'frozen' "
+            "AND result IS NULL AND metrics IS NULL AND last_error IS NULL)",
+            name="ck_investigation_runs_settled_scope",
+        ),
+        CheckConstraint(
             "status NOT IN ('await_human', 'await_candidate') OR "
             "(workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' "
             "AND data_source_mode = 'frozen')",
@@ -194,7 +203,8 @@ class InvestigationRunRow(Base):
         CheckConstraint(
             "(status IN ('queued', 'running', 'await_human', 'await_candidate') "
             "AND completed_at IS NULL) OR "
-            "(status IN ('succeeded', 'failed', 'cancelled') AND completed_at IS NOT NULL)",
+            "(status IN ('succeeded', 'failed', 'cancelled', 'settled') "
+            "AND completed_at IS NOT NULL)",
             name="ck_investigation_runs_completion_shape",
         ),
         CheckConstraint(
@@ -211,7 +221,7 @@ class InvestigationRunRow(Base):
             "incident_id",
             unique=True,
             postgresql_where=text(
-                "status IN ('queued', 'running', 'await_human', 'await_candidate')"
+                "status IN ('queued', 'running', 'await_human', 'await_candidate', 'settled')"
             ),
         ),
         Index("ix_investigation_runs_incident_created", "incident_id", text("created_at DESC")),

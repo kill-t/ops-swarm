@@ -189,9 +189,15 @@ class HumanWaitStore:
                         .with_for_update()
                     )
                     now = self._check_principal(principal)
-                    if incident is None or (
-                        incident.status != "investigating"
-                        and not await permits_wait_input(session, run, incident, clock=self._clock)
+                    if (
+                        run.status != "await_human"
+                        or incident is None
+                        or (
+                            incident.status != "investigating"
+                            and not await permits_wait_input(
+                                session, run, incident, clock=self._clock
+                            )
+                        )
                     ):
                         raise HumanWaitError("human_wait_not_available", "事故不再允许修改人工等待")
                     # 可能等待事故锁；时序和声明观察时间也需使用写入前的实际时间。
