@@ -189,6 +189,24 @@ async def terminal_source(
             == CallReservationRow.investigation_attempt_id.cast(String),
         )
     )
+    from opsswarm.investigation.reinvestigation_synthesis.tables import (
+        SynthesisAttemptRow,
+        SynthesisJobRow,
+    )
+
+    synthesis_owner = exists(
+        select(SynthesisAttemptRow.id)
+        .join(SynthesisJobRow, SynthesisJobRow.id == SynthesisAttemptRow.job_id)
+        .join(ReflowJobRow, ReflowJobRow.id == SynthesisJobRow.id)
+        .where(
+            SynthesisAttemptRow.id == CallReservationRow.reflow_synthesis_attempt_id,
+            SynthesisAttemptRow.investigation_run_id == run.id,
+            SynthesisJobRow.investigation_run_id == run.id,
+            SynthesisJobRow.policy_version == "reinvestigation-synthesis-v1",
+            ReflowJobRow.source["parent_attempt_id"].astext
+            == CallReservationRow.investigation_attempt_id.cast(String),
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
@@ -206,6 +224,11 @@ async def terminal_source(
                             CallReservationRow.operation == "human_review",
                             CallReservationRow.human_review_attempt_id.is_not(None),
                             human_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation == "synthesize_reinvestigation",
+                            CallReservationRow.reflow_synthesis_attempt_id.is_not(None),
+                            synthesis_owner,
                         ),
                         and_(
                             CallReservationRow.operation.in_(

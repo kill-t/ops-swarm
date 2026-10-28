@@ -73,6 +73,7 @@ def test_deadline_and_operation_contract():
                 CallOperation.COORDINATE_REINVESTIGATION,
                 CallOperation.COLLECT_REINVESTIGATION,
                 CallOperation.ANALYZE_REINVESTIGATION,
+                CallOperation.SYNTHESIZE_REINVESTIGATION,
             )
         )
 

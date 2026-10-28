@@ -839,6 +839,17 @@ uv run python -m opsswarm.investigation.reinvestigation_execution.main --continu
 
 可信Bearer/read可查询`GET /api/v1/investigations/{run_id}/reinvestigation-execution`的状态、真实尝试、新快照、输入和专业结果。新调用的model-input、context-manifest、interaction接口同样要求可信读取。这里只完成专业分析，综合/独立审查和后续规划审批仍待交付，旧批准不能授权新动作。
 
+### 独立回流综合
+
+第135步提供[综合 Worker](docs/architecture/135-reinvestigation-synthesis.md)。同轮所有专业均成功后，完整原材料、新证据、专业报告和未观测窗口进入冻结输入；有专业失败则明确阻断，未完成则等待。综合只引用本次新证据，在原账本预留`synthesize_reinvestigation`模型调用，结果固定`pending_review`，独立审查后续交付。
+
+```powershell
+uv run python -m opsswarm.investigation.reinvestigation_synthesis.main --once
+uv run python -m opsswarm.investigation.reinvestigation_synthesis.main --continuous
+```
+
+沿用原运行冻结profile和环境模型配置，SDK重试关闭，不加入默认Compose。最多3次真实尝试，成功调用可以跨尝试复用；unknown保留原占用，不重置原预算或期限。必要上下文超容量时停止调用。可信Bearer/read可查询`GET /api/v1/investigations/{run_id}/reinvestigation-synthesis`和`/input`，以及新调用的三类材料接口。HTTP查询不运行模型。
+
 ### 本地运行
 
 ```powershell

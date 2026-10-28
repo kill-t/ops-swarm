@@ -94,6 +94,8 @@ TRUSTED_OPERATIONS = frozenset(
         "get_reinvestigation_coordination",
         "get_reinvestigation_dispatch",
         "get_reinvestigation_execution",
+        "get_reinvestigation_synthesis",
+        "get_reinvestigation_synthesis_input",
         "get_reinvestigation_coordination_input",
         "request_candidate_reinvestigation",
         "get_candidate_reinvestigation_admission",

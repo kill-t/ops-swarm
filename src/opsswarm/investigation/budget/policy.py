@@ -38,6 +38,7 @@ def operation_role(operation: CallOperation) -> str | None:
         CallOperation.COORDINATE_REINVESTIGATION: None,
         CallOperation.COLLECT_REINVESTIGATION: None,
         CallOperation.ANALYZE_REINVESTIGATION: None,
+        CallOperation.SYNTHESIZE_REINVESTIGATION: None,
         CallOperation.QUERY_LOGS: "log",
         CallOperation.ANALYZE_LOG: "log",
         CallOperation.QUERY_METRICS: "metric",

@@ -23,6 +23,20 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
+            "(operation='synthesize_reinvestigation')=(reflow_synthesis_attempt_id IS NOT NULL)",
+            name="ck_call_reservations_synthesis_owner",
+        ),
+        ForeignKeyConstraint(
+            ["reflow_synthesis_attempt_id", "investigation_run_id"],
+            [
+                "investigation_reflow_synthesis_attempts.id",
+                "investigation_reflow_synthesis_attempts.investigation_run_id",
+            ],
+            name="fk_call_reservations_synthesis_attempt",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
             "(operation IN ('collect_reinvestigation','analyze_reinvestigation')) = "
             "(reflow_task_id IS NOT NULL AND reflow_task_attempt_id IS NOT NULL) AND "
             "((reflow_task_id IS NULL)=(reflow_task_attempt_id IS NULL)) AND "
@@ -92,56 +106,51 @@ class CallReservationRow(Base):
             use_alter=True,
         ),
         CheckConstraint(
-            "((operation IN ('read_log_evidence','read_metric_evidence',"
-            "'read_change_evidence','read_log_runbook','read_metric_runbook',"
-            "'read_change_runbook')) = (tool_request IS NOT NULL)) AND (tool_request "
-            "IS NULL OR (jsonb_typeof(tool_request) = 'object' AND "
-            "octet_length(tool_request::text) <= 8192)) AND (call_result IS NULL OR "
-            "(status <> 'reserved' AND jsonb_typeof(call_result) = 'object' AND "
-            "octet_length(call_result::text) <= 65536 AND COALESCE(call_result ->> "
-            "'kind', '') = kind AND ((kind = 'model' AND ((operation = 'coordinate' "
-            "AND COALESCE(model_input ->> 'version', '') IN "
-            "('coordination-model-input-v1','coordination-experience-input-v1') AND "
-            "COALESCE(call_result ->> 'version', '') = "
-            "'coordination-model-result-v1') OR (operation = 'synthesize' AND NOT "
-            "(model_input ? 'version') AND COALESCE(call_result ->> 'version', '') = "
-            "'open-hypothesis-synthesis-result-v1') OR (operation IN ('review', "
-            "'human_review') AND NOT (model_input ? 'version') AND "
-            "COALESCE(call_result ->> 'version', '') = "
-            "'hypothesis-review-result-v1') OR (operation = 'evaluate_candidate' "
-            "AND NOT (model_input ? 'version') AND COALESCE(call_result ->> "
-            "'version', '') = 'candidate-model-result-v1') OR "
-            "(operation='coordinate_reinvestigation' AND NOT (model_input ? 'version') "
-            "AND COALESCE(call_result ->> 'version', '') = "
-            "'reinvestigation-coordination-result-v1') OR (operation='analyze_reinvestigation' "
-            "AND NOT (model_input ? 'version') AND call_result->>'version'= "
-            "'reinvestigation-task-model-result-v1') OR (operation NOT IN ('coordinate', "
-            "'synthesize', 'review', 'human_review', 'evaluate_candidate', "
-            "'coordinate_reinvestigation', 'analyze_reinvestigation') AND "
-            "COALESCE(model_input ->> "
-            "'version', '') IN ('evidence-loop-input-v1','runbook-loop-input-v1')))) "
-            "OR (kind = 'tool' AND tool_request IS NOT NULL))))",
+            "((operation IN ('read_log_evidence','read_metric_evidence','read_change_evidence',"
+            "'read_log_runbook','read_metric_runbook','read_change_runbook')) = (tool_request I"
+            "S NOT NULL)) AND (tool_request IS NULL OR (jsonb_typeof(tool_request) = 'object' A"
+            "ND octet_length(tool_request::text) <= 8192)) AND (call_result IS NULL OR (status "
+            "<> 'reserved' AND jsonb_typeof(call_result) = 'object' AND octet_length(call_resul"
+            "t::text) <= 65536 AND COALESCE(call_result ->> 'kind', '') = kind AND ((kind = 'mo"
+            "del' AND ((operation = 'coordinate' AND COALESCE(model_input ->> 'version', '') IN"
+            " ('coordination-model-input-v1','coordination-experience-input-v1') AND COALESCE(c"
+            "all_result ->> 'version', '') = 'coordination-model-result-v1') OR (operation = 's"
+            "ynthesize' AND NOT (model_input ? 'version') AND COALESCE(call_result ->> 'version"
+            "', '') = 'open-hypothesis-synthesis-result-v1') OR (operation IN ('review', 'human"
+            "_review') AND NOT (model_input ? 'version') AND COALESCE(call_result ->> 'version'"
+            ", '') = 'hypothesis-review-result-v1') OR (operation = 'evaluate_candidate' AND NO"
+            "T (model_input ? 'version') AND COALESCE(call_result ->> 'version', '') = 'candida"
+            "te-model-result-v1') OR (operation='coordinate_reinvestigation' AND NOT (model_inp"
+            "ut ? 'version') AND COALESCE(call_result ->> 'version', '') = 'reinvestigation-coo"
+            "rdination-result-v1') OR (operation='analyze_reinvestigation' AND NOT (model_input"
+            " ? 'version') AND call_result->>'version'= 'reinvestigation-task-model-result-v1')"
+            " OR (operation='synthesize_reinvestigation' AND NOT (model_input ? 'version') AND "
+            "call_result->>'version'='reinvestigation-synthesis-result-v1') OR (operation NOT I"
+            "N ('coordinate', 'synthesize', 'review', 'human_review', 'evaluate_candidate', 'co"
+            "ordinate_reinvestigation', 'analyze_reinvestigation', 'synthesize_reinvestigation'"
+            ") AND COALESCE(model_input ->> 'version', '') IN ('evidence-loop-input-v1','runboo"
+            "k-loop-input-v1')))) OR (kind = 'tool' AND tool_request IS NOT NULL))))",
             name="ck_call_reservations_loop_payload",
         ),
         CheckConstraint(
-            "invocation_index BETWEEN 0 AND 99 AND (operation <> 'coordinate' OR "
-            "invocation_index = 0) AND (operation <> 'review' OR invocation_index IN "
-            "(0, 1, 2)) AND (operation NOT IN ('human_review', 'evaluate_candidate', "
-            "'coordinate_reinvestigation', 'collect_reinvestigation', 'analyze_reinvestigation') "
-            "OR invocation_index = 0)",
+            "invocation_index BETWEEN 0 AND 99 AND (operation <> 'coordinate' OR invocation_ind"
+            "ex = 0) AND (operation <> 'review' OR invocation_index IN (0, 1, 2)) AND (operatio"
+            "n NOT IN ('human_review', 'evaluate_candidate', 'coordinate_reinvestigation', 'col"
+            "lect_reinvestigation', 'analyze_reinvestigation', 'synthesize_reinvestigation') OR"
+            " invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
-            "CASE WHEN operation IN ('collect_reinvestigation','analyze_reinvestigation') THEN "
-            "idempotency_key='exec:' || reflow_task_attempt_id::text || ':' || operation "
-            "WHEN operation='human_review' THEN idempotency_key='human-review:' "
-            "|| human_review_attempt_id::text WHEN operation='evaluate_candidate' THEN "
-            "idempotency_key='candidate:' || candidate_attempt_id::text WHEN "
-            "operation='coordinate_reinvestigation' THEN idempotency_key='reflow:' || "
-            "reinvestigation_attempt_id::text ELSE idempotency_key = "
-            "investigation_attempt_id::text || ':' || COALESCE(task_attempt_id::text,"
-            " 'root') || ':' || operation || CASE WHEN invocation_index = 0 THEN '' "
-            "ELSE ':' || invocation_index::text END END",
+            "CASE WHEN operation='synthesize_reinvestigation' THEN idempotency_key='synthesis:'"
+            " || reflow_synthesis_attempt_id::text WHEN operation IN ('collect_reinvestigation'"
+            ",'analyze_reinvestigation') THEN idempotency_key='exec:' || reflow_task_attempt_id"
+            "::text || ':' || operation WHEN operation='human_review' THEN idempotency_key='hum"
+            "an-review:' || human_review_attempt_id::text WHEN operation='evaluate_candidate' T"
+            "HEN idempotency_key='candidate:' || candidate_attempt_id::text WHEN operation='coo"
+            "rdinate_reinvestigation' THEN idempotency_key='reflow:' || reinvestigation_attempt"
+            "_id::text ELSE idempotency_key = investigation_attempt_id::text || ':' || COALESCE"
+            "(task_attempt_id::text, 'root') || ':' || operation || CASE WHEN invocation_index "
+            "= 0 THEN '' ELSE ':' || invocation_index::text END END",
             name="ck_call_reservations_invocation_key",
         ),
         CheckConstraint(
@@ -204,29 +213,28 @@ class CallReservationRow(Base):
             name="ck_call_reservations_error",
         ),
         CheckConstraint(
-            "(operation IN ('query_logs', 'query_metrics', 'list_changes', "
-            "'read_log_evidence', 'read_metric_evidence', 'read_change_evidence', "
-            "'read_log_runbook', 'read_metric_runbook', 'read_change_runbook', 'collect_"
-            "reinvestigation') AND "
-            "kind = 'tool') OR (operation IN ('coordinate', 'analyze_log', "
-            "'analyze_metric', 'analyze_change', 'synthesize', 'review', "
-            "'human_review', 'evaluate_candidate', 'coordinate_reinvestigation', 'analyz"
-            "e_reinvestigation') AND kind"
-            " = 'model')",
+            "(operation IN ('query_logs', 'query_metrics', 'list_changes', 'read_log_evidence',"
+            " 'read_metric_evidence', 'read_change_evidence', 'read_log_runbook', 'read_metric_"
+            "runbook', 'read_change_runbook', 'collect_reinvestigation') AND kind = 'tool') OR "
+            "(operation IN ('coordinate', 'analyze_log', 'analyze_metric', 'analyze_change', 's"
+            "ynthesize', 'review', 'human_review', 'evaluate_candidate', 'coordinate_reinvestig"
+            "ation', 'analyze_reinvestigation', 'synthesize_reinvestigation') AND kind = 'model"
+            "')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
-            "(operation IN ('coordinate', 'synthesize', 'review', 'human_review', "
-            "'evaluate_candidate', 'coordinate_reinvestigation', 'collect_reinvestigatio"
-            "n', 'analyze_reinvestigation') "
-            "AND task_id IS NULL AND task_attempt_id IS NULL) OR (operation NOT IN "
-            "('coordinate', 'synthesize', 'review', 'human_review', 'evaluate_candidate',"
-            " 'coordinate_reinvestigation', 'collect_reinvestigation', 'analyze_reinvestigation') "
-            "AND task_id IS "
-            "NOT NULL AND task_attempt_id IS NOT NULL)",
+            "(operation IN ('coordinate', 'synthesize', 'review', 'human_review', 'evaluate_can"
+            "didate', 'coordinate_reinvestigation', 'collect_reinvestigation', 'analyze_reinves"
+            "tigation', 'synthesize_reinvestigation') AND task_id IS NULL AND task_attempt_id I"
+            "S NULL) OR (operation NOT IN ('coordinate', 'synthesize', 'review', 'human_review'"
+            ", 'evaluate_candidate', 'coordinate_reinvestigation', 'collect_reinvestigation', '"
+            "analyze_reinvestigation', 'synthesize_reinvestigation') AND task_id IS NOT NULL AN"
+            "D task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
         ),
     )
+
+    reflow_synthesis_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
     investigation_run_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
