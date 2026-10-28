@@ -811,6 +811,19 @@ uv run python -m opsswarm.investigation.reinvestigation_coordination.main --cont
 
 建议始终`not_dispatched`，尚未新增专业Round/Task或执行新调查、图恢复及处置。131原请求和128～130历史保持，原settled运行继续持槽。
 
+### 回流专业任务分派
+
+第133步提供[确定性分派消费者](docs/architecture/133-reinvestigation-dispatch.md)，将132成功建议原子编译为独立业务轮次和pending专业任务，保留原运行、原轮次/任务容量、累计预算与总截止。服务范围由系统注入，取证窗口限制在失败验证结果之后，不复用旧冻结快照。此阶段只写业务队列，不调用模型或遥测。
+
+```powershell
+uv run python -m opsswarm.investigation.reinvestigation_dispatch.main --once
+uv run python -m opsswarm.investigation.reinvestigation_dispatch.main --continuous
+```
+
+仅显式启动，默认Compose不启用。可信Bearer/read可读取`GET /api/v1/investigations/{run_id}/reinvestigation-dispatch`，包括不可变record/tasks及当前适用性。来源失效或容量不足保存blocked且无任务；有在途调用时暂缓消费，待结算后再处理。重复或并发消费不会追加任务，事务失败则整轮回滚。原132建议仍为历史not_dispatched，133队列单独表示实际分派进展。
+
+独立表用于保持旧最高轮交接和132冻结输入可读，逻辑轮次仍受原上限约束；没有新run或新额度。真实专业尝试、重新取证、调用预留、综合与审查将在后续切片接通。
+
 ### 本地运行
 
 ```powershell

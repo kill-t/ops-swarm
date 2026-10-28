@@ -188,5 +188,5 @@ async def test_downgrade_refuses_summary_context_audit(database_session_factory,
     async with db() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0087_reflow_coordination"
+            == "0088_reflow_dispatch"
         )
