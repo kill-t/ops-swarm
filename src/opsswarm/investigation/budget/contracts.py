@@ -43,6 +43,7 @@ class CallOperation(StrEnum):
     COLLECT_REINVESTIGATION = "collect_reinvestigation"
     ANALYZE_REINVESTIGATION = "analyze_reinvestigation"
     SYNTHESIZE_REINVESTIGATION = "synthesize_reinvestigation"
+    REVIEW_REINVESTIGATION = "review_reinvestigation"
     QUERY_LOGS = "query_logs"
     QUERY_METRICS = "query_metrics"
     LIST_CHANGES = "list_changes"
@@ -74,6 +75,9 @@ class CallReservationRecord(TaskModel):
     )
     reflow_task_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     reflow_task_attempt_id: UUID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    reflow_review_attempt_id: UUID | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
     reflow_synthesis_attempt_id: UUID | None = Field(

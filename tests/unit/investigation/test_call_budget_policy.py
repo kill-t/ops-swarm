@@ -74,6 +74,7 @@ def test_deadline_and_operation_contract():
                 CallOperation.COLLECT_REINVESTIGATION,
                 CallOperation.ANALYZE_REINVESTIGATION,
                 CallOperation.SYNTHESIZE_REINVESTIGATION,
+                CallOperation.REVIEW_REINVESTIGATION,
             )
         )
 

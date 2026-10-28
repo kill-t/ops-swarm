@@ -52,6 +52,9 @@ from opsswarm.investigation.reinvestigation_dispatch import (
 from opsswarm.investigation.reinvestigation_execution import (
     tables as reflow_execution_tables,  # noqa: F401
 )
+from opsswarm.investigation.reinvestigation_review import (
+    tables as reflow_review_tables,  # noqa: F401
+)
 from opsswarm.investigation.reinvestigation_synthesis import (
     tables as reflow_synthesis_tables,  # noqa: F401
 )

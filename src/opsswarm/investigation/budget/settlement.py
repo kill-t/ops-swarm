@@ -20,6 +20,7 @@ async def close_open_reservations(session: AsyncSession, run_id: UUID, now: date
             CallReservationRow.reinvestigation_attempt_id.is_(None),
             CallReservationRow.reflow_task_attempt_id.is_(None),
             CallReservationRow.reflow_synthesis_attempt_id.is_(None),
+            CallReservationRow.reflow_review_attempt_id.is_(None),
         )
         .values(status="unknown", error_code="parent_attempt_ended", finished_at=now)
     )

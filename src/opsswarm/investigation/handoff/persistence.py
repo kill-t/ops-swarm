@@ -207,6 +207,26 @@ async def terminal_source(
             == CallReservationRow.investigation_attempt_id.cast(String),
         )
     )
+    from opsswarm.investigation.reinvestigation_review.tables import (
+        ReflowReviewAttemptRow,
+        ReflowReviewJobRow,
+    )
+
+    review_owner = exists(
+        select(ReflowReviewAttemptRow.id)
+        .join(ReflowReviewJobRow, ReflowReviewJobRow.id == ReflowReviewAttemptRow.job_id)
+        .join(SynthesisJobRow, SynthesisJobRow.id == ReflowReviewJobRow.id)
+        .where(
+            ReflowReviewAttemptRow.id == CallReservationRow.reflow_review_attempt_id,
+            ReflowReviewAttemptRow.investigation_run_id == run.id,
+            ReflowReviewJobRow.investigation_run_id == run.id,
+            ReflowReviewJobRow.policy_version == "reinvestigation-review-v1",
+            ReflowReviewJobRow.source["synthesis_source_sha256"].astext
+            == SynthesisJobRow.source_sha256,
+            ReflowReviewJobRow.source["parent_attempt_id"].astext
+            == CallReservationRow.investigation_attempt_id.cast(String),
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
@@ -224,6 +244,11 @@ async def terminal_source(
                             CallReservationRow.operation == "human_review",
                             CallReservationRow.human_review_attempt_id.is_not(None),
                             human_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation == "review_reinvestigation",
+                            CallReservationRow.reflow_review_attempt_id.is_not(None),
+                            review_owner,
                         ),
                         and_(
                             CallReservationRow.operation == "synthesize_reinvestigation",

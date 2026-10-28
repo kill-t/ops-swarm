@@ -850,6 +850,17 @@ uv run python -m opsswarm.investigation.reinvestigation_synthesis.main --continu
 
 沿用原运行冻结profile和环境模型配置，SDK重试关闭，不加入默认Compose。最多3次真实尝试，成功调用可以跨尝试复用；unknown保留原占用，不重置原预算或期限。必要上下文超容量时停止调用。可信Bearer/read可查询`GET /api/v1/investigations/{run_id}/reinvestigation-synthesis`和`/input`，以及新调用的三类材料接口。HTTP查询不运行模型。
 
+### 独立回流审查
+
+第136步提供[独立审查 Worker](docs/architecture/136-reinvestigation-review.md)，读取135成功综合的精确提案、完整原材料/人工约束和新专业证据，使用独立角色与提示。在原账本预留`review_reinvestigation`，接受的支持只限于原提案已引用的支持集合，反证限定同轮新证据。原135记录保留`pending_review`历史，136独立保存`recorded`意见，后续路由另片交付。
+
+```powershell
+uv run python -m opsswarm.investigation.reinvestigation_review.main --once
+uv run python -m opsswarm.investigation.reinvestigation_review.main --continuous
+```
+
+沿用原运行冻结profile和模型配置，SDK重试关闭；最多3次真实尝试，成功调用可跨尝试复用，unknown保留原占用，不延长原期限。默认Compose不启动本Worker，没有业务工具。可信Bearer/read查询`GET /api/v1/investigations/{run_id}/reinvestigation-review`及`/input`，新调用三类材料接口同样需要可信读取。HTTP不运行模型，意见及补查建议不创建任务、计划、审批或执行资格。
+
 ### 本地运行
 
 ```powershell
