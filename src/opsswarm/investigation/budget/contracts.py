@@ -40,6 +40,8 @@ class CallBudgetPolicy(TaskModel):
 class CallOperation(StrEnum):
     COORDINATE = "coordinate"
     COORDINATE_REINVESTIGATION = "coordinate_reinvestigation"
+    COLLECT_REINVESTIGATION = "collect_reinvestigation"
+    ANALYZE_REINVESTIGATION = "analyze_reinvestigation"
     QUERY_LOGS = "query_logs"
     QUERY_METRICS = "query_metrics"
     LIST_CHANGES = "list_changes"
@@ -69,6 +71,10 @@ class CallReservationRecord(TaskModel):
     reinvestigation_attempt_id: UUID | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    reflow_task_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    reflow_task_attempt_id: UUID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     task_id: UUID | None
     task_attempt_id: UUID | None
     sequence: int
@@ -81,6 +87,11 @@ class CallReservationRecord(TaskModel):
     finished_at: datetime | None
     model_allocation: ModelAllocation | None = None
     model_usage: ReportedModelUsage | None = None
+
+    @property
+    def scope_task_id(self) -> UUID | None:
+        """旧任务与独立回流任务使用各自稳定业务身份累计工具额度。"""
+        return self.task_id or self.reflow_task_id
 
 
 @dataclass(frozen=True, slots=True)

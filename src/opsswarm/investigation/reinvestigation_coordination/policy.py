@@ -84,7 +84,7 @@ def check_budget(
             )
         ):
             raise CallBudgetExceeded("model_usage_exceeded_allocation")
-    task_tools = Counter(c.task_id for c in budget.calls if c.kind == "tool")
+    task_tools = Counter(c.scope_task_id for c in budget.calls if c.kind == "tool")
     models = sum(c.kind == "model" for c in budget.calls)
     tools = sum(c.kind == "tool" for c in budget.calls)
     if models + int(allocate) > source.call_budget.max_model_calls:

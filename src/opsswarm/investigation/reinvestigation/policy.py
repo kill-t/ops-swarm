@@ -107,7 +107,7 @@ def budget_blockers(budget: CallBudgetSnapshot, *, now: datetime) -> tuple[str, 
     if models + 1 > policy.max_model_calls:
         reasons.append("model_call_budget_exceeded")
     # 协调模型不调用工具，工具恰好耗尽不妨碍准入，但已超额必须阻断。
-    task_tools = Counter(call.task_id for call in calls if call.kind == "tool")
+    task_tools = Counter(call.scope_task_id for call in calls if call.kind == "tool")
     if tools > policy.max_tool_calls or any(
         count > policy.max_tool_calls_per_task for count in task_tools.values()
     ):

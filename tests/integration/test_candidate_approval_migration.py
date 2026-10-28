@@ -298,7 +298,7 @@ async def test_0074_downgrade_preserves_even_refusal_facts(database_session_fact
         await asyncio.to_thread(command.downgrade, config(), "0073_candidate_plan_admission")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0088_reflow_dispatch"
+            "0089_reflow_execution"
         )
         assert await session.scalar(text("SELECT count(*) FROM candidate_approval_commands")) == 1
 

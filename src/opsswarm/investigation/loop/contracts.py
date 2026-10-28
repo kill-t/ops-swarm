@@ -12,6 +12,7 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationModelResult,
 )
 from opsswarm.investigation.reinvestigation_coordination.output import ReflowModelResult
+from opsswarm.investigation.reinvestigation_execution.output import ExecutionModelResult
 from opsswarm.investigation.review.contracts import ReviewModelResult
 from opsswarm.investigation.runbooks.contracts import ReadRunbookArguments
 from opsswarm.investigation.synthesis.contracts import SynthesisModelResult
@@ -104,6 +105,7 @@ CallResult = (
     | ReviewModelResult
     | CandidateModelResult
     | ReflowModelResult
+    | ExecutionModelResult
 )
 CALL_RESULT_ADAPTER: TypeAdapter[CallResult] = TypeAdapter(CallResult)
 

@@ -822,7 +822,22 @@ uv run python -m opsswarm.investigation.reinvestigation_dispatch.main --continuo
 
 仅显式启动，默认Compose不启用。可信Bearer/read可读取`GET /api/v1/investigations/{run_id}/reinvestigation-dispatch`，包括不可变record/tasks及当前适用性。来源失效或容量不足保存blocked且无任务；有在途调用时暂缓消费，待结算后再处理。重复或并发消费不会追加任务，事务失败则整轮回滚。原132建议仍为历史not_dispatched，133队列单独表示实际分派进展。
 
-独立表用于保持旧最高轮交接和132冻结输入可读，逻辑轮次仍受原上限约束；没有新run或新额度。真实专业尝试、重新取证、调用预留、综合与审查将在后续切片接通。
+独立表用于保持旧最高轮交接和132冻结输入可读，逻辑轮次仍受原上限约束；没有新run或新额度。第133步止于分派；第134步接通真实专业尝试、重新取证和调用预留，综合与审查仍待后续切片。
+
+### 独立回流专业执行
+
+第134步提供[专业执行 Worker](docs/architecture/134-reinvestigation-execution.md)。每个133任务建立独立投影和真实租约尝试，在原账本预留工具调用后重新采集快照，冻结完整上下文并预留模型调用，保存结构化专业报告。133原始队列继续是不可变pending分派事实，实际进度由134接口提供。
+
+```powershell
+uv run python -m opsswarm.investigation.reinvestigation_execution.main --once
+uv run python -m opsswarm.investigation.reinvestigation_execution.main --continuous
+```
+
+先配置现有本地日志/指标MCP及变更来源、与原运行冻结profile一致的模型参数；默认Compose不启动本Worker。日志/指标通过固定只读MCP异步端口，变更通过受限线程读取本地窗口接口；失败不回退冻结材料。同根最多3个未失租任务，所有尝试共享原次数/Token/费用和总截止，不重新开始计时。
+
+旧MCP只支持整分钟，实际窗口会向内取整并保存requested/effective与调整原因；不足一分钟的日志/指标任务明确blocked且零调用，不扩大到失败验证前。原请求未观测区间进入模型输入，不能据此声称完整覆盖。成功取证与模型调用可跨尝试复用，失联调用保留unknown占用，新告警/超期/迟到响应不能发布报告。
+
+可信Bearer/read可查询`GET /api/v1/investigations/{run_id}/reinvestigation-execution`的状态、真实尝试、新快照、输入和专业结果。新调用的model-input、context-manifest、interaction接口同样要求可信读取。这里只完成专业分析，综合/独立审查和后续规划审批仍待交付，旧批准不能授权新动作。
 
 ### 本地运行
 

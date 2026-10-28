@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from opsswarm.investigation.candidate.contracts import CandidateManifest
     from opsswarm.investigation.human_prepare.contracts import PreparationManifest
     from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowManifest
+    from opsswarm.investigation.reinvestigation_execution.contracts import ExecutionManifest
 
 
 class CallBudgetQueries:
@@ -51,7 +52,11 @@ class CallBudgetQueries:
                     CallReservationRow.id == call_id,
                 )
             )
-            return operation == "coordinate_reinvestigation"
+            return operation in (
+                "coordinate_reinvestigation",
+                "collect_reinvestigation",
+                "analyze_reinvestigation",
+            )
 
     async def get_snapshot(self, run_id: UUID) -> CallBudgetSnapshot:
         async with self._factory() as session:
@@ -93,6 +98,8 @@ class CallBudgetQueries:
             )
             if row is None:
                 raise TaskFactConflict("call_interaction_not_found", "该运行不存在指定调用")
+            if row.operation in ("collect_reinvestigation", "analyze_reinvestigation"):
+                await _execution_manifest(session, run, row)
             if row.operation == "coordinate_reinvestigation":
                 await _reflow_manifest(session, run, row)
             if row.operation == "evaluate_candidate":
@@ -110,7 +117,14 @@ class CallBudgetQueries:
 
     async def get_context_manifest(
         self, run_id: UUID, call_id: UUID
-    ) -> ContextManifest | PreparationManifest | CandidateManifest | ReflowManifest | None:
+    ) -> (
+        ContextManifest
+        | PreparationManifest
+        | CandidateManifest
+        | ReflowManifest
+        | ExecutionManifest
+        | None
+    ):
         async with self._factory() as session:
             run = await session.get(InvestigationRunRow, run_id)
             if run is None:
@@ -126,6 +140,8 @@ class CallBudgetQueries:
             await _validate_experience_context(session, run, row)
             if row.context_manifest is None:
                 return None
+            if row.operation in ("collect_reinvestigation", "analyze_reinvestigation"):
+                return await _execution_manifest(session, run, row)
             if row.operation == "coordinate_reinvestigation":
                 return await _reflow_manifest(session, run, row)
             if row.operation == "evaluate_candidate":
@@ -145,6 +161,9 @@ class CallBudgetQueries:
 async def _validate_experience_context(
     session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
 ) -> None:
+    if row.operation in ("collect_reinvestigation", "analyze_reinvestigation"):
+        await _execution_manifest(session, run, row)
+        return
     if row.operation == "coordinate_reinvestigation":
         await _reflow_manifest(session, run, row)
         return
@@ -296,4 +315,29 @@ async def _reflow_manifest(
         raise TaskFactConflict("reflow_context_invalid", "回流调用缺少真实阶段归属")
     source, packet = await frozen_packet(session, run, job, clock=utc_now)
     await validate_call_binding(session, job, row, source=source, packet=packet)
+    return packet.manifest
+
+
+async def _execution_manifest(
+    session: AsyncSession, run: InvestigationRunRow, row: CallReservationRow
+) -> ExecutionManifest | None:
+    from opsswarm.execution.release.observer import utc_now
+    from opsswarm.investigation.reinvestigation_execution.source import load_source, validate_work
+    from opsswarm.investigation.reinvestigation_execution.tables import ExecutionWorkRow
+    from opsswarm.investigation.reinvestigation_execution.validation import (
+        validate_call,
+        validated_packet,
+    )
+
+    work = await session.get(ExecutionWorkRow, row.reflow_task_id) if row.reflow_task_id else None
+    if work is None or work.investigation_run_id != run.id:
+        raise TaskFactConflict("execution_context_invalid", "专业调用缺少真实独立任务")
+    source = await load_source(session, run, work.task_id, clock=utc_now)
+    validate_work(work, source)
+    await validate_call(session, work, row, source, row.operation)
+    if row.operation == "collect_reinvestigation":
+        return None
+    packet = await validated_packet(session, work, source)
+    if packet is None:
+        raise TaskFactConflict("execution_context_invalid", "专业模型调用缺少冻结输入")
     return packet.manifest

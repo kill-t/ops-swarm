@@ -23,6 +23,33 @@ class CallReservationRow(Base):
     __tablename__ = "investigation_call_reservations"
     __table_args__ = (
         CheckConstraint(
+            "(operation IN ('collect_reinvestigation','analyze_reinvestigation')) = "
+            "(reflow_task_id IS NOT NULL AND reflow_task_attempt_id IS NOT NULL) AND "
+            "((reflow_task_id IS NULL)=(reflow_task_attempt_id IS NULL)) AND "
+            "(operation NOT IN ('collect_reinvestigation','analyze_reinvestigation') OR "
+            "(reinvestigation_attempt_id IS NULL AND human_review_attempt_id IS NULL AND "
+            "candidate_attempt_id IS NULL))",
+            name="ck_call_reservations_execution_owner",
+        ),
+        ForeignKeyConstraint(
+            ["reflow_task_attempt_id", "reflow_task_id", "investigation_run_id"],
+            [
+                "investigation_reflow_task_attempts.id",
+                "investigation_reflow_task_attempts.task_id",
+                "investigation_reflow_task_attempts.investigation_run_id",
+            ],
+            name="fk_call_reservations_execution_attempt",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        UniqueConstraint(
+            "id",
+            "reflow_task_id",
+            "reflow_task_attempt_id",
+            "investigation_run_id",
+            name="uq_call_reservations_execution_scope",
+        ),
+        CheckConstraint(
             "(operation='coordinate_reinvestigation') = (reinvestigation_attempt_id IS NOT NULL)",
             name="ck_call_reservations_reflow_owner",
         ),
@@ -86,9 +113,11 @@ class CallReservationRow(Base):
             "'version', '') = 'candidate-model-result-v1') OR "
             "(operation='coordinate_reinvestigation' AND NOT (model_input ? 'version') "
             "AND COALESCE(call_result ->> 'version', '') = "
-            "'reinvestigation-coordination-result-v1') OR (operation NOT IN ('coordinate', "
+            "'reinvestigation-coordination-result-v1') OR (operation='analyze_reinvestigation' "
+            "AND NOT (model_input ? 'version') AND call_result->>'version'= "
+            "'reinvestigation-task-model-result-v1') OR (operation NOT IN ('coordinate', "
             "'synthesize', 'review', 'human_review', 'evaluate_candidate', "
-            "'coordinate_reinvestigation') AND "
+            "'coordinate_reinvestigation', 'analyze_reinvestigation') AND "
             "COALESCE(model_input ->> "
             "'version', '') IN ('evidence-loop-input-v1','runbook-loop-input-v1')))) "
             "OR (kind = 'tool' AND tool_request IS NOT NULL))))",
@@ -98,12 +127,14 @@ class CallReservationRow(Base):
             "invocation_index BETWEEN 0 AND 99 AND (operation <> 'coordinate' OR "
             "invocation_index = 0) AND (operation <> 'review' OR invocation_index IN "
             "(0, 1, 2)) AND (operation NOT IN ('human_review', 'evaluate_candidate', "
-            "'coordinate_reinvestigation') "
+            "'coordinate_reinvestigation', 'collect_reinvestigation', 'analyze_reinvestigation') "
             "OR invocation_index = 0)",
             name="ck_call_reservations_invocation_index",
         ),
         CheckConstraint(
-            "CASE WHEN operation='human_review' THEN idempotency_key='human-review:' "
+            "CASE WHEN operation IN ('collect_reinvestigation','analyze_reinvestigation') THEN "
+            "idempotency_key='exec:' || reflow_task_attempt_id::text || ':' || operation "
+            "WHEN operation='human_review' THEN idempotency_key='human-review:' "
             "|| human_review_attempt_id::text WHEN operation='evaluate_candidate' THEN "
             "idempotency_key='candidate:' || candidate_attempt_id::text WHEN "
             "operation='coordinate_reinvestigation' THEN idempotency_key='reflow:' || "
@@ -175,19 +206,22 @@ class CallReservationRow(Base):
         CheckConstraint(
             "(operation IN ('query_logs', 'query_metrics', 'list_changes', "
             "'read_log_evidence', 'read_metric_evidence', 'read_change_evidence', "
-            "'read_log_runbook', 'read_metric_runbook', 'read_change_runbook') AND "
+            "'read_log_runbook', 'read_metric_runbook', 'read_change_runbook', 'collect_"
+            "reinvestigation') AND "
             "kind = 'tool') OR (operation IN ('coordinate', 'analyze_log', "
             "'analyze_metric', 'analyze_change', 'synthesize', 'review', "
-            "'human_review', 'evaluate_candidate', 'coordinate_reinvestigation') AND kind"
+            "'human_review', 'evaluate_candidate', 'coordinate_reinvestigation', 'analyz"
+            "e_reinvestigation') AND kind"
             " = 'model')",
             name="ck_call_reservations_operation",
         ),
         CheckConstraint(
             "(operation IN ('coordinate', 'synthesize', 'review', 'human_review', "
-            "'evaluate_candidate', 'coordinate_reinvestigation') "
+            "'evaluate_candidate', 'coordinate_reinvestigation', 'collect_reinvestigatio"
+            "n', 'analyze_reinvestigation') "
             "AND task_id IS NULL AND task_attempt_id IS NULL) OR (operation NOT IN "
             "('coordinate', 'synthesize', 'review', 'human_review', 'evaluate_candidate',"
-            " 'coordinate_reinvestigation') "
+            " 'coordinate_reinvestigation', 'collect_reinvestigation', 'analyze_reinvestigation') "
             "AND task_id IS "
             "NOT NULL AND task_attempt_id IS NOT NULL)",
             name="ck_call_reservations_scope",
@@ -202,6 +236,8 @@ class CallReservationRow(Base):
     reinvestigation_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     candidate_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     human_review_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    reflow_task_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    reflow_task_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     task_attempt_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)

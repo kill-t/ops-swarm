@@ -155,6 +155,40 @@ async def terminal_source(
             == CallReservationRow.investigation_attempt_id,
         )
     )
+    from opsswarm.investigation.reinvestigation_dispatch.tables import (
+        ReflowDispatchRow,
+        ReflowDispatchTaskRow,
+    )
+    from opsswarm.investigation.reinvestigation_execution.tables import (
+        ExecutionAttemptRow,
+        ExecutionWorkRow,
+    )
+
+    execution_owner = exists(
+        select(ExecutionAttemptRow.id)
+        .join(ExecutionWorkRow, ExecutionWorkRow.task_id == ExecutionAttemptRow.task_id)
+        .join(ReflowDispatchTaskRow, ReflowDispatchTaskRow.id == ExecutionWorkRow.task_id)
+        .join(
+            ReflowDispatchRow,
+            ReflowDispatchRow.investigation_run_id == ExecutionWorkRow.investigation_run_id,
+        )
+        .join(
+            ReflowJobRow, ReflowJobRow.investigation_run_id == ExecutionWorkRow.investigation_run_id
+        )
+        .where(
+            ExecutionAttemptRow.id == CallReservationRow.reflow_task_attempt_id,
+            ExecutionAttemptRow.investigation_run_id == run.id,
+            ExecutionWorkRow.investigation_run_id == run.id,
+            ReflowDispatchTaskRow.investigation_run_id == run.id,
+            ReflowDispatchRow.status == "queued",
+            ExecutionWorkRow.policy_version == "reinvestigation-task-v1",
+            CallReservationRow.reflow_task_id == ExecutionWorkRow.task_id,
+            ExecutionWorkRow.dispatch_sha256 == ReflowDispatchRow.content_sha256,
+            ExecutionWorkRow.assignment_sha256 == ReflowDispatchTaskRow.assignment_sha256,
+            ReflowJobRow.source["parent_attempt_id"].astext
+            == CallReservationRow.investigation_attempt_id.cast(String),
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
@@ -172,6 +206,13 @@ async def terminal_source(
                             CallReservationRow.operation == "human_review",
                             CallReservationRow.human_review_attempt_id.is_not(None),
                             human_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation.in_(
+                                ("collect_reinvestigation", "analyze_reinvestigation")
+                            ),
+                            CallReservationRow.reflow_task_attempt_id.is_not(None),
+                            execution_owner,
                         ),
                         and_(
                             CallReservationRow.operation == "coordinate_reinvestigation",

@@ -71,6 +71,8 @@ def test_deadline_and_operation_contract():
                 CallOperation.HUMAN_REVIEW,
                 CallOperation.EVALUATE_CANDIDATE,
                 CallOperation.COORDINATE_REINVESTIGATION,
+                CallOperation.COLLECT_REINVESTIGATION,
+                CallOperation.ANALYZE_REINVESTIGATION,
             )
         )
 

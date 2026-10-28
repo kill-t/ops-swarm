@@ -124,6 +124,8 @@ class CallBudgetStore:
             CallOperation.HUMAN_REVIEW,
             CallOperation.EVALUATE_CANDIDATE,
             CallOperation.COORDINATE_REINVESTIGATION,
+            CallOperation.COLLECT_REINVESTIGATION,
+            CallOperation.ANALYZE_REINVESTIGATION,
         ):
             raise TaskFactConflict("call_scope_invalid", "独立后续阶段必须使用自身租约入口")
         if operation == CallOperation.COORDINATE and invocation_index != 0:
@@ -301,6 +303,7 @@ class CallBudgetStore:
                 or row.human_review_attempt_id is not None
                 or row.candidate_attempt_id is not None
                 or row.reinvestigation_attempt_id is not None
+                or row.reflow_task_attempt_id is not None
             ):
                 raise TaskFactConflict("call_reservation_not_owned", "预留不属于当前父尝试")
             if model_usage is not None and row.model_allocation is None:

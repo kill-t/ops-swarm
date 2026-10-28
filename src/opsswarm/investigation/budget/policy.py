@@ -17,6 +17,7 @@ def operation_kind(operation: CallOperation) -> Literal["model", "tool"]:
         "tool"
         if operation
         in (
+            CallOperation.COLLECT_REINVESTIGATION,
             CallOperation.QUERY_LOGS,
             CallOperation.QUERY_METRICS,
             CallOperation.LIST_CHANGES,
@@ -35,6 +36,8 @@ def operation_role(operation: CallOperation) -> str | None:
     return {
         CallOperation.COORDINATE: None,
         CallOperation.COORDINATE_REINVESTIGATION: None,
+        CallOperation.COLLECT_REINVESTIGATION: None,
+        CallOperation.ANALYZE_REINVESTIGATION: None,
         CallOperation.QUERY_LOGS: "log",
         CallOperation.ANALYZE_LOG: "log",
         CallOperation.QUERY_METRICS: "metric",
