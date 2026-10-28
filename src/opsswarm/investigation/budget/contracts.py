@@ -39,6 +39,7 @@ class CallBudgetPolicy(TaskModel):
 
 class CallOperation(StrEnum):
     COORDINATE = "coordinate"
+    COORDINATE_REINVESTIGATION = "coordinate_reinvestigation"
     QUERY_LOGS = "query_logs"
     QUERY_METRICS = "query_metrics"
     LIST_CHANGES = "list_changes"
@@ -65,6 +66,9 @@ class CallReservationRecord(TaskModel):
         default=None, exclude_if=lambda value: value is None
     )
     candidate_attempt_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    reinvestigation_attempt_id: UUID | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     task_id: UUID | None
     task_attempt_id: UUID | None
     sequence: int

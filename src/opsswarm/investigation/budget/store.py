@@ -120,7 +120,11 @@ class CallBudgetStore:
         invocation_index: int = 0,
         tool_request: ToolRequest | None = None,
     ) -> CallGrant:
-        if operation in (CallOperation.HUMAN_REVIEW, CallOperation.EVALUATE_CANDIDATE):
+        if operation in (
+            CallOperation.HUMAN_REVIEW,
+            CallOperation.EVALUATE_CANDIDATE,
+            CallOperation.COORDINATE_REINVESTIGATION,
+        ):
             raise TaskFactConflict("call_scope_invalid", "独立后续阶段必须使用自身租约入口")
         if operation == CallOperation.COORDINATE and invocation_index != 0:
             raise TaskFactConflict(
@@ -296,6 +300,7 @@ class CallBudgetStore:
                 or row.investigation_attempt_id != parent.id
                 or row.human_review_attempt_id is not None
                 or row.candidate_attempt_id is not None
+                or row.reinvestigation_attempt_id is not None
             ):
                 raise TaskFactConflict("call_reservation_not_owned", "预留不属于当前父尝试")
             if model_usage is not None and row.model_allocation is None:

@@ -242,7 +242,7 @@ async def test_0070_downgrade_preserves_refused_commands(database_session_factor
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0086_reinvestigation_admission"
+            == "0087_reflow_coordination"
         )
         assert (
             await session.scalar(text("SELECT count(*) FROM investigation_human_review_commands"))

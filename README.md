@@ -796,6 +796,21 @@ uv run python -m opsswarm.incidents.convergence.main
 
 准入的`dispatch_status=not_dispatched`，原settled运行继续持槽。本片未创建新的调查或预算预留，实际分派将以独立阶段在原账本重新检查和预留；不能把准入当成处置授权或已开始重新调查。
 
+### 独立回流协调 Worker
+
+第132步提供[回流协调阶段](docs/architecture/132-reinvestigation-coordination.md)，自动发现第131步唯一准入，冻结完整材料，使用独立尝试/租约在原账本预留后调用结构化模型，保存下一轮待分派建议。模型配置及定价必须匹配根运行创建时冻结的策略。
+
+```powershell
+uv run python -m opsswarm.investigation.reinvestigation_coordination.main --once
+uv run python -m opsswarm.investigation.reinvestigation_coordination.main --continuous
+```
+
+仅显式启动，不加入默认Compose服务。可信Bearer/read可查询`GET /api/v1/investigations/{run_id}/reinvestigation-coordination`和`/input`；旧调用的model-input、interaction和context-manifest接口也支持新调用，新材料在legacy_local模式下仍要求可信Bearer。
+
+原轮次/任务容量、次数、Token、估算费用和总截止继续累计。完整上下文超过根运行原单次输入上限时明确blocked且不调用；旧默认24,000额度可能不足，需在创建根运行时按场景配置足够容量，不能修改既有运行或复制余额。成功调用在结果保存前崩溃可跨尝试复用；失联调用记unknown并保守占用。新告警、来源变化或超期后不能发布建议。
+
+建议始终`not_dispatched`，尚未新增专业Round/Task或执行新调查、图恢复及处置。131原请求和128～130历史保持，原settled运行继续持槽。
+
 ### 本地运行
 
 ```powershell

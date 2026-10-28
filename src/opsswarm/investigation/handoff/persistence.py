@@ -112,24 +112,79 @@ async def terminal_source(
             == CallReservationRow.investigation_attempt_id,
         )
     )
+    from opsswarm.incidents.convergence.tables import CandidateIncidentConvergenceRow
+    from opsswarm.investigation.reinvestigation.tables import CandidateReinvestigationRow
+    from opsswarm.investigation.reinvestigation_coordination.tables import (
+        ReflowAttemptRow,
+        ReflowJobRow,
+    )
+    from opsswarm.investigation.settlement.tables import CandidateSettlementRow
+
+    reflow_owner = exists(
+        select(ReflowAttemptRow.id)
+        .join(ReflowJobRow, ReflowJobRow.id == ReflowAttemptRow.job_id)
+        .join(
+            CandidateReinvestigationRow,
+            CandidateReinvestigationRow.investigation_run_id == ReflowJobRow.investigation_run_id,
+        )
+        .join(
+            CandidateIncidentConvergenceRow,
+            CandidateIncidentConvergenceRow.investigation_run_id
+            == CandidateReinvestigationRow.investigation_run_id,
+        )
+        .join(
+            CandidateSettlementRow,
+            CandidateSettlementRow.investigation_run_id
+            == CandidateIncidentConvergenceRow.investigation_run_id,
+        )
+        .join(
+            InvestigationTerminalHandoffRow,
+            InvestigationTerminalHandoffRow.id == CandidateSettlementRow.handoff_id,
+        )
+        .where(
+            ReflowAttemptRow.id == CallReservationRow.reinvestigation_attempt_id,
+            ReflowAttemptRow.investigation_run_id == run.id,
+            ReflowJobRow.investigation_run_id == run.id,
+            ReflowJobRow.policy_version == "reinvestigation-coordination-v1",
+            ReflowJobRow.source["admission_sha256"].astext
+            == CandidateReinvestigationRow.content_sha256,
+            ReflowJobRow.source["parent_attempt_id"].astext
+            == CallReservationRow.investigation_attempt_id.cast(String),
+            InvestigationTerminalHandoffRow.investigation_run_id == run.id,
+            InvestigationTerminalHandoffRow.investigation_attempt_id
+            == CallReservationRow.investigation_attempt_id,
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
             CallReservationRow.investigation_run_id == run.id,
             CallReservationRow.status == "reserved",
-            not_(
-                or_(
-                    and_(
-                        CallReservationRow.operation == "human_review",
-                        CallReservationRow.human_review_attempt_id.is_not(None),
-                        human_owner,
-                    ),
-                    and_(
-                        CallReservationRow.operation == "evaluate_candidate",
-                        CallReservationRow.candidate_attempt_id.is_not(None),
-                        candidate_owner,
-                    ),
-                )
+            or_(
+                ~exists(
+                    select(InvestigationTerminalHandoffRow.id).where(
+                        InvestigationTerminalHandoffRow.investigation_run_id == run.id
+                    )
+                ),
+                not_(
+                    or_(
+                        and_(
+                            CallReservationRow.operation == "human_review",
+                            CallReservationRow.human_review_attempt_id.is_not(None),
+                            human_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation == "coordinate_reinvestigation",
+                            CallReservationRow.reinvestigation_attempt_id.is_not(None),
+                            reflow_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation == "evaluate_candidate",
+                            CallReservationRow.candidate_attempt_id.is_not(None),
+                            candidate_owner,
+                        ),
+                    )
+                ),
             ),
         )
         .limit(1)

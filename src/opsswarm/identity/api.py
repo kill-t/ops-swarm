@@ -2,6 +2,7 @@
 
 import json
 from typing import Annotated, cast
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.routing import APIRoute
@@ -50,7 +51,24 @@ async def authorize_control_request(
         return
     settings = cast(OperatorAuthSettings, request.app.state.operator_auth_settings)
     headers = request.headers.getlist("authorization")
-    if settings.mode == "legacy_local" and route.name not in TRUSTED_OPERATIONS:
+    trusted_call = False
+    if route.name in {"read_model_input", "read_context_manifest", "read_interaction"}:
+        from opsswarm.investigation.budget.queries import CallBudgetQueries
+
+        queries = getattr(request.app.state, "call_budget_queries", None)
+        if isinstance(queries, CallBudgetQueries):
+            try:
+                run_id = UUID(str(request.path_params["run_id"]))
+                call_id = UUID(str(request.path_params["call_id"]))
+            except (ValueError, KeyError):
+                pass
+            else:
+                trusted_call = await queries.requires_trusted_read(run_id, call_id)
+    if (
+        settings.mode == "legacy_local"
+        and route.name not in TRUSTED_OPERATIONS
+        and not trusted_call
+    ):
         if headers:
             raise OperatorAccessError("operator_unauthenticated", "当前实例未启用可信认证")
         return

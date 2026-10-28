@@ -1,5 +1,7 @@
 # OpsSwarm Agent 系统最终设计：轻量 Harness、分层记忆与受控工具
 
+第132步新增[独立回流协调阶段与原账本首次调用](132-reinvestigation-coordination.md)：冻结完整来源/模型输入，独立租约及真实尝试在原账本预留和结算，保存not_dispatched协调建议；保留原父settled、旧图和131历史，尚未创建回流专业任务。
+
 第131步新增[验证失败的有界回流准入与原预算继承](131-bounded-reinvestigation-admission.md)：可信命令绑定130明确失败、原预算根/完整账本/总截止，固定最多一次准入及逐请求审计；尚未分派，原父运行与活动槽位保持，未来实际调用必须在原账本预留。
 
 第130步新增[候选处置结果与Incident受控收敛](130-candidate-incident-convergence.md)：精确历史样本/新告警及提交时效校验，合法两跳到resolved或investigating，成功分支原子释放活动槽位；未知/过期/新告警保留，失败继续持槽，原128/129及父时刻不改。

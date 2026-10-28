@@ -17,6 +17,7 @@ async def close_open_reservations(session: AsyncSession, run_id: UUID, now: date
             CallReservationRow.status == "reserved",
             CallReservationRow.human_review_attempt_id.is_(None),
             CallReservationRow.candidate_attempt_id.is_(None),
+            CallReservationRow.reinvestigation_attempt_id.is_(None),
         )
         .values(status="unknown", error_code="parent_attempt_ended", finished_at=now)
     )
