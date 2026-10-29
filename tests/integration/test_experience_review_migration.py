@@ -402,7 +402,7 @@ async def test_0063_any_new_fact_prevents_downgrade_and_remains_readable(
         await asyncio.to_thread(command.downgrade, config(), "0062_experience_candidates")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0091_reflow_review"
+            "0092_reflow_routing"
         )
         assert (
             await session.scalar(text(f"SELECT id FROM {table} WHERE id = :id"), {"id": record_id})

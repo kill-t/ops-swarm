@@ -1,5 +1,9 @@
 # OpsSwarm 控制面 API 设计
 
+第137步新增：[回流审查的确定性路由](137-reinvestigation-routing.md)。新增独立不可变not_dispatched意图，绑定135/136完整成功来源、原容量/账本及事件游标；可信只读查询与显式纯事务消费者，验收状态见进度索引。
+
+新增GET /api/v1/investigations/{run_id}/reinvestigation-routing，强制可信Bearer/read，no-store，返回record、availability和当前blocking_reason_codes。record为不可变not_dispatched意图；无记录为pending，当前依据失效为stale，到期为expired，容量/人工限制为blocked，其余为current。历史正文按真实来源与账本/事件前缀核验；GET不写入。不存在运行404、身份缺失401、权限不足403、查询未初始化503，历史完整性冲突409。CLI显式消费，不增加默认Compose服务或HTTP写命令。
+
 第136步新增[独立回流审查与精确提案绑定](136-reinvestigation-review.md)：独立角色/提示/尝试消费135精确提案和同源完整专业材料，原账本预留review_reinvestigation并保存recorded意见；接受支持限于原提案支持集合，建议不自动路由或授权。实现与验收见第136步进度记录。
 
 第135步新增[独立回流综合与专业来源闭包](135-reinvestigation-synthesis.md)：完整成功专业集合与新证据进入冻结综合输入，独立尝试在原账本预留模型调用，保存pending_review开放假设；原父/图及预算保持，独立审查后续交付。实现与验收见第135步进度记录。

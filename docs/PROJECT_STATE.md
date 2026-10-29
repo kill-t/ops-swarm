@@ -1,11 +1,11 @@
 # OpsSwarm 项目状态与开发交接
 
-核对日期：2026-10-28。最新完成切片为第136步独立回流审查与精确提案绑定，基线main的e2b912a（第135步）。本文随第136步独立提交保存，实际提交与工作区以Git核对，结果见[第136步验收记录](progress/136-reinvestigation-review.md)。
+核对日期：2026-10-29。最新完成切片为第137步回流审查的确定性路由，基线main的0766f68（第136步）。本文随第137步独立提交保存，实际提交与工作区以Git核对，结果见[第137步验收记录](progress/137-reinvestigation-routing.md)。
 
 ## 1. 新会话阅读顺序
 
 1. 阅读 [AGENTS.md](../AGENTS.md)、本文和 [进度索引](progress/README.md)。
-2. 先读[第136步设计](architecture/136-reinvestigation-review.md)和[进度记录](progress/136-reinvestigation-review.md)，再读[第135步设计](architecture/135-reinvestigation-synthesis.md)和[进度记录](progress/135-reinvestigation-synthesis.md)，再读[第134步设计](architecture/134-reinvestigation-execution.md)和[验收记录](progress/134-reinvestigation-execution.md)，再读[第133步设计](architecture/133-reinvestigation-dispatch.md)和[验收记录](progress/133-reinvestigation-dispatch.md)，再读[第132步设计](architecture/132-reinvestigation-coordination.md)和[验收记录](progress/132-reinvestigation-coordination.md)，再读[第131步设计](architecture/131-bounded-reinvestigation-admission.md)和[验收记录](progress/131-bounded-reinvestigation-admission.md)，再读[第130步设计](architecture/130-candidate-incident-convergence.md)和[验收记录](progress/130-candidate-incident-convergence.md)，再读[第129步设计](architecture/129-candidate-parent-settlement.md)和[验收记录](progress/129-candidate-parent-settlement.md)，再读[第128步设计](architecture/128-candidate-recovery-verification.md)和[验收记录](progress/128-candidate-recovery-verification.md)，再读[第127步设计](architecture/127-candidate-release-worker.md)和[验收记录](progress/127-candidate-release-worker.md)，再读[第126步设计](architecture/126-bounded-release-dispatch.md)和[验收记录](progress/126-bounded-release-dispatch.md)，再读[第125步设计](architecture/125-release-receipt-reconciliation.md)和[验收记录](progress/125-release-receipt-reconciliation.md)，再读[第124步设计](architecture/124-candidate-release-execution-admission.md)和[验收记录](progress/124-candidate-release-execution-admission.md)，再读[第123步设计](architecture/123-lab-release-state-cas.md)和[验收记录](progress/123-lab-release-state-cas.md)，再读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
+2. 先读[第137步设计](architecture/137-reinvestigation-routing.md)和[进度记录](progress/137-reinvestigation-routing.md)，再读[第136步设计](architecture/136-reinvestigation-review.md)和[进度记录](progress/136-reinvestigation-review.md)，再读[第135步设计](architecture/135-reinvestigation-synthesis.md)和[进度记录](progress/135-reinvestigation-synthesis.md)，再读[第134步设计](architecture/134-reinvestigation-execution.md)和[验收记录](progress/134-reinvestigation-execution.md)，再读[第133步设计](architecture/133-reinvestigation-dispatch.md)和[验收记录](progress/133-reinvestigation-dispatch.md)，再读[第132步设计](architecture/132-reinvestigation-coordination.md)和[验收记录](progress/132-reinvestigation-coordination.md)，再读[第131步设计](architecture/131-bounded-reinvestigation-admission.md)和[验收记录](progress/131-bounded-reinvestigation-admission.md)，再读[第130步设计](architecture/130-candidate-incident-convergence.md)和[验收记录](progress/130-candidate-incident-convergence.md)，再读[第129步设计](architecture/129-candidate-parent-settlement.md)和[验收记录](progress/129-candidate-parent-settlement.md)，再读[第128步设计](architecture/128-candidate-recovery-verification.md)和[验收记录](progress/128-candidate-recovery-verification.md)，再读[第127步设计](architecture/127-candidate-release-worker.md)和[验收记录](progress/127-candidate-release-worker.md)，再读[第126步设计](architecture/126-bounded-release-dispatch.md)和[验收记录](progress/126-bounded-release-dispatch.md)，再读[第125步设计](architecture/125-release-receipt-reconciliation.md)和[验收记录](progress/125-release-receipt-reconciliation.md)，再读[第124步设计](architecture/124-candidate-release-execution-admission.md)和[验收记录](progress/124-candidate-release-execution-admission.md)，再读[第123步设计](architecture/123-lab-release-state-cas.md)和[验收记录](progress/123-lab-release-state-cas.md)，再读[第122步设计](architecture/122-condition-basis-approval.md)和[验收记录](progress/122-condition-basis-approval.md)，再读[第121步设计](architecture/121-candidate-condition-verification.md)和[验收记录](progress/121-candidate-condition-verification.md)，再读[第120步设计](architecture/120-candidate-execution-preflight.md)和[验收记录](progress/120-candidate-execution-preflight.md)，再读[第119步设计](architecture/119-candidate-approval-decision.md)和[验收记录](progress/119-candidate-approval-decision.md)，再读[第118步设计](architecture/118-candidate-approval-admission.md)和[验收记录](progress/118-candidate-approval-admission.md)，再读[第117步设计](architecture/117-candidate-plan-admission.md)和[验收记录](progress/117-candidate-plan-admission.md)，再读 [第 116 步设计](architecture/116-candidate-evaluation.md) 与 [验收记录](progress/116-candidate-evaluation.md)，随后阅读 [第 115 步设计](architecture/115-human-reassessment-routing.md) 与 [验收记录](progress/115-human-reassessment-routing.md)，再读第 114 步实际重评、第 113 步输入准备、第 112 步可信人工命令、第 111 步终端交接、第 110 步来源核验及第 64～65 步中的恢复和人工介入章节。
 3. 阅读 [完整路线](architecture/64-full-multi-agent-roadmap.md)、[Agent 专项设计](architecture/65-agent-system-design.md) 中本片相关章节；数据库和 API 事实以 [数据库设计](architecture/04-database-design.md)、[API 设计](architecture/05-api-design.md) 和实现为准。
 4. 核对 Git、相关代码、迁移与测试，再确定下一片状态、接口、持久化和失败路径。
 
@@ -24,7 +24,7 @@
 - v1/v2 仍固定日志、指标、变更三个专业任务和综合节点；v3 已动态选择首轮角色与材料，为两次 `follow_up` 分别编译并执行第二、三轮任务，三轮结果分别综合、独立审查和路由。第三轮即使保留完整补查建议也只能进入人工等待并记录轮次上限，不能创建第 4 轮。专业新策略只读取已保存证据和系统选中的 Git 手册，不动态查询现场遥测。
 - 来源包括冻结快照及 Loki、Prometheus、本地变更服务。新建现场 v2 的日志与指标任务分别通过独立只读 MCP 获取本地 Loki 与 Prometheus 证据，变更仍直连；历史直连和仅日志 MCP 策略按原路径恢复。所有现场任务使用固定 UTC 窗口和受限异步执行器。
 - Vue 3/TypeScript 作战室、REST/可重放 SSE、OpenTelemetry/Jaeger 与 Compose 保留。第 104 步提供可选控制面 Bearer 认证、角色权限和授权准入审计；当前页面尚未适配 Bearer，默认兼容演练模式继续使用自填身份。
-- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0091_reflow_review`；第136步仅在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
+- 精确依赖见 [uv.lock](../uv.lock)、[web/package.json](../web/package.json)。业务迁移唯一head为 `0092_reflow_routing`；第137步仅在 Testcontainers PostgreSQL 测试数据库执行迁移，未升级用户的 Compose 业务数据库。
 
 ## 4. 已完成内容与本会话成果
 
@@ -174,10 +174,13 @@ MVP 历史交付见 [第 63 步](progress/63-mvp-compose-release.md)：调查、
 
 第136步新增独立回流审查：真实135成功任务/输入/调用/结果及尝试闭包绑定精确提案、输入和结果摘要，完整原材料、新专业证据、人工约束及未观测区间进入独立角色/提示的冻结上下文。review_reinvestigation在原账本预留，支持引用必须是原提案已引用的支持、反证须来自同轮新证据。结果单独recorded，135仍pending_review历史；成功调用复用、unknown占用和原期限保持，来源改变或失租不发布。双来源、原生保护及恢复验收通过；审查后的路由与新规划审批仍后置。
 
+第137步新增回流确定性路由（已验收）：绑定135/136精确成功来源、原容量/完整账本及事故游标，独立保存not_dispatched意图；完整人工约束、未解问题及观测窗口保留，原父/图/审批保持。后续候选、规划、审批及补查分派另行接入。
+
 ## 6. 下一步代码导航
 
 | 入口 | 边界 |
 | --- | --- |
+| [reinvestigation_routing/policy.py](../src/opsswarm/investigation/reinvestigation_routing/policy.py)、[store.py](../src/opsswarm/investigation/reinvestigation_routing/store.py)、[queries.py](../src/opsswarm/investigation/reinvestigation_routing/queries.py)、[0092迁移](../alembic/versions/0092_reinvestigation_routing.py) | 精确审查来源的纯规则/原容量与预算、原生完整编译、不可变意图及可信历史读取；不分派或授权 |
 | [reinvestigation_review/context.py](../src/opsswarm/investigation/reinvestigation_review/context.py)、[source.py](../src/opsswarm/investigation/reinvestigation_review/source.py)、[policy.py](../src/opsswarm/investigation/reinvestigation_review/policy.py)、[job_store.py](../src/opsswarm/investigation/reinvestigation_review/job_store.py)、[ledger.py](../src/opsswarm/investigation/reinvestigation_review/ledger.py)、[0091迁移](../alembic/versions/0091_reinvestigation_review.py) | 独立角色/租约审查、精确综合绑定及有限意见，原预算和旧父保持；已验收 |
 | [reinvestigation_synthesis/source.py](../src/opsswarm/investigation/reinvestigation_synthesis/source.py)、[context.py](../src/opsswarm/investigation/reinvestigation_synthesis/context.py)、[job_store.py](../src/opsswarm/investigation/reinvestigation_synthesis/job_store.py)、[ledger.py](../src/opsswarm/investigation/reinvestigation_synthesis/ledger.py)、[0090迁移](../alembic/versions/0090_reinvestigation_synthesis.py) | 完整专业来源闭包、冻结综合输入、独立租约和原预算调用、待审查提案；已验收 |
 | [reinvestigation/store.py](../src/opsswarm/investigation/reinvestigation/store.py)、[policy.py](../src/opsswarm/investigation/reinvestigation/policy.py)、[0086迁移](../alembic/versions/0086_reinvestigation_admission.py) | 明确验证失败的唯一可信回流准入、完整原预算绑定及原子业务审计；尚未分派，原父/槽位保持 |
@@ -243,7 +246,7 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 8. 下一功能切片
 
-第137步：**回流审查意见的确定性路由**。消费精确135/136结果及同源完整证据，保留人工约束、未解问题、未观测区间、原轮次/任务/累计预算与停止条件；将审查建议转为可审计的有限后续意图，不能直接当作执行资格。新规划/审批/处置另行绑定新依据，旧批准不能覆盖；任意秒MCP、held/unknown人工处理、终端取消、多步骤和前端继续分片。
+第138步：**受限消费回流候选评估意图**。只消费137的candidate_evaluation，并绑定137及135/136完整新依据、人工约束、未解问题、实际观测范围和原累计预算；独立尝试、幂等及迟到恢复沿用原账本，不能借用旧候选或旧批准。follow_up分派、可审计预算追加、任意秒MCP、held/unknown人工处理、终端取消、多步骤和前端继续分片。
 
 第 81 步只让综合消费完成任务摘要，没有裁剪专业交互、动态分派或新增独立反证/未解问题字段。后续若需要历史压缩，应单独定义完整配对替换和必要材料保留规则，不以摘要已被消费推断 Token 已下降。
 
@@ -251,7 +254,9 @@ LangGraph/LangChain 复用框架循环、调度与 checkpoint，Harness 专注�
 
 ## 9. 验证与环境
 
-使用仓库 `.venv/Scripts/`。第136步验收见[切片记录](progress/136-reinvestigation-review.md)：按同一用例最后结果去重2,624项通过，单元2,613、API4、迁移1及旧链路6。全量单元76.659秒、迁移32.857秒、旧链路57.774秒；人工来源负向断言修正后单独复验451.331秒通过，替代早期同名失败。双来源三专业的独立意见、并发准备单胜、原输入/结果/预算对照、真实30秒失租提交回滚、三次尝试保留unknown及成功调用复用、全面重算摘要后的篡改拒绝通过。Ruff、1,023文件格式、Mypy615源文件、唯一head0091_reflow_review与CLI帮助通过。仅隔离PG、假模型/固定HTTP，不升级用户Compose、调用真实模型或连接生产；无前端变更。
+使用仓库 `.venv/Scripts/`。第137步验收见[切片记录](progress/137-reinvestigation-routing.md)：按同名最后结果去重2,647项通过（单元2,632、API3、本片原生/迁移6、旧链路6）。全量先通过2,628项65.300秒，最终领域/原生/旧链路31项55.234秒通过；双来源API分别160.517/267.095秒，提交门禁最后串行127.880秒通过，替代134前置链的同名早期失败。主机/PG测得约0.6秒时差，未放宽已有守卫或冻结时间；API主批次不是全绿报告。Ruff、1,036文件格式、Mypy624源文件、唯一head0092_reflow_routing、CLI/链接/差异检查通过。仅隔离PG与假模型，未升级用户Compose或连接真实供应商/生产；无前端变更。
+
+第136步历史验收见[切片记录](progress/136-reinvestigation-review.md)：按同一用例最后结果去重2,624项通过，单元2,613、API4、迁移1及旧链路6。全量单元76.659秒、迁移32.857秒、旧链路57.774秒；人工来源负向断言修正后单独复验451.331秒通过，替代早期同名失败。双来源三专业的独立意见、并发准备单胜、原输入/结果/预算对照、真实30秒失租提交回滚、三次尝试保留unknown及成功调用复用、全面重算摘要后的篡改拒绝通过。Ruff、1,023文件格式、Mypy615源文件、唯一head0091_reflow_review与CLI帮助通过。仅隔离PG、假模型/固定HTTP，不升级用户Compose、调用真实模型或连接生产；无前端变更。
 
 第135步历史验收见[切片记录](progress/135-reinvestigation-synthesis.md)：去重2,604项通过，单元2,592、API5、迁移1及旧链路6；SQL扫描过滤补验2项重叠不计数。完整双来源三专业输入/预算对照、真实30秒租约提交拒绝及三次尝试保留unknown/成功调用复用通过。Ruff、1,005文件格式、Mypy601源文件、唯一head0090_reflow_synthesis及CLI帮助通过。主数据库验收1,078.882秒，补验371.468秒，包含完整前置链，不作为生产性能结论。仅隔离PostgreSQL、假模型与固定HTTP/MCP，未升级用户Compose库、调用真实模型或连接生产。无前端变更。
 
@@ -267,7 +272,9 @@ git log -5 --oneline
 git diff --check
 ```
 
-第136步主要入口为[完整独立审查与原生保护](../tests/api/test_reinvestigation_review_api.py)、[迁移一致性及空升降级](../tests/integration/test_reinvestigation_review_migration.py)及[上下文/引用/预算/SDK](../tests/unit/investigation/test_reinvestigation_review.py)。最终报告在.pytest_cache/，output/未读取或提交。
+第137步主要入口为[完整路由与提交守卫](../tests/api/test_reinvestigation_routing_api.py)、[原生编译及迁移](../tests/integration/test_reinvestigation_routing_migration.py)、[有限意图/容量/预算](../tests/unit/investigation/test_reinvestigation_routing.py)。验收报告在.pytest_cache/，按最后同名结果合并；output/未读取或提交。
+
+第136步历史主要入口为[完整独立审查与原生保护](../tests/api/test_reinvestigation_review_api.py)、[迁移一致性及空升降级](../tests/integration/test_reinvestigation_review_migration.py)及[上下文/引用/预算/SDK](../tests/unit/investigation/test_reinvestigation_review.py)。最终报告在.pytest_cache/，output/未读取或提交。
 
 第135步历史入口为[完整综合与原生闭包](../tests/api/test_reinvestigation_synthesis_api.py)、[迁移一致性与空升降级](../tests/integration/test_reinvestigation_synthesis_migration.py)和[输入/预算/SDK](../tests/unit/investigation/test_reinvestigation_synthesis.py)。报告在.pytest_cache/，output/未读取或提交。
 
@@ -277,4 +284,4 @@ git diff --check
 
 ## 10. 可直接用于继续开发的任务
 
-> 请读AGENTS、项目状态、进度索引和136设计/验收，核对Git及0091_reflow_review。136只消费135成功综合的精确提案、完整原材料/新专业证据、实际窗口和未观测范围；独立角色/提示/真实尝试在原账本以review_reinvestigation和reflow_review_attempt_id预留，单独保存recorded意见，135原pending_review历史不改。接受支持必须来自原提案支持集合，反证限于同轮新证据，三个方向均只是建议；旧父settled/持槽和图保持，原预算与总截止跨全部角色/重试/unknown延续，成功调用可跨新尝试复用，迟到或新告警不能发布。SQL独立重建真实135输入/调用/结果及尝试闭包；等待项在有界扫描前过滤。下一片137接精确意见的确定性路由和有限意图，不直接进入执行或沿用旧审批，不改变旧131～136历史函数的恢复语义。
+> 请读AGENTS、项目状态、进度索引和137设计/验收，核对Git及0092_reflow_routing。137绑定135/136精确成功来源，复用既有确定性规则，按133实际轮次及原任务数加完整新专业集合计算容量，保留人工constraint、综合未解问题和每个请求/实际窗口，原账本含unknown不清零。独立路由为not_dispatched，无新模型/租约或额度；SQL重建真实调用者与发布尝试并独立编译完整正文，支持成功调用来自早前尝试。历史事实按账本/事件前缀重建，新告警只改变当前适用性；旧父settled持槽、旧图、135pending_review、136recorded和旧批准保持。下一片138受限消费回流candidate_evaluation，须独立绑定新候选来源/原预算，不能直接沿用旧候选、计划或审批；follow_up分派另行实现，不改变旧131～137历史函数的恢复语义。

@@ -344,7 +344,7 @@ async def test_second_round_route_fact_blocks_downgrade_without_v10_run(
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0091_reflow_review"
+            == "0092_reflow_routing"
         )
         assert (
             await session.scalar(

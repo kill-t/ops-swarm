@@ -1,5 +1,9 @@
 # OpsSwarm 数据库设计
 
+第137步新增：[回流审查的确定性路由](137-reinvestigation-routing.md)。新增独立不可变not_dispatched意图，绑定135/136完整成功来源、原容量/账本及事件游标；可信只读查询与显式纯事务消费者，验收状态见进度索引。
+
+0092_reflow_routing新增investigation_reflow_routes：investigation_run_id同时为主键及136结果job_id外键；route、完整content、content_sha256和created_at不可改。正文包含135/136结果摘要、136source/packet摘要、真实调用ID、事故事件游标、原预算账本前缀、规则决定/阻断原因、完整补查建议、人工限制、未解问题与观测窗口。插入必须等于SQL独立编译正文；自动意图提交时重验当前依据/原截止/账本，有数据禁降级。没有新任务、调用预留或运行。
+
 第136步新增[独立回流审查与精确提案绑定](136-reinvestigation-review.md)：独立角色/提示/尝试消费135精确提案和同源完整专业材料，原账本预留review_reinvestigation并保存recorded意见；接受支持限于原提案支持集合，建议不自动路由或授权。实现与验收见第136步进度记录。
 
 第135步新增[独立回流综合与专业来源闭包](135-reinvestigation-synthesis.md)：完整成功专业集合与新证据进入冻结综合输入，独立尝试在原账本预留模型调用，保存pending_review开放假设；原父/图及预算保持，独立审查后续交付。实现与验收见第135步进度记录。

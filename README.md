@@ -852,7 +852,7 @@ uv run python -m opsswarm.investigation.reinvestigation_synthesis.main --continu
 
 ### 独立回流审查
 
-第136步提供[独立审查 Worker](docs/architecture/136-reinvestigation-review.md)，读取135成功综合的精确提案、完整原材料/人工约束和新专业证据，使用独立角色与提示。在原账本预留`review_reinvestigation`，接受的支持只限于原提案已引用的支持集合，反证限定同轮新证据。原135记录保留`pending_review`历史，136独立保存`recorded`意见，后续路由另片交付。
+第136步提供[独立审查 Worker](docs/architecture/136-reinvestigation-review.md)，读取135成功综合的精确提案、完整原材料/人工约束和新专业证据，使用独立角色与提示。在原账本预留`review_reinvestigation`，接受的支持只限于原提案已引用的支持集合，反证限定同轮新证据。原135记录保留`pending_review`历史，136独立保存`recorded`意见；137独立消费者生成后续路由。
 
 ```powershell
 uv run python -m opsswarm.investigation.reinvestigation_review.main --once
@@ -860,6 +860,17 @@ uv run python -m opsswarm.investigation.reinvestigation_review.main --continuous
 ```
 
 沿用原运行冻结profile和模型配置，SDK重试关闭；最多3次真实尝试，成功调用可跨尝试复用，unknown保留原占用，不延长原期限。默认Compose不启动本Worker，没有业务工具。可信Bearer/read查询`GET /api/v1/investigations/{run_id}/reinvestigation-review`及`/input`，新调用三类材料接口同样需要可信读取。HTTP不运行模型，意见及补查建议不创建任务、计划、审批或执行资格。
+
+### 回流审查确定性路由
+
+第137步提供[纯事务路由消费者](docs/architecture/137-reinvestigation-routing.md)。绑定135综合与136独立意见的精确摘要、同源完整材料、原轮次/任务数、原预算账本及事故事件游标，按既有规则保存`candidate_evaluation`、`follow_up`或`await_human`的`not_dispatched`意图。保留人工约束、未解问题和请求/实际观测窗口；未知用量不清零，后续模型及工具仍须原子预留。新告警或总期限失效只改变当前诊断，不改写历史意图；旧批准不覆盖新依据。
+
+```powershell
+.venv/Scripts/python.exe -m opsswarm.investigation.reinvestigation_routing.main --once
+.venv/Scripts/python.exe -m opsswarm.investigation.reinvestigation_routing.main --continuous
+```
+
+可信Bearer/read查询`GET /api/v1/investigations/{run_id}/reinvestigation-routing`，返回`record`、`availability`和当前`blocking_reason_codes`；未消费时为`pending`，GET不会生成路由。不加入默认Compose，不调用模型；实际后续候选、规划、审批和处置另行接入。验收见[第137步记录](docs/progress/137-reinvestigation-routing.md)。
 
 ### 本地运行
 
