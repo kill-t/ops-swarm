@@ -74,6 +74,7 @@ from opsswarm.investigation.tasks import tables as investigation_task_tables  # 
 from opsswarm.investigation.working_summary import tables as working_summary_tables  # noqa: F401
 from opsswarm.planning.candidate import tables as candidate_plan_tables  # noqa: F401
 from opsswarm.planning.persistence import tables as planning_tables  # noqa: F401
+from opsswarm.planning.reinvestigation_candidate import tables as reflow_plan_tables  # noqa: F401
 from opsswarm.reports.persistence import tables as report_tables  # noqa: F401
 from opsswarm.verification.candidate import tables as candidate_recovery_tables  # noqa: F401
 from opsswarm.verification.persistence import tables as verification_tables  # noqa: F401

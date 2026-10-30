@@ -7,10 +7,23 @@ from opsswarm.investigation.candidate.evaluation import evaluate_candidate
 from opsswarm.investigation.candidate.output import CandidateEvaluation, CandidateModelResult
 from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.planning.candidate.contracts import PlanContent, PlanError
-from opsswarm.planning.models import ActionPlan, ActionPlanStatus
+from opsswarm.planning.models import ActionPlan, ActionPlanStatus, ActionStep
 from opsswarm.planning.policy import RISK_POLICY_VERSION_V3
 
 PLAN_SUMMARY = "基于已记录候选生成的单步骤处置草案，需另行可信审批。"
+
+
+def build_draft(step: ActionStep) -> ActionPlan:
+    """两种候选来源共用相同草案与风险版本，不提升审批资格。"""
+    return ActionPlan(
+        version=1,
+        status=ActionPlanStatus.DRAFT,
+        summary=PLAN_SUMMARY,
+        risk_level=step.risk_level,
+        requires_human_approval=step.requires_human_approval,
+        risk_policy_version=RISK_POLICY_VERSION_V3,
+        steps=(step,),
+    )
 
 
 def build_plan(
@@ -33,15 +46,7 @@ def build_plan(
         raise PlanError("candidate_plan_result_mismatch", "候选结果与确定性重算不一致")
     step = rebuilt.step
     assert step is not None
-    plan = ActionPlan(
-        version=1,
-        status=ActionPlanStatus.DRAFT,
-        summary=PLAN_SUMMARY,
-        risk_level=step.risk_level,
-        requires_human_approval=step.requires_human_approval,
-        risk_policy_version=RISK_POLICY_VERSION_V3,
-        steps=(step,),
-    )
+    plan = build_draft(step)
     return PlanContent(
         candidate_job_id=job_id,
         candidate_result_sha256=result_sha256,

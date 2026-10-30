@@ -1,5 +1,9 @@
 # OpsSwarm 数据库设计
 
+第139步新增：[回流新候选的可信规划准入](139-reinvestigation-candidate-plan.md)。可信工程师基于138完整新结果和137路由创建独立单步骤draft；保留135开放假设与原累计预算，不创建审批或执行授权。验收状态见进度索引。
+
+0094_reflow_candidate_plan增加reinvestigation_candidate_plans及reinvestigation_candidate_plan_commands，精确来源、完整命令及凭据期限快照不可变，计划与applied审计同事务，提交时重验来源、事故版本、预算和期限。
+
 第138步新增：[回流候选评估意图的受限消费](138-reinvestigation-candidate.md)。独立候选阶段绑定137及135/136完整新依据，继续使用原调用预算，不创建计划或沿用旧批准；验收状态见进度索引。
 
 0093_reflow_candidate增加investigation_reflow_candidate_jobs/attempts/results和原账本reflow_candidate_attempt_id归属，独立原生核验来源、输入、累计预算及租约，历史工件不可变。

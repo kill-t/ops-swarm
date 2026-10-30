@@ -1,35 +1,36 @@
 # OpsSwarm 新窗口交接
 
-更新：2026-10-30。第138步已验收，随切片记录独立提交；提交身份以Git核对。
+更新：2026-10-30。第139步已验收，随切片记录独立提交；提交身份以Git核对。
 
 ## 当前事实
 
-- 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库`.venv/Scripts/`。最新功能为第138步，本片基线main的ff74710；继续前核对Git，唯一迁移head为`0093_reflow_candidate`。
-- 用户原有未跟踪目录`output/`未读取、修改或提交。验证使用隔离PostgreSQL与假模型，不升级用户Compose、不连接生产。
-- MVP已有演练闭环；完整工程版独立回流链已从131准入推进到137路由，本片实现138候选评估受限消费。v1/v2及v3 graph-v15历史路径保留。
-- 138只消费137的candidate_evaluation，来源精确绑定137正文与135/136完整新依据，保留人工约束、反证、未解问题和请求/实际观测窗口。新证据支持经纯规则和确定性模板评估，结果仅供后续规划审查，不证明根因或赋予执行资格。
-- 独立任务、有限租约尝试及结果进入持久层；新调用追加原账本，原次数、Token、费用、unknown和总截止不重置。成功调用跨尝试复用仍检查当前来源。原父run仍settled并持槽，旧图、旧候选和旧批准不变，没有创建新计划、审批或动作。
-- 可信只读API及显式Worker CLI已接入，不加入默认Compose。实现与验证以[138记录](progress/138-reinvestigation-candidate.md)为准；早期137的时间守卫现象保留在[137记录](progress/137-reinvestigation-routing.md)，不为交接重跑旧全量或放宽守卫。
+- 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库`.venv/Scripts/`。本片基线为main的6af0a90；最新功能第139步，唯一迁移head为`0094_reflow_candidate_plan`，继续前再核对Git。
+- 用户原有未跟踪目录`output/`未读取、修改或提交。验证使用隔离PostgreSQL和假模型，不升级用户Compose、不连接生产。
+- MVP已有演练闭环；独立回流链已从131准入推进至138候选评估、139可信规划草案。v1/v2及v3 graph-v15历史路径保留，原父run仍settled并持槽，旧图不重开。
+- 139由可信工程师显式绑定138完整结果、137路由及事故版本，生成独立单步骤draft；保留135完整开放假设、138前置/未解问题与137人工限制、观测窗口。纯模板不映射旧根因或假设ID，也不证明客观因果。
+- 新计划与applied命令审计同事务，原生重建真实调用者/发布尝试闭包并校验完整正文、当前依据、版本、原预算/总截止及本次凭据期限。服务端凭据期限沿已有可信授权快照边界记录，不是数据库向外部凭据目录重认证。精确重放可返回历史，当前适用性独立诊断。
+- 139没有新模型调用或预算预留；unknown继续保留原分配，原次数、Token、费用及截止不重置。新草案approval_eligible/execution_eligible固定false，旧批准保持，未创建新审批、动作或139 Worker。
+- 验证入口和结论见[139记录](progress/139-reinvestigation-candidate-plan.md)；138恢复复用语义见[138记录](progress/138-reinvestigation-candidate.md)。按风险验证，不为交接重跑旧全量或放宽守卫。
 
-## 下一步：第139步
+## 下一步：第140步
 
-核对**回流新候选的可信规划准入**，先确认原规划模块的复用边界，再确定最小切片：精确绑定138结果及137、135/136新依据；保留人工约束、未解问题和观测范围；不得沿用旧批准，原累计预算与期限继续有效。候选可行不等于可执行，后续计划、审批和处置必须分别绑定新依据。
+核对**回流新草案的可信审批请求准入**，先确认原审批模块可复用边界，再确定最小切片。必须绑定139草案、138完整结果与137/135/136新依据，保留原预算和期限；旧批准不能覆盖新草案，不改变139不可变历史内容或把draft描述为已有授权。审批阶段自身状态迁移与输入变化分别校验，明确有效性、幂等、审计与提交失败路径。
 
-follow_up实际分派、预算追加、held/unknown人工处理、终端取消、多步骤、前端与完整发布仍待后续，不能描述为已有能力。
+follow_up实际分派、预算追加、held/unknown人工处理、终端取消、多步骤、前端及完整发布仍待后续，不能描述为已有能力。
 
 ## 最小阅读与代码入口
 
-先读[AGENTS](../AGENTS.md)、本文、[进度索引](progress/README.md)当前位置与[138设计](architecture/138-reinvestigation-candidate.md)，其他资料按本片依赖定向补读。
+先读[AGENTS](../AGENTS.md)、本文、[进度索引](progress/README.md)当前位置与[139设计](architecture/139-reinvestigation-candidate-plan.md)，其他资料按本片依赖定向补读。
 
 | 入口 | 用途 |
 | --- | --- |
-| [138 policy](../src/opsswarm/investigation/reinvestigation_candidate/policy.py)、[context](../src/opsswarm/investigation/reinvestigation_candidate/context.py) | 新证据闭包、纯模板复用、完整上下文及原预算 |
-| [source](../src/opsswarm/investigation/reinvestigation_candidate/source.py)、[job_store](../src/opsswarm/investigation/reinvestigation_candidate/job_store.py)、[ledger](../src/opsswarm/investigation/reinvestigation_candidate/ledger.py) | 精确137/135/136来源、独立租约与成功调用恢复复用 |
-| [0093迁移](../alembic/versions/0093_reinvestigation_candidate.py)、[API测试](../tests/api/test_reinvestigation_candidate_api.py) | 原生来源/输入/预算/提交守卫及代表性验收链 |
-| [原规划模块](../src/opsswarm/planning/candidate/store.py)、[117设计](architecture/117-candidate-plan-admission.md) | 下一片先核对兼容性，不能伪装成旧候选来源 |
+| [139 contracts](../src/opsswarm/planning/reinvestigation_candidate/contracts.py)、[policy](../src/opsswarm/planning/reinvestigation_candidate/policy.py)、[budget](../src/opsswarm/planning/reinvestigation_candidate/budget.py) | 新草案精确绑定、开放假设与原累计预算 |
+| [store](../src/opsswarm/planning/reinvestigation_candidate/store.py)、[queries](../src/opsswarm/planning/reinvestigation_candidate/queries.py)、[authorization](../src/opsswarm/planning/reinvestigation_candidate/authorization.py) | 可信准入、完整命令、历史重放与当前诊断 |
+| [0094迁移](../alembic/versions/0094_reinvestigation_candidate_plan.py)、[API测试](../tests/api/test_reinvestigation_candidate_plan_api.py) | 真实138闭包、原生编译、提交守卫与代表性验收链 |
+| [原候选审批模块](../src/opsswarm/approval/candidate/store.py)、[118设计](architecture/118-candidate-approval-admission.md) | 下一片先核对兼容性，不伪装旧候选或借用旧批准 |
 
-总方向见[64路线](architecture/64-full-multi-agent-roadmap.md)、[65设计](architecture/65-agent-system-design.md)；数据库/API变更同步[04](architecture/04-database-design.md)/[05](architecture/05-api-design.md)。旧131～137冻结函数及图恢复语义保持。
+总方向见[64路线](architecture/64-full-multi-agent-roadmap.md)、[65设计](architecture/65-agent-system-design.md)；数据库/API变更同步[04](architecture/04-database-design.md)/[05](architecture/05-api-design.md)。131～138冻结SQL函数及旧图恢复语义保持。
 
 ## 开发与验证偏好
 
-遵循AGENTS按风险验证：受影响单元、必要真实PG/API和代表性链；通过后不因文档更新重跑，失败精准定位复验，长链串行。日志留忽略缓存，进度一般几百字，交接只留当前事实和下一步。子任务按职责最少分配，主Agent统一核验及提交；不读取或提交`output/`。
+遵循AGENTS按风险验证：受影响单元、必要真实PG/API与代表性链；通过后不因文档更新重跑，失败精准定位复验，长链串行。日志留忽略缓存，进度一般几百字，交接只留当前事实和下一步。子任务按职责最少分配，主Agent统一核验及提交；不读取或提交`output/`。

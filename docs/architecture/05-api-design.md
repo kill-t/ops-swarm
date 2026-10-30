@@ -1,5 +1,9 @@
 # OpsSwarm 控制面 API 设计
 
+第139步新增：[回流新候选的可信规划准入](139-reinvestigation-candidate-plan.md)。可信工程师基于138完整新结果和137路由创建独立单步骤draft；保留135开放假设与原累计预算，不创建审批或执行授权。验收状态见进度索引。
+
+可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan`及GET `/commands`，no-store；写入需要工程师的plan_action和manage_incident。命令仅绑定候选完整结果、路由摘要、事故版本、幂等键和原因，原始正文与可信授权逐请求审计；无新模型或Worker。
+
 第138步新增：[回流候选评估意图的受限消费](138-reinvestigation-candidate.md)。独立候选阶段绑定137及135/136完整新依据，继续使用原调用预算，不创建计划或沿用旧批准；验收状态见进度索引。
 
 可信Bearer/read GET `/api/v1/investigations/{run_id}/reinvestigation-candidate`及`/input`返回独立任务、有限尝试、冻结输入及候选评估结果，Cache-Control:no-store；HTTP不执行模型。显式Worker通过`python -m opsswarm.investigation.reinvestigation_candidate.main --once`或`--continuous`消费候选意图，不加入默认Compose。
