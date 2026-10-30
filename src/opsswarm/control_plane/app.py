@@ -125,6 +125,8 @@ from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.reinvestigation.api import create_candidate_reinvestigation_router
 from opsswarm.investigation.reinvestigation.contracts import ReinvestigationError
 from opsswarm.investigation.reinvestigation.store import CandidateReinvestigationStore
+from opsswarm.investigation.reinvestigation_candidate.api import create_reflow_candidate_router
+from opsswarm.investigation.reinvestigation_candidate.queries import ReflowCandidateQueries
 from opsswarm.investigation.reinvestigation_coordination.api import create_reflow_router
 from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowError
 from opsswarm.investigation.reinvestigation_coordination.queries import ReflowQueries
@@ -231,6 +233,7 @@ def create_app(
     dispatch_queries: DispatchQueries | None = None,
     execution_queries: ExecutionQueries | None = None,
     reflow_synthesis_queries: SynthesisQueries | None = None,
+    reflow_candidate_queries: ReflowCandidateQueries | None = None,
     reflow_review_queries: ReflowReviewQueries | None = None,
     reflow_routing_queries: ReflowRoutingQueries | None = None,
     condition_approval_store: ConditionApprovalStore | None = None,
@@ -295,6 +298,7 @@ def create_app(
             application.state.condition_approval_store = condition_approval_store
             application.state.candidate_release_request_store = candidate_release_request_store
             application.state.reflow_routing_queries = reflow_routing_queries
+            application.state.reflow_candidate_queries = reflow_candidate_queries
             application.state.reflow_review_queries = reflow_review_queries
             application.state.reflow_synthesis_queries = reflow_synthesis_queries
             application.state.execution_queries = execution_queries
@@ -344,6 +348,10 @@ def create_app(
         )
         application.state.reflow_routing_queries = reflow_routing_queries or ReflowRoutingQueries(
             database.session_factory, clock=clock
+        )
+        application.state.reflow_candidate_queries = (
+            reflow_candidate_queries
+            or ReflowCandidateQueries(database.session_factory, clock=clock)
         )
         application.state.reflow_review_queries = reflow_review_queries or ReflowReviewQueries(
             database.session_factory, clock=clock
@@ -475,6 +483,7 @@ def create_app(
     app.state.condition_approval_store = condition_approval_store
     app.state.candidate_release_request_store = candidate_release_request_store
     app.state.reflow_routing_queries = reflow_routing_queries
+    app.state.reflow_candidate_queries = reflow_candidate_queries
     app.state.reflow_review_queries = reflow_review_queries
     app.state.reflow_synthesis_queries = reflow_synthesis_queries
     app.state.execution_queries = execution_queries
@@ -522,6 +531,7 @@ def create_app(
     app.include_router(create_dispatch_router())
     app.include_router(create_execution_router())
     app.include_router(create_reflow_synthesis_router())
+    app.include_router(create_reflow_candidate_router())
     app.include_router(create_reflow_review_router())
     app.include_router(create_reflow_routing_router())
     app.include_router(create_candidate_condition_router())

@@ -1,5 +1,9 @@
 # OpsSwarm 控制面 API 设计
 
+第138步新增：[回流候选评估意图的受限消费](138-reinvestigation-candidate.md)。独立候选阶段绑定137及135/136完整新依据，继续使用原调用预算，不创建计划或沿用旧批准；验收状态见进度索引。
+
+可信Bearer/read GET `/api/v1/investigations/{run_id}/reinvestigation-candidate`及`/input`返回独立任务、有限尝试、冻结输入及候选评估结果，Cache-Control:no-store；HTTP不执行模型。显式Worker通过`python -m opsswarm.investigation.reinvestigation_candidate.main --once`或`--continuous`消费候选意图，不加入默认Compose。
+
 第137步新增：[回流审查的确定性路由](137-reinvestigation-routing.md)。新增独立不可变not_dispatched意图，绑定135/136完整成功来源、原容量/账本及事件游标；可信只读查询与显式纯事务消费者，验收状态见进度索引。
 
 新增GET /api/v1/investigations/{run_id}/reinvestigation-routing，强制可信Bearer/read，no-store，返回record、availability和当前blocking_reason_codes。record为不可变not_dispatched意图；无记录为pending，当前依据失效为stale，到期为expired，容量/人工限制为blocked，其余为current。历史正文按真实来源与账本/事件前缀核验；GET不写入。不存在运行404、身份缺失401、权限不足403、查询未初始化503，历史完整性冲突409。CLI显式消费，不增加默认Compose服务或HTTP写命令。

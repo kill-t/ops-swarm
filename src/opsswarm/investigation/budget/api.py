@@ -13,6 +13,7 @@ from opsswarm.investigation.candidate.contracts import CandidateManifest
 from opsswarm.investigation.context.contracts import ContextManifest
 from opsswarm.investigation.human_prepare.contracts import PreparationManifest
 from opsswarm.investigation.loop.contracts import AnyModelInput, CallInteraction
+from opsswarm.investigation.reinvestigation_candidate.contracts import ReflowCandidateManifest
 from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowManifest
 from opsswarm.investigation.reinvestigation_execution.contracts import ExecutionManifest
 from opsswarm.investigation.reinvestigation_review.contracts import ReflowReviewManifest
@@ -77,6 +78,7 @@ def create_call_budget_router() -> APIRouter:
         | ReflowManifest
         | ExecutionManifest
         | SynthesisManifest
+        | ReflowCandidateManifest
         | ReflowReviewManifest
         | None,
         responses={404: {"model": ApiErrorResponse}, 422: {"model": ApiErrorResponse}},
@@ -92,6 +94,7 @@ def create_call_budget_router() -> APIRouter:
         | ReflowManifest
         | ExecutionManifest
         | SynthesisManifest
+        | ReflowCandidateManifest
         | ReflowReviewManifest
         | None
         | JSONResponse

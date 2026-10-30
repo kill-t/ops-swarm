@@ -227,6 +227,26 @@ async def terminal_source(
             == CallReservationRow.investigation_attempt_id.cast(String),
         )
     )
+    from opsswarm.investigation.reinvestigation_candidate.tables import (
+        ReflowCandidateAttemptRow,
+        ReflowCandidateJobRow,
+    )
+    from opsswarm.investigation.reinvestigation_routing.tables import ReflowRouteRow
+
+    reflow_candidate_owner = exists(
+        select(ReflowCandidateAttemptRow.id)
+        .join(ReflowCandidateJobRow, ReflowCandidateJobRow.id == ReflowCandidateAttemptRow.job_id)
+        .join(ReflowRouteRow, ReflowRouteRow.investigation_run_id == ReflowCandidateJobRow.id)
+        .where(
+            ReflowCandidateAttemptRow.id == CallReservationRow.reflow_candidate_attempt_id,
+            ReflowCandidateAttemptRow.investigation_run_id == run.id,
+            ReflowCandidateJobRow.investigation_run_id == run.id,
+            ReflowCandidateJobRow.policy_version == "reinvestigation-candidate-v1",
+            ReflowCandidateJobRow.source["routing_sha256"].astext == ReflowRouteRow.content_sha256,
+            ReflowCandidateJobRow.source["parent_attempt_id"].astext
+            == CallReservationRow.investigation_attempt_id.cast(String),
+        )
+    )
     reserved = await session.scalar(
         select(CallReservationRow.id)
         .where(
@@ -244,6 +264,11 @@ async def terminal_source(
                             CallReservationRow.operation == "human_review",
                             CallReservationRow.human_review_attempt_id.is_not(None),
                             human_owner,
+                        ),
+                        and_(
+                            CallReservationRow.operation == "evaluate_reinvestigation_candidate",
+                            CallReservationRow.reflow_candidate_attempt_id.is_not(None),
+                            reflow_candidate_owner,
                         ),
                         and_(
                             CallReservationRow.operation == "review_reinvestigation",

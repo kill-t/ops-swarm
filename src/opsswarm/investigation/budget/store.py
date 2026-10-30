@@ -128,6 +128,7 @@ class CallBudgetStore:
             CallOperation.ANALYZE_REINVESTIGATION,
             CallOperation.SYNTHESIZE_REINVESTIGATION,
             CallOperation.REVIEW_REINVESTIGATION,
+            CallOperation.EVALUATE_REINVESTIGATION_CANDIDATE,
         ):
             raise TaskFactConflict("call_scope_invalid", "独立后续阶段必须使用自身租约入口")
         if operation == CallOperation.COORDINATE and invocation_index != 0:

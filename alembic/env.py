@@ -43,6 +43,9 @@ from opsswarm.investigation.human_routing import tables as human_routing_tables 
 from opsswarm.investigation.human_wait import tables as human_wait_tables  # noqa: F401
 from opsswarm.investigation.persistence import tables as investigation_tables  # noqa: F401
 from opsswarm.investigation.reinvestigation import tables as reinvestigation_tables  # noqa: F401
+from opsswarm.investigation.reinvestigation_candidate import (
+    tables as reflow_candidate_tables,  # noqa: F401
+)
 from opsswarm.investigation.reinvestigation_coordination import (
     tables as reflow_tables,  # noqa: F401
 )

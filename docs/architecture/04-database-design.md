@@ -1,5 +1,9 @@
 # OpsSwarm 数据库设计
 
+第138步新增：[回流候选评估意图的受限消费](138-reinvestigation-candidate.md)。独立候选阶段绑定137及135/136完整新依据，继续使用原调用预算，不创建计划或沿用旧批准；验收状态见进度索引。
+
+0093_reflow_candidate增加investigation_reflow_candidate_jobs/attempts/results和原账本reflow_candidate_attempt_id归属，独立原生核验来源、输入、累计预算及租约，历史工件不可变。
+
 第137步新增：[回流审查的确定性路由](137-reinvestigation-routing.md)。新增独立不可变not_dispatched意图，绑定135/136完整成功来源、原容量/账本及事件游标；可信只读查询与显式纯事务消费者，验收状态见进度索引。
 
 0092_reflow_routing新增investigation_reflow_routes：investigation_run_id同时为主键及136结果job_id外键；route、完整content、content_sha256和created_at不可改。正文包含135/136结果摘要、136source/packet摘要、真实调用ID、事故事件游标、原预算账本前缀、规则决定/阻断原因、完整补查建议、人工限制、未解问题与观测窗口。插入必须等于SQL独立编译正文；自动意图提交时重验当前依据/原截止/账本，有数据禁降级。没有新任务、调用预留或运行。

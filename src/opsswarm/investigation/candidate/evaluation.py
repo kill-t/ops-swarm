@@ -1,7 +1,12 @@
 """检查候选证据闭包，并使用确定性参数模板评估安全可行性。"""
 
-from opsswarm.investigation.candidate.contracts import CandidateError, CandidateSource
+from typing import Protocol
+
+from opsswarm.investigation.candidate.contracts import CandidateError
 from opsswarm.investigation.candidate.output import CandidateEvaluation, CandidateModelResult
+from opsswarm.investigation.human_wait.contracts import HumanWaitEventRecord
+from opsswarm.investigation.models import EvidenceObservation
+from opsswarm.investigation.review.contracts import HypothesisReviewProposal
 from opsswarm.planning.errors import (
     UnsafeConfigurationRollbackTarget,
     UnsafeDependencyRestoreTarget,
@@ -10,7 +15,23 @@ from opsswarm.planning.errors import (
 from opsswarm.planning.steps import build_candidate_step
 
 
-def validate_proposal(source: CandidateSource, result: CandidateModelResult) -> None:
+class CandidateBasis(Protocol):
+    """只要求纯评估所需材料，避免新来源伪装为旧交接来源。"""
+
+    @property
+    def service_name(self) -> str: ...
+
+    @property
+    def evidence(self) -> tuple[EvidenceObservation, ...]: ...
+
+    @property
+    def review(self) -> HypothesisReviewProposal: ...
+
+    @property
+    def human_inputs(self) -> tuple[HumanWaitEventRecord, ...]: ...
+
+
+def validate_proposal(source: CandidateBasis, result: CandidateModelResult) -> None:
     proposal = result.proposal
     evidence_ids = {item.evidence_id for item in source.evidence}
     human_ids = {
@@ -29,9 +50,7 @@ def validate_proposal(source: CandidateSource, result: CandidateModelResult) -> 
         )
 
 
-def evaluate_candidate(
-    source: CandidateSource, result: CandidateModelResult
-) -> CandidateEvaluation:
+def evaluate_candidate(source: CandidateBasis, result: CandidateModelResult) -> CandidateEvaluation:
     validate_proposal(source, result)
     proposal = result.proposal
     if proposal.status == "unsupported":
