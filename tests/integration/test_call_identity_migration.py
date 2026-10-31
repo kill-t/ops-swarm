@@ -53,7 +53,7 @@ async def test_downgrade_refuses_nonzero_slot(database_session_factory):
         await asyncio.to_thread(command.downgrade, config(), "0036_task_context_manifest")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0094_reflow_candidate_plan"
+            "0095_reflow_approval_request"
         )
     assert not (await reserve_slot(store, claim, attempts["log"], 1)).created
 

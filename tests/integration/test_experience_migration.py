@@ -436,7 +436,7 @@ async def test_0062_existing_facts_block_downgrade_and_remain_queryable(
         await asyncio.to_thread(command.downgrade, config(), "0061_trusted_operator_identity")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0094_reflow_candidate_plan"
+            "0095_reflow_approval_request"
         )
         for table, record_id in (
             ("experience_generation_jobs", ids.job_id),

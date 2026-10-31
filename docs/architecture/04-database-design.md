@@ -1,5 +1,9 @@
 # OpsSwarm 数据库设计
 
+第140步新增：[回流新草案的可信审批请求准入](140-reinvestigation-approval-request.md)。可信工程师绑定139草案创建独立pending请求，Incident及事件/审计原子迁移；新阶段独立判断有效性，不借用旧批准或产生执行授权。验收状态见进度索引。
+
+0095_reflow_approval_request增加reinvestigation_approval_requests/commands，保存迁移前/后事件游标、事故版本、草案摘要、可信命令与期限；请求/Incident迁移/事件/applied审计同事务闭环，限定范围的Incident提交守卫拒绝孤立迁移。
+
 第139步新增：[回流新候选的可信规划准入](139-reinvestigation-candidate-plan.md)。可信工程师基于138完整新结果和137路由创建独立单步骤draft；保留135开放假设与原累计预算，不创建审批或执行授权。验收状态见进度索引。
 
 0094_reflow_candidate_plan增加reinvestigation_candidate_plans及reinvestigation_candidate_plan_commands，精确来源、完整命令及凭据期限快照不可变，计划与applied审计同事务，提交时重验来源、事故版本、预算和期限。

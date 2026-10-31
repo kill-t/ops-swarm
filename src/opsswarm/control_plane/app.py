@@ -37,6 +37,9 @@ from opsswarm.approval.decision.api import create_candidate_decision_router
 from opsswarm.approval.decision.contracts import DecisionError
 from opsswarm.approval.decision.store import CandidateDecisionStore
 from opsswarm.approval.persistence import ApprovalRequestStore
+from opsswarm.approval.reinvestigation_candidate.api import create_reflow_approval_router
+from opsswarm.approval.reinvestigation_candidate.contracts import ReflowRequestError
+from opsswarm.approval.reinvestigation_candidate.store import ReflowApprovalStore
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
@@ -223,6 +226,7 @@ def create_app(
     human_preparation_store: HumanPreparationStore | None = None,
     reflow_plan_store: ReflowPlanStore | None = None,
     candidate_plan_store: CandidatePlanStore | None = None,
+    reflow_approval_store: ReflowApprovalStore | None = None,
     candidate_approval_store: CandidateApprovalStore | None = None,
     candidate_decision_store: CandidateDecisionStore | None = None,
     candidate_preflight_store: CandidatePreflightStore | None = None,
@@ -318,6 +322,7 @@ def create_app(
             application.state.candidate_condition_store = candidate_condition_store
             application.state.candidate_preflight_store = candidate_preflight_store
             application.state.candidate_decision_store = candidate_decision_store
+            application.state.reflow_approval_store = reflow_approval_store
             application.state.candidate_approval_store = candidate_approval_store
             application.state.reflow_plan_store = reflow_plan_store
             application.state.candidate_plan_store = candidate_plan_store
@@ -406,6 +411,9 @@ def create_app(
         application.state.candidate_decision_store = (
             candidate_decision_store
             or CandidateDecisionStore(database.session_factory, clock=clock)
+        )
+        application.state.reflow_approval_store = reflow_approval_store or ReflowApprovalStore(
+            database.session_factory, clock=clock
         )
         application.state.candidate_approval_store = (
             candidate_approval_store
@@ -505,6 +513,7 @@ def create_app(
     app.state.candidate_condition_store = candidate_condition_store
     app.state.candidate_preflight_store = candidate_preflight_store
     app.state.candidate_decision_store = candidate_decision_store
+    app.state.reflow_approval_store = reflow_approval_store
     app.state.candidate_approval_store = candidate_approval_store
     app.state.reflow_plan_store = reflow_plan_store
     app.state.candidate_plan_store = candidate_plan_store
@@ -546,6 +555,7 @@ def create_app(
     app.include_router(create_candidate_condition_router())
     app.include_router(create_candidate_preflight_router())
     app.include_router(create_candidate_decision_router())
+    app.include_router(create_reflow_approval_router())
     app.include_router(create_candidate_approval_router())
     app.include_router(create_reflow_plan_router())
     app.include_router(create_candidate_plan_router())
@@ -597,6 +607,7 @@ def create_app(
     @app.exception_handler(ConditionError)
     @app.exception_handler(PreflightError)
     @app.exception_handler(DecisionError)
+    @app.exception_handler(ReflowRequestError)
     @app.exception_handler(RequestError)
     @app.exception_handler(ReflowPlanError)
     @app.exception_handler(PlanError)
@@ -610,6 +621,7 @@ def create_app(
         | CandidateError
         | ReflowPlanError
         | PlanError
+        | ReflowRequestError
         | RequestError
         | DecisionError
         | PreflightError

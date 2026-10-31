@@ -1,5 +1,9 @@
 # OpsSwarm 控制面 API 设计
 
+第140步新增：[回流新草案的可信审批请求准入](140-reinvestigation-approval-request.md)。可信工程师绑定139草案创建独立pending请求，Incident及事件/审计原子迁移；新阶段独立判断有效性，不借用旧批准或产生执行授权。验收状态见进度索引。
+
+可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request`及GET `/commands`，no-store；写入需要工程师request_approval与manage_incident，严格确认已阅读未决条件。精确重放返回历史且不续期，GET不改变pending状态；决定和执行另片实现。
+
 第139步新增：[回流新候选的可信规划准入](139-reinvestigation-candidate-plan.md)。可信工程师基于138完整新结果和137路由创建独立单步骤draft；保留135开放假设与原累计预算，不创建审批或执行授权。验收状态见进度索引。
 
 可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan`及GET `/commands`，no-store；写入需要工程师的plan_action和manage_incident。命令仅绑定候选完整结果、路由摘要、事故版本、幂等键和原因，原始正文与可信授权逐请求审计；无新模型或Worker。
