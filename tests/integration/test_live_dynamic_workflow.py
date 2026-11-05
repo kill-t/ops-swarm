@@ -187,7 +187,7 @@ class LiveReplies:
         )
 
 
-async def create_live_run(db, *, experience=False):
+async def create_live_run(db, *, experience=False, cutoff=CUTOFF):
     """直接通过创建用例启动当前现场 v3，不修改旧运行的持久版本。"""
     key = str(uuid4())
     incident = await IncidentStore(db).ingest_alert(
@@ -199,15 +199,15 @@ async def create_live_run(db, *, experience=False):
             severity=IncidentSeverity.P1,
             title="现场动态协作测试",
             payload={},
-            occurred_at=CUTOFF - timedelta(minutes=1),
-            ingested_at=CUTOFF - timedelta(minutes=1),
+            occurred_at=cutoff - timedelta(minutes=1),
+            ingested_at=cutoff - timedelta(minutes=1),
         )
     )
     store = InvestigationStore(db)
     started = await store.start_investigation(
         incident.incident.id,
         expected_version=1,
-        occurred_at=CUTOFF,
+        occurred_at=cutoff,
         actor=IncidentActor(actor_type=ActorType.HUMAN, actor_id="live-test-engineer"),
         reason="直接开始现场动态调查",
         mode=InvestigationMode.MULTI_AGENT,
@@ -219,7 +219,7 @@ async def create_live_run(db, *, experience=False):
     )
     assert started.run.graph_version == GRAPH
     assert started.run.evidence_policy_version == POLICY
-    assert started.run.observation_cutoff_at == CUTOFF
+    assert started.run.observation_cutoff_at == cutoff
     return store, started
 
 

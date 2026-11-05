@@ -69,7 +69,16 @@ def build_prepared_input(source: PreparationSource) -> PreparedInput:
             for event in source.wait.events
         ),
     )
-    manifest = PreparationManifest(source_sha256=source_hash, materials=materials)
+    # 审查来源已按原运行核验取证策略。沿用该来源判别图版本，保持历史输入哈希稳定。
+    manifest = PreparationManifest(
+        source_sha256=source_hash,
+        materials=materials,
+        graph_version=(
+            "dynamic-investigation-graph-v16"
+            if source.prior_manifest.evidence_policy_version == "task-evidence-live-dynamic-mcp-v1"
+            else "dynamic-investigation-graph-v15"
+        ),
+    )
     original = [
         message.content for message in source.prior_input.messages if message.role == "user"
     ]

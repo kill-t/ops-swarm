@@ -80,7 +80,9 @@ class PreparationManifest(HumanWaitModel):
         "human-input-review-preparation-v1"
     )
     workflow_version: Literal["v3"] = "v3"
-    graph_version: Literal["dynamic-investigation-graph-v15"] = "dynamic-investigation-graph-v15"
+    graph_version: Literal["dynamic-investigation-graph-v15", "dynamic-investigation-graph-v16"] = (
+        "dynamic-investigation-graph-v15"
+    )
     source_sha256: Hash
     materials: tuple[PreparationMaterial, ...] = Field(min_length=4, max_length=18)
     tool_names: tuple[str, ...] = Field(default=(), max_length=0)

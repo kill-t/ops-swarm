@@ -26,6 +26,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from opsswarm.database.base import Base
 
+TERMINAL_CONTINUATION_SCOPE_SQL = (
+    "((COALESCE(graph_version, '') = 'dynamic-investigation-graph-v15' "
+    "AND data_source_mode = 'frozen') OR "
+    "(COALESCE(graph_version, '') = 'dynamic-investigation-graph-v16' "
+    "AND data_source_mode = 'live' "
+    "AND COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1'))"
+)
+
 RUN_STATUS_SQL = (
     "'queued', 'running', 'succeeded', 'failed', 'await_human', 'await_candidate', "
     "'cancelled', 'settled'"
@@ -123,7 +131,8 @@ class InvestigationRunRow(Base):
             "(workflow_version = 'v3' AND COALESCE(graph_version, '') = "
             "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
             "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1' AND "
-            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate') AND "
+            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate', "
+            "'cancelled', 'settled') AND "
             "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
             "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
             "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
@@ -145,7 +154,8 @@ class InvestigationRunRow(Base):
             "workflow_version = 'v3' AND COALESCE(graph_version, '') = "
             "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
             "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1' AND "
-            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate') AND "
+            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate', "
+            "'cancelled', 'settled') AND "
             "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
             "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
             "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
@@ -169,12 +179,12 @@ class InvestigationRunRow(Base):
         CheckConstraint(f"status IN ({RUN_STATUS_SQL})", name="ck_investigation_runs_status"),
         CheckConstraint(
             "status <> 'cancelled' OR (workflow_version = 'v3' AND "
-            "graph_version = 'dynamic-investigation-graph-v15' AND data_source_mode = 'frozen')",
+            f"{TERMINAL_CONTINUATION_SCOPE_SQL})",
             name="ck_investigation_runs_cancelled_scope",
         ),
         CheckConstraint(
             "status <> 'settled' OR (workflow_version = 'v3' AND "
-            "graph_version = 'dynamic-investigation-graph-v15' AND data_source_mode = 'frozen' "
+            f"{TERMINAL_CONTINUATION_SCOPE_SQL} "
             "AND result IS NULL AND metrics IS NULL AND last_error IS NULL)",
             name="ck_investigation_runs_settled_scope",
         ),

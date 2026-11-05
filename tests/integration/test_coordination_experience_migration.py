@@ -438,7 +438,7 @@ async def test_0066_downgrade_refuses_any_enabled_run(database_session_factory) 
     async with database_session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0097_live_dynamic_investigation"
+            == "0098_live_human_continuation"
         )
         assert (
             await session.scalar(
