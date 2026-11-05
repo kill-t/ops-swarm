@@ -1,5 +1,9 @@
 # OpsSwarm 控制面 API 设计
 
+第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
+
+可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request/decision`及GET `/commands`；写入仅approver/decide_approval，支持approve/reject/expire及精确幂等。批准不提供执行资格；拒绝、显式到期不要求剩余预算，GET只读投影。
+
 第140步新增：[回流新草案的可信审批请求准入](140-reinvestigation-approval-request.md)。可信工程师绑定139草案创建独立pending请求，Incident及事件/审计原子迁移；新阶段独立判断有效性，不借用旧批准或产生执行授权。验收状态见进度索引。
 
 可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request`及GET `/commands`，no-store；写入需要工程师request_approval与manage_incident，严格确认已阅读未决条件。精确重放返回历史且不续期，GET不改变pending状态；决定和执行另片实现。

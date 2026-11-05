@@ -29,7 +29,7 @@ async def test_follow_up_plan_source_schema_is_present(database_session_factory)
             )
         )
 
-    assert head == "0095_reflow_approval_request"
+    assert head == "0096_reflow_approval_decision"
     assert column == ("YES", "uuid")
     assert {
         "fk_coordination_plans_source_review_route",

@@ -1,5 +1,9 @@
 # OpsSwarm 数据库设计
 
+第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
+
+0096_reflow_approval_decision新增reinvestigation_approval_decisions与reinvestigation_approval_decision_commands，保存完整草案、精确请求及迁移前后事件。决定、事故、事件和审计同事务；限定范围守卫拒绝孤立迁移，批准与负面收敛按各自阶段校验。
+
 第140步新增：[回流新草案的可信审批请求准入](140-reinvestigation-approval-request.md)。可信工程师绑定139草案创建独立pending请求，Incident及事件/审计原子迁移；新阶段独立判断有效性，不借用旧批准或产生执行授权。验收状态见进度索引。
 
 0095_reflow_approval_request增加reinvestigation_approval_requests/commands，保存迁移前/后事件游标、事故版本、草案摘要、可信命令与期限；请求/Incident迁移/事件/applied审计同事务闭环，限定范围的Incident提交守卫拒绝孤立迁移。

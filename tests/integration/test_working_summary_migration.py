@@ -89,7 +89,7 @@ async def test_downgrade_refuses_policy_or_saved_material(database_session_facto
     async with db() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0095_reflow_approval_request"
+            == "0096_reflow_approval_decision"
         )
 
 

@@ -15,6 +15,9 @@ from opsswarm.approval.persistence import tables as approval_tables  # noqa: F40
 from opsswarm.approval.reinvestigation_candidate import (
     tables as reflow_approval_tables,  # noqa: F401
 )
+from opsswarm.approval.reinvestigation_decision import (
+    tables as reflow_decision_tables,  # noqa: F401
+)
 from opsswarm.change_records.persistence import tables as change_record_tables  # noqa: F401
 from opsswarm.database.asyncio_compat import create_selector_event_loop
 from opsswarm.database.base import Base
