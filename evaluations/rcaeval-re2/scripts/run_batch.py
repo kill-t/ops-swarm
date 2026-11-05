@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 from time import perf_counter
 
+from fetch_pilot import CASE_DIR
 from openai import APIError, OpenAI
 from replay_evidence import load_batch
 
@@ -151,7 +152,7 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--manifest", type=Path, default=Path(__file__).with_name("batch-01.json"))
+    parser.add_argument("--manifest", type=Path, default=CASE_DIR / "batch-01.json")
     parser.add_argument("--profile", choices=("compact", "expanded"), default="compact")
     args = parser.parse_args()
     cases = list(load_batch(args.manifest, args.profile))

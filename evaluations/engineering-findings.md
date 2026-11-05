@@ -18,7 +18,7 @@
 
 **面试追问。** Token 采用供应商报告的整次调查用量，计入工具前后所有模型请求。五个案例参与了试点调试，结论限于该批日志和指标摘要。实验在独立回放入口运行，业务 Worker 和动态多 Agent 另行评测。
 
-[实验协议](rcaeval-re2/README.md#首批实验协议) · [完整报告](rcaeval-re2/results.md#首批有效配对结果) · [逐次数据](rcaeval-re2/batch-01-compact.jsonl)
+[实验协议](rcaeval-re2/README.md#首批实验协议) · [完整报告](rcaeval-re2/reports/results.md#首批有效配对结果) · [逐次数据](rcaeval-re2/results/batch-01/batch-01-compact.jsonl)
 
 ## 证据分流降低用量，仍有诊断质量代价
 
@@ -28,4 +28,4 @@
 
 **简历表述。** 用 DeepSeek Flash 在 6 个公开故障案例上完成 24 次配对调查，验证按需取证的成本随证据体积变化。离线回放中，按体积分流较始终全量少用 38.5% Token，定位为 11/12，识别出一项需补证的网络延迟误判。
 
-[预设协议](rcaeval-re2/batch-02-protocol.md) · [分层结果](rcaeval-re2/results.md#第二批证据体积分层结果)
+[预设协议](rcaeval-re2/protocols/batch-02-protocol.md) · [分层结果](rcaeval-re2/reports/results.md#第二批证据体积分层结果)

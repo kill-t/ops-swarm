@@ -5,10 +5,13 @@ import json
 from pathlib import Path
 from urllib.request import urlopen
 
+EVALUATION_ROOT = Path(__file__).resolve().parents[1]
+CASE_DIR = EVALUATION_ROOT / "cases"
+RAW_DATA_DIR = EVALUATION_ROOT / "data" / "raw"
+
 
 def fetch_case(dataset: str, revision: str, case_id: str, files: list[dict]) -> Path:
-    directory = Path(__file__).resolve().parent
-    target = directory.parents[1] / ".pytest_cache" / "rcaeval-re2" / case_id
+    target = RAW_DATA_DIR / case_id
     target.mkdir(parents=True, exist_ok=True)
     base = f"https://huggingface.co/datasets/{dataset}/resolve/{revision}"
 
@@ -36,7 +39,7 @@ def fetch_case(dataset: str, revision: str, case_id: str, files: list[dict]) -> 
 
 
 def main() -> None:
-    path = Path(__file__).with_name("pilot-manifest.json")
+    path = CASE_DIR / "pilot-manifest.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
     fetch_case(manifest["dataset"], manifest["revision"], manifest["case_id"], manifest["files"])
 

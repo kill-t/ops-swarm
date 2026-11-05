@@ -1,6 +1,6 @@
 # 第二批证据体积分层评测
 
-固定 [RCAEval RE2](https://github.com/phamquiluan/RCAEval) 同一数据修订中的六个新案例，覆盖 CPU、内存、磁盘、网络延迟、丢包和套接字故障。沿用 Online Boutique，案例未参与首批调试，结果用于同一系统内的留出验证。案例与原始文件见[批次清单](batch-02.json)，读取日志和指标。
+固定 [RCAEval RE2](https://github.com/phamquiluan/RCAEval) 同一数据修订中的六个新案例，覆盖 CPU、内存、磁盘、网络延迟、丢包和套接字故障。沿用 Online Boutique，案例未参与首批调试，结果用于同一系统内的留出验证。案例与原始文件见[批次清单](../cases/batch-02.json)，读取日志和指标。
 
 准备验证通过。12 份原始文件合计 2,923,871 字节，均通过大小与 SHA-256 检查。紧凑版证据为 3,839～4,025 字节，扩展版为 19,359～20,140 字节，均在预设阈值的对应侧。
 
@@ -13,6 +13,6 @@
 从项目根目录运行，输出文件须不存在：
 
 ```powershell
-.venv/Scripts/python.exe -u evaluations/rcaeval-re2/run_batch.py .pytest_cache/rcaeval-re2/batch-02-compact.jsonl --manifest evaluations/rcaeval-re2/batch-02.json --profile compact
-.venv/Scripts/python.exe -u evaluations/rcaeval-re2/run_batch.py .pytest_cache/rcaeval-re2/batch-02-expanded.jsonl --manifest evaluations/rcaeval-re2/batch-02.json --profile expanded
+.venv/Scripts/python.exe -u evaluations/rcaeval-re2/scripts/run_batch.py .pytest_cache/batch-02-compact-rerun.jsonl --manifest evaluations/rcaeval-re2/cases/batch-02.json --profile compact
+.venv/Scripts/python.exe -u evaluations/rcaeval-re2/scripts/run_batch.py .pytest_cache/batch-02-expanded-rerun.jsonl --manifest evaluations/rcaeval-re2/cases/batch-02.json --profile expanded
 ```
