@@ -6,14 +6,13 @@ from pathlib import Path
 from urllib.request import urlopen
 
 
-def main() -> None:
+def fetch_case(dataset: str, revision: str, case_id: str, files: list[dict]) -> Path:
     directory = Path(__file__).resolve().parent
-    manifest = json.loads((directory / "pilot-manifest.json").read_text(encoding="utf-8"))
-    target = directory.parents[1] / ".pytest_cache" / "rcaeval-re2" / manifest["case_id"]
+    target = directory.parents[1] / ".pytest_cache" / "rcaeval-re2" / case_id
     target.mkdir(parents=True, exist_ok=True)
-    base = f"https://huggingface.co/datasets/{manifest['dataset']}/resolve/{manifest['revision']}"
+    base = f"https://huggingface.co/datasets/{dataset}/resolve/{revision}"
 
-    for item in manifest["files"]:
+    for item in files:
         path = target / Path(item["source"]).name
         size = item["bytes"]
         if path.is_file():
@@ -33,6 +32,13 @@ def main() -> None:
             temporary.write_bytes(data)
             temporary.replace(path)
         print(f"{path.name}: {size} bytes, SHA-256 verified")
+    return target
+
+
+def main() -> None:
+    path = Path(__file__).with_name("pilot-manifest.json")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    fetch_case(manifest["dataset"], manifest["revision"], manifest["case_id"], manifest["files"])
 
 
 if __name__ == "__main__":
