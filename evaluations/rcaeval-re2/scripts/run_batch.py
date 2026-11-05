@@ -53,9 +53,9 @@ def compact_catalog(evidence: dict) -> dict:
     return catalog
 
 
-def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
+def tool_results(calls: list, evidence: dict) -> tuple[list[dict[str, str]], list[str]]:
     results = []
-    service_count = 0
+    served_services: list[str] = []
     for call in calls:
         services = json.loads(call.function.arguments)["services"]
         if (
@@ -65,9 +65,9 @@ def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
             or not all(isinstance(s, str) and s in evidence for s in services)
         ):
             raise ValueError("工具参数不符合服务白名单")
-        remaining = MAX_SERVICES_PER_ROUND - service_count
+        remaining = MAX_SERVICES_PER_ROUND - len(served_services)
         selected = list(dict.fromkeys(services))[:remaining]
-        service_count += len(selected)
+        served_services.extend(selected)
         result = {"evidence": {s: evidence[s] for s in selected}}
         if len(selected) < len(services):
             result["omitted"] = [s for s in services if s not in selected]
@@ -78,7 +78,7 @@ def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
                 "content": json.dumps(result, ensure_ascii=False),
             }
         )
-    return results
+    return results, served_services
 
 
 def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
@@ -134,7 +134,7 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
                 return
             if not use_tools:
                 raise ValueError("超过工具读取轮次")
-            results = tool_results(message.tool_calls, evidence)
+            results, row["read_services"] = tool_results(message.tool_calls, evidence)
             messages.append(message.model_dump(include={"role", "content", "tool_calls"}))
             messages.extend(results)
             messages.append(
@@ -156,8 +156,8 @@ def main() -> None:
     parser.add_argument("--profile", choices=("compact", "expanded"), default="compact")
     args = parser.parse_args()
     cases = list(load_batch(args.manifest, args.profile))
-    if not 5 <= len(cases) <= 10:
-        raise ValueError("每批需要五至十个案例")
+    if not 5 <= len(cases) <= 15:
+        raise ValueError("每批需要五至十五个案例")
     settings = LlmSettings.from_dotenv()
     if not settings.base_url:
         raise ValueError("缺少本地模型端点配置")
@@ -187,6 +187,7 @@ def main() -> None:
                     "code_base": commit,
                     "requests": 0,
                     "tool_calls": 0,
+                    "read_services": [],
                 }
                 try:
                     run_case(client, evidence, mode, row)

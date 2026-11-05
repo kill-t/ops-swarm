@@ -1,0 +1,246 @@
+{
+  "dataset": "phamquiluan/RCAEval",
+  "revision": "afeacb11bcc94dadfd1c8f483ee4377b2b8b614e",
+  "cases": [
+    {
+      "case_id": "re2-b03-01",
+      "expected_service": "checkoutservice",
+      "files": [
+        {
+          "source": "re2ob_checkoutservice_delay_3/logs.parquet",
+          "bytes": 345667,
+          "sha256": "9b311baa1d2e7cf9910c68a83b87c6220f719d7dd7d1472d4d759ac51be38559"
+        },
+        {
+          "source": "re2ob_checkoutservice_delay_3/metrics.parquet",
+          "bytes": 160840,
+          "sha256": "7fc076f546364b1f5c99701eb4c40756ebcedc3e841b5750f7bf8f9d4bf15a0a"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-02",
+      "expected_service": "checkoutservice",
+      "files": [
+        {
+          "source": "re2ob_checkoutservice_mem_3/logs.parquet",
+          "bytes": 342151,
+          "sha256": "a44c0261ed1d167e22c9b0f1eda89784d5fab072789f17c3a10f3c63e72cf083"
+        },
+        {
+          "source": "re2ob_checkoutservice_mem_3/metrics.parquet",
+          "bytes": 160489,
+          "sha256": "0b3078df04188dd7c2b752a9b936b7cbb95921fc14bc0b482b6033ac5d8c508a"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-03",
+      "expected_service": "checkoutservice",
+      "files": [
+        {
+          "source": "re2ob_checkoutservice_socket_3/logs.parquet",
+          "bytes": 343151,
+          "sha256": "adbc1c95e27ef2295827490e6f309934d803bd43feb32ecd91cd219459e33921"
+        },
+        {
+          "source": "re2ob_checkoutservice_socket_3/metrics.parquet",
+          "bytes": 162192,
+          "sha256": "052b10383bb2841a15d6daef4d89aa2de8723ca9c107d6eada3c22bd4a0cc12b"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-04",
+      "expected_service": "currencyservice",
+      "files": [
+        {
+          "source": "re2ob_currencyservice_cpu_3/logs.parquet",
+          "bytes": 346455,
+          "sha256": "6a06effe5e239002f0bfaeb47c7f46a6b2458b8983678a3679764c22249099cc"
+        },
+        {
+          "source": "re2ob_currencyservice_cpu_3/metrics.parquet",
+          "bytes": 160101,
+          "sha256": "7080eff2016aa46caf64474916b366736f5840716edff66fc4dc195578b5a89a"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-05",
+      "expected_service": "currencyservice",
+      "files": [
+        {
+          "source": "re2ob_currencyservice_delay_3/logs.parquet",
+          "bytes": 263430,
+          "sha256": "30b78e84502addecf6d69091cbc97af88d13e29b5dc1dc0b241c967219681d92"
+        },
+        {
+          "source": "re2ob_currencyservice_delay_3/metrics.parquet",
+          "bytes": 159581,
+          "sha256": "12756074029a5e2361a67254fbf15b9c192e845fd9c77bc5961f7293b51f8feb"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-06",
+      "expected_service": "currencyservice",
+      "files": [
+        {
+          "source": "re2ob_currencyservice_loss_3/logs.parquet",
+          "bytes": 292616,
+          "sha256": "6fb018727729cc73726506dbdf0d2ec0776676ae8fb0a1fe14787db0ec057e42"
+        },
+        {
+          "source": "re2ob_currencyservice_loss_3/metrics.parquet",
+          "bytes": 163223,
+          "sha256": "c4055cbedea6c9aeb164bba921b81023ba76f798ad90c672f0a5ed51550b8568"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-07",
+      "expected_service": "emailservice",
+      "files": [
+        {
+          "source": "re2ob_emailservice_disk_3/logs.parquet",
+          "bytes": 306482,
+          "sha256": "0f1313dc27430f0a6f2837c0067685c8f794d37767ebc63602fc244f8da9420e"
+        },
+        {
+          "source": "re2ob_emailservice_disk_3/metrics.parquet",
+          "bytes": 161336,
+          "sha256": "5fe97059484d3c5162c15ff872cc97d13223ada6b82b43045537ebdd98aa2f23"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-08",
+      "expected_service": "emailservice",
+      "files": [
+        {
+          "source": "re2ob_emailservice_loss_3/logs.parquet",
+          "bytes": 337142,
+          "sha256": "538a806d709db9bc938e5eca5cde4d103bc5bb8ac969f494bb56b13022b05c60"
+        },
+        {
+          "source": "re2ob_emailservice_loss_3/metrics.parquet",
+          "bytes": 158756,
+          "sha256": "2f98ae267cb2a54954094104304ae62f07654fed1e890f3b2680ab97096f4340"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-09",
+      "expected_service": "emailservice",
+      "files": [
+        {
+          "source": "re2ob_emailservice_mem_3/logs.parquet",
+          "bytes": 336164,
+          "sha256": "e6a22eb7387ff62e57202d14948ad827498f3a90ce84da8875981b5cce10147b"
+        },
+        {
+          "source": "re2ob_emailservice_mem_3/metrics.parquet",
+          "bytes": 159852,
+          "sha256": "a551edda9023b9020b83e42b6a6b3d65f64c98cd15c7732edfd2a766ecc99ddc"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-10",
+      "expected_service": "productcatalogservice",
+      "files": [
+        {
+          "source": "re2ob_productcatalogservice_cpu_3/logs.parquet",
+          "bytes": 352942,
+          "sha256": "4addc432d0882d78f03564d201e26cb9a33520c110541181b64324247a60bf0d"
+        },
+        {
+          "source": "re2ob_productcatalogservice_cpu_3/metrics.parquet",
+          "bytes": 154647,
+          "sha256": "8e4e586944eeb863c6e3d9440403eae4680c61efa6c0694849915236e91c5df1"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-11",
+      "expected_service": "productcatalogservice",
+      "files": [
+        {
+          "source": "re2ob_productcatalogservice_delay_3/logs.parquet",
+          "bytes": 308665,
+          "sha256": "2cbbd8c16432888d27cc70adbd7a96bf71c03eed7c88b22c046d1213543426ab"
+        },
+        {
+          "source": "re2ob_productcatalogservice_delay_3/metrics.parquet",
+          "bytes": 149986,
+          "sha256": "3b5921d96ab975ca0ce6eca4eb7b7d576a86c9c794afa33ec946ef99848807b9"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-12",
+      "expected_service": "productcatalogservice",
+      "files": [
+        {
+          "source": "re2ob_productcatalogservice_disk_3/logs.parquet",
+          "bytes": 354395,
+          "sha256": "5fc43162f161e24ec1f7f6e4754244c6ba74b375fd34b3453df63d0bbd3a8a5a"
+        },
+        {
+          "source": "re2ob_productcatalogservice_disk_3/metrics.parquet",
+          "bytes": 175958,
+          "sha256": "a5213638c132451d072e8a90cdd53846bb80ebbff9b40c5a6a17bbe8fcc59cd8"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-13",
+      "expected_service": "recommendationservice",
+      "files": [
+        {
+          "source": "re2ob_recommendationservice_cpu_3/logs.parquet",
+          "bytes": 341143,
+          "sha256": "b8fcbd9dc4383ec0c6c5cff720fea7af8a5648f1b0d2b5c6184fd36d9f9af8ba"
+        },
+        {
+          "source": "re2ob_recommendationservice_cpu_3/metrics.parquet",
+          "bytes": 151674,
+          "sha256": "1ca9985d028a24ca1dddd77d0aff71b04a59ae64b3d21332c1e5d399151984be"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-14",
+      "expected_service": "recommendationservice",
+      "files": [
+        {
+          "source": "re2ob_recommendationservice_loss_3/logs.parquet",
+          "bytes": 304201,
+          "sha256": "689004e97e90f613753928c3c1140867c54ffbd354c4502bc4a5b15603b3a210"
+        },
+        {
+          "source": "re2ob_recommendationservice_loss_3/metrics.parquet",
+          "bytes": 164793,
+          "sha256": "0d67d50f608a6b74bb323171b67b5c439e614ad26102c5c075d65c6e43c0eda8"
+        }
+      ]
+    },
+    {
+      "case_id": "re2-b03-15",
+      "expected_service": "recommendationservice",
+      "files": [
+        {
+          "source": "re2ob_recommendationservice_socket_3/logs.parquet",
+          "bytes": 337775,
+          "sha256": "038dee5502df2b491a3af6296c51375f71d8c10ce7daddef4add1161c18b0242"
+        },
+        {
+          "source": "re2ob_recommendationservice_socket_3/metrics.parquet",
+          "bytes": 150905,
+          "sha256": "e8c463622aecc31adc519e998361f3623a5ac2df8a7308e1e88dee21e674e01f"
+        }
+      ]
+    }
+  ]
+}

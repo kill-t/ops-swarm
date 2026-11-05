@@ -6,7 +6,7 @@
 | [data](data/README.md) | 本地下载的原始遥测，按 `raw/<case_id>/` 存放日志和指标 Parquet |
 | [results](results/) | 按批次保存逐次模型结果 `*.jsonl`，每行是一条调查运行 |
 | [reports](reports/results.md) | 面向阅读的汇总结果、对照表和工程结论 |
-| [protocols](protocols/batch-02-protocol.md) | 批次实验方案、变量和复现命令 |
+| [protocols](protocols/) | 批次实验方案、变量和复现命令，第三批含[优化停止线](protocols/batch-03-protocol.md#验收与停止线) |
 | [scripts](scripts/) | 下载校验、证据回放和真实模型跑批脚本 |
 
 来源为 [RCAEval 作者仓库](https://github.com/phamquiluan/RCAEval)及其 [Hugging Face 数据镜像](https://huggingface.co/datasets/phamquiluan/RCAEval)，查阅于 2026-11-05。样本来自公开微服务故障注入演练。下载试点选择一个 Online Boutique CPU 故障案例，只取日志和指标。固定修订、原文件路径、大小和 SHA-256 见[下载清单](cases/pilot-manifest.json)。
