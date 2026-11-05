@@ -1,4 +1,4 @@
-"""运行五个外部案例的真实模型配对对照。"""
+"""运行外部案例的真实模型配对对照。"""
 
 import argparse
 import json
@@ -41,7 +41,7 @@ def compact_catalog(evidence: dict) -> dict:
     for service, facts in evidence.items():
         changes = []
         for metric, pair in facts.items():
-            if metric == "late_log_samples" or None in pair:
+            if metric in {"late_log_samples", "metric_timeline"} or None in pair:
                 continue
             before, after = pair
             change = abs(after - before) / (abs(after) + abs(before) + 0.0001)
@@ -91,8 +91,11 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
             "Use the catalog to shortlist services. Call read_evidence at most once, "
             "with at most five distinct services. Then give the final JSON diagnosis."
         )
+    system = SYSTEM
+    if row["profile"] == "expanded":
+        system += " Each metric_timeline lists chronological equal-width bucket averages."
     messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
     usage: Counter[str] = Counter()
@@ -148,9 +151,10 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--manifest", type=Path, default=Path(__file__).with_name("batch-01.json"))
+    parser.add_argument("--profile", choices=("compact", "expanded"), default="compact")
     args = parser.parse_args()
-    manifest = Path(__file__).with_name("batch-01.json")
-    cases = list(load_batch(manifest))
+    cases = list(load_batch(args.manifest, args.profile))
     if not 5 <= len(cases) <= 10:
         raise ValueError("每批需要五至十个案例")
     settings = LlmSettings.from_dotenv()
@@ -167,11 +171,16 @@ def main() -> None:
         args.output.open("x", encoding="utf-8") as output,
     ):
         for index, (case_id, expected, evidence) in enumerate(cases):
+            evidence_bytes = len(json.dumps(evidence, ensure_ascii=False).encode("utf-8"))
+            if evidence_bytes > 48_000:
+                raise ValueError("完整证据超出评测单例字节预算")
             modes = ("full", "on_demand") if index % 2 == 0 else ("on_demand", "full")
             for mode in modes:
                 row = {
                     "case_id": case_id,
                     "mode": mode,
+                    "profile": args.profile,
+                    "evidence_bytes": evidence_bytes,
                     "expected_service": expected,
                     "requested_model": MODEL,
                     "code_base": commit,

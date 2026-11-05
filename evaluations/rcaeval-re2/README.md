@@ -1,5 +1,7 @@
 # RCAEval RE2 只读调查试点
 
+后续批次见[第二批证据体积分层评测](batch-02-protocol.md)。
+
 来源为 [RCAEval 作者仓库](https://github.com/phamquiluan/RCAEval)及其 [Hugging Face 数据镜像](https://huggingface.co/datasets/phamquiluan/RCAEval)，查阅于 2026-11-05。样本来自公开微服务故障注入演练。当前选择一个 Online Boutique CPU 故障案例，只取日志和指标。固定修订、原文件路径、大小和 SHA-256 见[下载清单](pilot-manifest.json)。
 
 在项目根目录运行：

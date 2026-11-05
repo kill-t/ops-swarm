@@ -7,7 +7,7 @@ import duckdb
 from fetch_pilot import fetch_case
 
 
-def load_evidence(directory: Path) -> dict[str, dict[str, object]]:
+def load_evidence(directory: Path, profile: str = "compact") -> dict[str, dict[str, object]]:
     with duckdb.connect() as db:
         metrics = db.read_parquet(str(directory / "metrics.parquet"))
         columns = [name for name in metrics.columns if name != "time"]
@@ -41,11 +41,25 @@ def load_evidence(directory: Path) -> dict[str, dict[str, object]]:
         for service, snippet, count in rows:
             if service in evidence:
                 evidence[service].setdefault("late_log_samples", []).append([count, snippet])
+        if profile == "expanded":
+            append_timeline(metrics, columns, start, end, evidence)
         return evidence
 
 
-def load_batch(manifest: Path):
+def append_timeline(metrics, columns, start, end, evidence) -> None:
+    """用等长分桶保留指标的变化过程，分桶不使用故障注入标签。"""
+    width = max(1, (end - start + 24) // 24)
+    for at in range(start, end + 1, width):
+        window = metrics.filter(f"time >= {at} AND time < {at + width}")
+        values = window.aggregate(", ".join(f'avg("{c}")' for c in columns)).fetchone()
+        for column, value in zip(columns, values, strict=True):
+            service, kind = column.split("_", 1)
+            timeline = evidence[service].setdefault("metric_timeline", {})
+            timeline.setdefault(kind, []).append(round(value, 4) if value is not None else None)
+
+
+def load_batch(manifest: Path, profile: str = "compact"):
     batch = json.loads(manifest.read_text(encoding="utf-8-sig"))
     for case in batch["cases"]:
         target = fetch_case(batch["dataset"], batch["revision"], case["case_id"], case["files"])
-        yield case["case_id"], case["expected_service"], load_evidence(target)
+        yield case["case_id"], case["expected_service"], load_evidence(target, profile)
