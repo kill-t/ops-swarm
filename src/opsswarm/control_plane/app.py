@@ -43,6 +43,7 @@ from opsswarm.approval.reinvestigation_candidate.store import ReflowApprovalStor
 from opsswarm.approval.reinvestigation_decision.api import create_reflow_approval_decision_router
 from opsswarm.approval.reinvestigation_decision.contracts import ReflowDecisionError
 from opsswarm.approval.reinvestigation_decision.store import ReflowApprovalDecisionStore
+from opsswarm.control_plane.collaboration import create_collaboration_navigation_router
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
@@ -571,6 +572,7 @@ def create_app(
     app.include_router(create_reflow_plan_router())
     app.include_router(create_candidate_plan_router())
     app.include_router(create_identity_router())
+    app.include_router(create_collaboration_navigation_router())
     app.include_router(create_experience_router())
     app.include_router(create_experience_review_router())
     app.include_router(create_experience_lifecycle_router())

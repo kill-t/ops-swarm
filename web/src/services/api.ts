@@ -28,6 +28,7 @@ import type {
   ReportActionItemPage,
 } from "../types/report-action-items";
 import type { IncidentWorkroomSnapshot } from "../types/workroom";
+import { operatorAuthorization } from "./operator-session";
 import type {
   CreateVerificationRunInput,
   CreateVerificationRunResponse,
@@ -64,10 +65,13 @@ interface JsonRequestOptions {
   method?: "GET" | "POST";
   body?: object;
   signal?: AbortSignal;
+  authorization?: string;
 }
 
-async function requestJson<T>(path: string, options: JsonRequestOptions = {}): Promise<T> {
+export async function requestJson<T>(path: string, options: JsonRequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
+  const authorization = options.authorization ?? operatorAuthorization();
+  if (authorization) headers.Authorization = authorization;
   if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";
   }
@@ -76,6 +80,7 @@ async function requestJson<T>(path: string, options: JsonRequestOptions = {}): P
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal,
+    ...(authorization ? { redirect: "error", cache: "no-store" } : {}),
   });
   if (!response.ok) {
     let body: ApiErrorBody = {};

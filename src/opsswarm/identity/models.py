@@ -94,6 +94,7 @@ WRITE_PERMISSIONS: dict[str, OperatorPermission] = {
 TRUSTED_OPERATIONS = frozenset(
     {
         "get_operator_identity",
+        "get_collaboration_navigation",
         "get_reinvestigation_coordination",
         "get_reinvestigation_dispatch",
         "get_reinvestigation_execution",

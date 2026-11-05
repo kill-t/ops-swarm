@@ -6,6 +6,8 @@
 
 现场一次回流沿用可信 `POST /api/v1/investigations/{run_id}/reinvestigation-admission`。独立审查完成后，`GET /api/v1/investigations/{run_id}/reinvestigation-routing` 返回 `await_human` 及 `live_reflow_manual_takeover`，保留原审查方向和新观察窗口。见[现场失败回流设计](live-reinvestigation-handoff.md)。
 
+可信协作台通过 `GET /api/v1/incidents/{incident_id}/collaboration-navigation` 定位最新现场调查及其当前工件。该接口只提供导航和来源引用，写入沿用已有业务接口。见[协作台设计](trusted-collaboration-workroom.md)。
+
 第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
 
 可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request/decision`及GET `/commands`；写入仅approver/decide_approval，支持approve/reject/expire及精确幂等。批准不提供执行资格；拒绝、显式到期不要求剩余预算，GET只读投影。

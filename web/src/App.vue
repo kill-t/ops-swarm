@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from "vue-router";
+import OperatorSession from "./components/OperatorSession.vue";
 </script>
 
 <template>
@@ -25,6 +26,7 @@ import { RouterLink, RouterView } from "vue-router";
         LOCAL FAULT LAB
       </div>
     </header>
+    <OperatorSession />
     <RouterView />
   </div>
 </template>

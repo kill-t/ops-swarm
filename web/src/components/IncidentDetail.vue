@@ -6,6 +6,8 @@ import IncidentReportPanel from "./IncidentReportPanel.vue";
 import InvestigationAttemptHistory from "./InvestigationAttemptHistory.vue";
 import DeploymentProvenance from "./DeploymentProvenance.vue";
 import ReportActionItemsPanel from "./ReportActionItemsPanel.vue";
+import TrustedCollaborationPanel from "./TrustedCollaborationPanel.vue";
+import { operatorIdentity } from "../services/operator-session";
 import type { EvidenceBoardSnapshot } from "../types/evidence-board";
 import type {
   CloseIncidentAuditInput,
@@ -109,6 +111,14 @@ function formatDateTime(value: string | null): string {
           {{ incident.status }}
         </span>
       </header>
+
+      <TrustedCollaborationPanel
+        v-if="operatorIdentity"
+        :key="incident.id + ':' + operatorIdentity.credential_id"
+        :incident-id="incident.id"
+        :version="incident.version"
+        :cursor="events.at(-1)?.cursor ?? 0"
+      />
 
       <section class="facts-grid" aria-label="事故关键事实">
         <div>

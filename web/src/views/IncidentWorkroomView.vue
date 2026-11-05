@@ -6,6 +6,7 @@ import IncidentDetail from "../components/IncidentDetail.vue";
 import IncidentList from "../components/IncidentList.vue";
 import { useIncidentStore } from "../stores/incident-store";
 import { useReportActionItemStore } from "../stores/report-action-item-store";
+import { operatorIdentity } from "../services/operator-session";
 
 const route = useRoute();
 const router = useRouter();
@@ -21,7 +22,7 @@ async function selectIncident(incidentId: string): Promise<void> {
   await router.push({ name: "incidents", params: { incidentId } });
 }
 
-onMounted(async () => {
+async function loadIncidents(): Promise<void> {
   await store.loadIncidents();
   if (routeIncidentId() === null && store.incidents.length > 0) {
     await router.replace({
@@ -29,10 +30,13 @@ onMounted(async () => {
       params: { incidentId: store.incidents[0]?.id },
     });
   }
-});
+}
+
+onMounted(loadIncidents);
+watch(operatorIdentity, loadIncidents);
 
 watch(
-  () => route.params.incidentId,
+  [() => route.params.incidentId, operatorIdentity],
   async () => {
     const incidentId = routeIncidentId();
     if (incidentId === null) {

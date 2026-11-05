@@ -1,6 +1,6 @@
 # OpsSwarm 新窗口交接
 
-更新于 2026-11-05。现场一次失败回流与安全交接已通过代表链验收。下一项为最小可信协作台。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
+更新于 2026-11-05。最小可信协作台已通过组件与接口验收。下一项为可复现部署与发布。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
 
 ## 当前事实
 
@@ -9,14 +9,14 @@
 - 现场 v3 以 graph-v16 接入精确窗口取证、工作摘要、共享预算及首轮可信经验。真实 PostgreSQL 与 checkpoint 用例已验证两轮调查、独立审查、中断恢复和终端交接。用例采用脚本模型与模拟 MCP 客户端，Compose 现场演示列入发布验收。见[现场动态协作记录](progress/live-dynamic-investigation.md)。
 - graph-v16 的可信补充、输入准备和实际重评已接入候选方向。真实 PostgreSQL 与进程内演练服务验证了条件核验、审批、CAS 只派发一次、三次客观采样和事故收敛。重评中的其他补查意图由工程师接管。见[人工续接记录](progress/live-human-continuation.md)。
 - graph-v16 回滚后明确未恢复时，可可信准入一次回流，在原预算和截止内完成新窗口取证、综合和独立审查。持久路由记录人工接管原因，事故继续调查，槽位归原运行。已在真实 PostgreSQL、脚本模型、固定变更响应及进程内演练服务中验收。见[现场失败回流记录](progress/live-reinvestigation-handoff.md)。
+- 可信协作台接入现有事故详情，使用内存会话和授权 SSE。真实 PostgreSQL 验收复用现有 `ops-swarm-control-db-1` 的隔离验收库；已有业务库迁移停在 `0029_follow_up_governance_idx`。见[协作台记录](progress/trusted-collaboration-workroom.md)。
+- 已有 OpsSwarm 容器满足验证条件时直接复用，需写入的验收使用该实例内的隔离数据库。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
 ## 下一项完整行为
 
-推进**最小可信协作台**。在现有事故详情接入可信身份、调查证据和处置状态，支持必要人工操作，展示一次回流后的人工交接及原因。验证关键角色权限、刷新与 SSE 重连。
-
-随后装配可复现部署并完成发布验收。依赖、必要测试及三条场景见[交付设计](architecture/local-multi-agent-release-scope.md)。
+推进**可复现部署与发布**。优先复用项目现有容器，核查已有业务卷的迁移路径，装配所需 Worker 和可信配置，完成浏览器联调、保留卷重启、三条代表场景及演示。见[交付设计](architecture/local-multi-agent-release-scope.md)。
 
 141及时间问题单列：先用最小探针定位首个拒绝边界，无相关修复或新证据不再整链复跑。不纳入本版的回流新方案再审批执行保持未验收；影响首发主链的安全或时钟问题仍阻断发布。全部本版必需项通过并完成演示/发布后结束，其余进入后续版本。
 

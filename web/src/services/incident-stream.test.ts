@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { connectIncidentEvents } from "./incident-stream";
+import { clearOperatorSession, setOperatorSession } from "./operator-session";
 import type { IncidentEvent, StreamStatus } from "../types/incidents";
 
 class FakeEventSource {
@@ -23,6 +24,39 @@ class FakeEventSource {
 }
 
 describe("Incident SSE 客户端", () => {
+  afterEach(() => {
+    clearOperatorSession();
+    vi.unstubAllGlobals();
+  });
+
+  it("可信 SSE 以授权头连接，断开后用最后游标续读并忽略重复事件", async () => {
+    setOperatorSession("test-only-credential", {
+      credential_id: "viewer", subject_id: "viewer", role: "viewer", permissions: ["read"],
+      expires_at: new Date(Date.now() + 30_000).toISOString(),
+    });
+    const event = (cursor: number) => "data: " + JSON.stringify({
+      cursor, incident_id: "incident-001", event_type: "incident.status_changed",
+      actor_type: "human", actor_id: "engineer", from_status: "resolved", to_status: "closed",
+      reason: "确认关闭", incident_version: 5, payload: {}, occurred_at: "2026-01-01T08:00:00Z",
+    }) + "\r\n\r\n";
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(event(12)))
+      .mockResolvedValueOnce(new Response(event(12) + event(13)));
+    vi.stubGlobal("fetch", fetcher);
+    const received: number[] = [];
+    const connection = connectIncidentEvents("incident-001", {
+      onEvent: (item) => received.push(item.cursor), onStatus: vi.fn(), onMalformedEvent: vi.fn(),
+    });
+    try {
+      await vi.waitFor(() => expect(received).toEqual([12, 13]), { timeout: 2500 });
+      expect(fetcher.mock.calls[0]?.[0]).toBe("/api/v1/incidents/incident-001/stream");
+      expect(fetcher.mock.calls[0]?.[1].headers.Authorization).toBe("Bearer test-only-credential");
+      expect(fetcher.mock.calls[1]?.[1].headers["Last-Event-ID"]).toBe("12");
+    } finally {
+      connection.close();
+    }
+  });
+
   it("监听具名事件并在关闭时停止原生连接", () => {
     const source = new FakeEventSource();
     const events: IncidentEvent[] = [];
