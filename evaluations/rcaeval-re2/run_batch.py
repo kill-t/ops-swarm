@@ -32,6 +32,32 @@ TOOL = {
     },
 }
 MAX_TOOL_ROUNDS = 2
+MAX_SERVICES_PER_ROUND = 12
+
+
+def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
+    results = []
+    service_count = 0
+    for call in calls:
+        services = json.loads(call.function.arguments)["services"]
+        if (
+            call.function.name != "read_evidence"
+            or not isinstance(services, list)
+            or not 1 <= len(services) <= 5
+            or not all(isinstance(s, str) and s in evidence for s in services)
+        ):
+            raise ValueError("工具参数不符合服务白名单")
+        service_count += len(services)
+        if service_count > MAX_SERVICES_PER_ROUND:
+            raise ValueError("超过单轮服务读取额度")
+        results.append(
+            {
+                "role": "tool",
+                "tool_call_id": call.id,
+                "content": json.dumps({s: evidence[s] for s in services}, ensure_ascii=False),
+            }
+        )
+    return results
 
 
 def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
@@ -76,26 +102,12 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
                     raise ValueError("定位结果不在服务目录内")
                 row.update(status="completed", predicted_service=prediction)
                 return
-            if not use_tools or len(message.tool_calls) != 1:
-                raise ValueError("超过单轮工具请求边界")
-            call = message.tool_calls[0]
-            services = json.loads(call.function.arguments)["services"]
-            if (
-                call.function.name != "read_evidence"
-                or not isinstance(services, list)
-                or not 1 <= len(services) <= 5
-                or not all(isinstance(s, str) and s in evidence for s in services)
-            ):
-                raise ValueError("工具参数不符合服务白名单")
+            if not use_tools:
+                raise ValueError("超过工具读取轮次")
+            results = tool_results(message.tool_calls, evidence)
             messages.append(message.model_dump(include={"role", "content", "tool_calls"}))
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": json.dumps({s: evidence[s] for s in services}, ensure_ascii=False),
-                }
-            )
-            row["tool_calls"] += 1
+            messages.extend(results)
+            row["tool_calls"] += len(results)
     finally:
         row["duration_ms"] = round((perf_counter() - start) * 1000)
         row["usage"] = dict(usage) if complete_usage and row["requests"] else None
