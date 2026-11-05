@@ -31,8 +31,25 @@ TOOL = {
         },
     },
 }
-MAX_TOOL_ROUNDS = 2
-MAX_SERVICES_PER_ROUND = 12
+MAX_TOOL_ROUNDS = 1
+MAX_SERVICES_PER_ROUND = 5
+
+
+def compact_catalog(evidence: dict) -> dict:
+    """每个服务保留变化比例最大的一项指标作为取证线索。"""
+    catalog = {}
+    for service, facts in evidence.items():
+        changes = []
+        for metric, pair in facts.items():
+            if metric == "late_log_samples" or None in pair:
+                continue
+            before, after = pair
+            change = abs(after - before) / (abs(after) + abs(before) + 0.0001)
+            changes.append((change, metric, pair))
+        if changes:
+            _, metric, pair = max(changes)
+            catalog[service] = {metric: pair}
+    return catalog
 
 
 def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
@@ -47,14 +64,17 @@ def tool_results(calls: list, evidence: dict) -> list[dict[str, str]]:
             or not all(isinstance(s, str) and s in evidence for s in services)
         ):
             raise ValueError("工具参数不符合服务白名单")
-        service_count += len(services)
-        if service_count > MAX_SERVICES_PER_ROUND:
-            raise ValueError("超过单轮服务读取额度")
+        remaining = MAX_SERVICES_PER_ROUND - service_count
+        selected = list(dict.fromkeys(services))[:remaining]
+        service_count += len(selected)
+        result = {"evidence": {s: evidence[s] for s in selected}}
+        if len(selected) < len(services):
+            result["omitted"] = [s for s in services if s not in selected]
         results.append(
             {
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": json.dumps({s: evidence[s] for s in services}, ensure_ascii=False),
+                "content": json.dumps(result, ensure_ascii=False),
             }
         )
     return results
@@ -65,6 +85,12 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
     payload = {"case_id": row["case_id"], "services": directory}
     if mode == "full":
         payload["evidence"] = evidence
+    else:
+        payload["catalog"] = compact_catalog(evidence)
+        payload["instruction"] = (
+            "Use the catalog to shortlist services. Call read_evidence at most once, "
+            "with at most five distinct services. Then give the final JSON diagnosis."
+        )
     messages = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -107,6 +133,12 @@ def run_case(client: OpenAI, evidence: dict, mode: str, row: dict) -> None:
             results = tool_results(message.tool_calls, evidence)
             messages.append(message.model_dump(include={"role", "content", "tool_calls"}))
             messages.extend(results)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Now return the final diagnosis as a JSON object with key service.",
+                }
+            )
             row["tool_calls"] += len(results)
     finally:
         row["duration_ms"] = round((perf_counter() - start) * 1000)
