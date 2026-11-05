@@ -1,5 +1,7 @@
 # OpsSwarm 控制面 API 设计
 
+启动调查接口接受 `mode=multi_agent`、`workflow_version=v3`、`data_source_mode=live` 与符合既有契约的模型预算。响应回显 graph-v16、现场取证策略和观测截止。可选首轮经验策略沿用 `coordination-experience-v1`。运行状态与终端交接可通过现有查询接口查看。见[现场动态协作设计](live-dynamic-investigation.md)。
+
 第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
 
 可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request/decision`及GET `/commands`；写入仅approver/decide_approval，支持approve/reject/expire及精确幂等。批准不提供执行资格；拒绝、显式到期不要求剩余预算，GET只读投影。

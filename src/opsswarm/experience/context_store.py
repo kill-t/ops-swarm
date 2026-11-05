@@ -22,6 +22,10 @@ from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.models import InvestigationDataSourceMode
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.workflow_versions import (
+    LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    is_supported_dynamic_source,
+)
 
 _POLICY = "coordination-experience-v1"
 _INPUT_VERSION = "coordination-experience-input-v1"
@@ -130,8 +134,18 @@ def _require_enabled(run: InvestigationRunRow) -> None:
     if (
         getattr(run, "coordination_experience_policy_version", None) != _POLICY
         or run.workflow_version != "v3"
-        or run.graph_version != "dynamic-investigation-graph-v15"
-        or run.data_source_mode != "frozen"
+        or not (
+            (
+                run.graph_version == "dynamic-investigation-graph-v15"
+                and run.data_source_mode == "frozen"
+            )
+            or (
+                run.graph_version == LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                and is_supported_dynamic_source(
+                    run.graph_version, run.data_source_mode, run.evidence_policy_version
+                )
+            )
+        )
         or run.mode != "multi_agent"
     ):
         raise _conflict("policy", "运行未固定受支持的首轮协调经验策略")
@@ -223,6 +237,10 @@ def _validate_first_call(
         or manifest.get("prompt_version") != "coordination-experience-plan-v1"
         or manifest.get("workflow_version") != "v3"
         or manifest.get("tool_names") != []
+        or (
+            run.data_source_mode == "live"
+            and manifest.get("evidence_policy_version") != run.evidence_policy_version
+        )
     ):
         raise _conflict("call", "经验首次调用的输入或清单策略不一致")
     messages = model_input.get("messages")

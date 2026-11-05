@@ -34,6 +34,7 @@ def context(**changes):
         **{
             "workflow_version": WorkflowVersion.V3,
             "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+            "evidence_policy_version": "task-evidence-v1",
             **changes,
         },
     )
@@ -121,11 +122,6 @@ async def test_workflow_router_keeps_legacy_result_contract():
         {},
         {"processing_timeout_seconds": 179, "lease_duration_seconds": 240},
         {"processing_timeout_seconds": 180, "lease_duration_seconds": 209},
-        {
-            "processing_timeout_seconds": 240,
-            "lease_duration_seconds": 300,
-            "data_source_mode": "live",
-        },
     ],
 )
 def test_dynamic_settings_require_explicit_safe_processing_window(changes):
@@ -133,9 +129,13 @@ def test_dynamic_settings_require_explicit_safe_processing_window(changes):
         InvestigationWorkerSettings(enable_dynamic_workflow=True, **changes)
 
 
-def test_dynamic_settings_allow_explicit_longer_frozen_window():
+@pytest.mark.parametrize("mode", ["frozen", "live"])
+def test_dynamic_settings_allow_explicit_longer_window(mode):
     settings = InvestigationWorkerSettings(
-        enable_dynamic_workflow=True, processing_timeout_seconds=240, lease_duration_seconds=300
+        enable_dynamic_workflow=True,
+        processing_timeout_seconds=240,
+        lease_duration_seconds=300,
+        data_source_mode=mode,
     )
     assert settings.enable_dynamic_workflow
 

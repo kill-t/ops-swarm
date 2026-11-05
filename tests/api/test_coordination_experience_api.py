@@ -167,7 +167,7 @@ async def reclaim(context, store, claim):
     return replacement
 
 
-@pytest.mark.parametrize("invalid", ["null", "version", "v2", "live", "context", "profile"])
+@pytest.mark.parametrize("invalid", ["null", "version", "v2", "context", "profile"])
 async def test_start_rejects_unsupported_experience_policy_combinations(
     experience_context, invalid
 ):
@@ -185,8 +185,6 @@ async def test_start_rejects_unsupported_experience_policy_combinations(
         body["coordination_experience_policy_version"] = "unknown-v1"
     elif invalid == "v2":
         body["workflow_version"] = "v2"
-    elif invalid == "live":
-        body["data_source_mode"] = "live"
     elif invalid == "context":
         body["context_policy_version"] = "task-context-v1"
     else:

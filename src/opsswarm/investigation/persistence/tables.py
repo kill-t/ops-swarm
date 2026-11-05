@@ -60,26 +60,30 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_context_policy",
         ),
         CheckConstraint(
-            "(workflow_version = 'v2' AND data_source_mode = 'live' AND "
+            "(workflow_version IN ('v2', 'v3') AND data_source_mode = 'live' AND "
             "observation_cutoff_at IS NOT NULL AND evidence_policy_version IS NOT NULL AND "
-            "evidence_policy_version IN "
-            "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1', "
-            "'task-evidence-live-mcp-v1') AND "
-            "observation_cutoff_at = date_trunc('second', observation_cutoff_at) AND "
-            "observation_cutoff_at <= created_at AND "
-            "observation_cutoff_at >= TIMESTAMPTZ '1970-01-01 06:00:00+00') OR "
-            "((workflow_version <> 'v2' OR data_source_mode <> 'live') AND "
+            "evidence_policy_version IN ('task-evidence-live-v1', "
+            "'task-evidence-live-mcp-log-v1', 'task-evidence-live-mcp-v1', "
+            "'task-evidence-live-dynamic-mcp-v1') AND observation_cutoff_at = "
+            "date_trunc('second', observation_cutoff_at) AND observation_cutoff_at <= created_at "
+            "AND observation_cutoff_at >= TIMESTAMPTZ '1970-01-01 06:00:00+00') OR "
+            "((workflow_version NOT IN ('v2', 'v3') OR data_source_mode <> 'live') AND "
             "observation_cutoff_at IS NULL)",
             name="ck_investigation_runs_observation_cutoff",
         ),
         CheckConstraint(
-            "evidence_policy_version IS NULL OR (workflow_version IN ('v2', 'v3') "
-            "AND call_budget IS NOT NULL AND ((evidence_policy_version = 'task-evidence-v1' "
-            "AND data_source_mode = 'frozen') OR "
-            "(evidence_policy_version IN "
+            "((evidence_policy_version IS NULL OR (workflow_version IN ('v2', 'v3') AND "
+            "call_budget IS NOT NULL AND ((evidence_policy_version = 'task-evidence-v1' AND "
+            "data_source_mode = 'frozen') OR (evidence_policy_version IN "
             "('task-evidence-live-v1', 'task-evidence-live-mcp-log-v1', "
-            "'task-evidence-live-mcp-v1') "
-            "AND data_source_mode = 'live')))",
+            "'task-evidence-live-mcp-v1') AND data_source_mode = 'live')))) OR (workflow_version "
+            "= 'v3' AND COALESCE(graph_version, '') = 'dynamic-investigation-graph-v16' AND "
+            "data_source_mode = 'live' AND COALESCE(evidence_policy_version, '') = "
+            "'task-evidence-live-dynamic-mcp-v1' AND call_budget IS NOT NULL)) AND "
+            "(evidence_policy_version IS DISTINCT FROM 'task-evidence-live-dynamic-mcp-v1' OR "
+            "(workflow_version = 'v3' AND COALESCE(graph_version, '') = "
+            "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1'))",
             name="ck_investigation_runs_evidence_policy",
         ),
         CheckConstraint(
@@ -99,10 +103,9 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_workflow_version",
         ),
         CheckConstraint(
-            "(workflow_version <> 'v3' AND graph_version IS NULL AND "
-            "coordination_policy_version IS NULL) OR "
-            "(workflow_version = 'v3' AND data_source_mode = 'frozen' AND "
-            "COALESCE(graph_version, '') IN "
+            "((workflow_version <> 'v3' AND graph_version IS NULL AND "
+            "coordination_policy_version IS NULL) OR (workflow_version = 'v3' AND "
+            "data_source_mode = 'frozen' AND COALESCE(graph_version, '') IN "
             "('dynamic-investigation-graph-v1', 'dynamic-investigation-graph-v2', "
             "'dynamic-investigation-graph-v3', 'dynamic-investigation-graph-v4', "
             "'dynamic-investigation-graph-v5', 'dynamic-investigation-graph-v6', "
@@ -110,29 +113,45 @@ class InvestigationRunRow(Base):
             "'dynamic-investigation-graph-v9', 'dynamic-investigation-graph-v10', "
             "'dynamic-investigation-graph-v11', 'dynamic-investigation-graph-v12', "
             "'dynamic-investigation-graph-v13', 'dynamic-investigation-graph-v14', "
-            "'dynamic-investigation-graph-v15') AND "
+            "'dynamic-investigation-graph-v15') AND COALESCE(coordination_policy_version, '') = "
+            "'dynamic-coordination-v1' AND call_budget IS NOT NULL AND model_budget IS NOT NULL "
+            "AND COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
+            "COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-v1' AND prompt_version = "
+            "'summary-context-v1' AND COALESCE(model_budget #>> "
+            "'{profile,structured_output_method}', '') = 'function_calling')) OR "
+            "(workflow_version = 'v3' AND COALESCE(graph_version, '') = "
+            "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1' AND "
+            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate') AND "
             "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
             "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
             "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
             "COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
-            "COALESCE(evidence_policy_version, '') = 'task-evidence-v1' AND "
-            "prompt_version = 'summary-context-v1' AND "
-            "COALESCE(model_budget #>> '{profile,structured_output_method}', '') = "
-            "'function_calling')",
+            "prompt_version = 'summary-context-v1' AND COALESCE(model_budget #>> "
+            "'{profile,structured_output_method}', '') = 'function_calling')",
             name="ck_investigation_runs_dynamic_policy",
         ),
         CheckConstraint(
-            "coordination_experience_policy_version IS NULL OR ("
-            "coordination_experience_policy_version = 'coordination-experience-v1' AND "
-            "workflow_version = 'v3' AND "
-            "graph_version = 'dynamic-investigation-graph-v15' AND "
-            "data_source_mode = 'frozen' AND "
-            "context_policy_version = 'summary-context-v1' AND "
+            "(coordination_experience_policy_version IS NULL OR "
+            "(coordination_experience_policy_version = 'coordination-experience-v1' AND "
+            "workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' AND "
+            "data_source_mode = 'frozen' AND context_policy_version = 'summary-context-v1' AND "
             "working_summary_policy_version = 'task-working-summary-v1' AND "
-            "evidence_policy_version = 'task-evidence-v1' AND "
-            "prompt_version = 'summary-context-v1' AND model_budget IS NOT NULL AND "
-            "COALESCE(model_budget #>> '{profile,structured_output_method}', '') = "
-            "'function_calling')",
+            "evidence_policy_version = 'task-evidence-v1' AND prompt_version = "
+            "'summary-context-v1' AND model_budget IS NOT NULL AND COALESCE(model_budget #>> "
+            "'{profile,structured_output_method}', '') = 'function_calling')) OR "
+            "(coordination_experience_policy_version = 'coordination-experience-v1' AND "
+            "workflow_version = 'v3' AND COALESCE(graph_version, '') = "
+            "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1' AND "
+            "status IN ('queued', 'running', 'failed', 'await_human', 'await_candidate') AND "
+            "COALESCE(coordination_policy_version, '') = 'dynamic-coordination-v1' AND "
+            "call_budget IS NOT NULL AND model_budget IS NOT NULL AND "
+            "COALESCE(context_policy_version, '') = 'summary-context-v1' AND "
+            "COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
+            "prompt_version = 'summary-context-v1' AND COALESCE(model_budget #>> "
+            "'{profile,structured_output_method}', '') = 'function_calling')",
             name="ck_investigation_runs_coordination_experience_policy",
         ),
         CheckConstraint(
@@ -165,9 +184,11 @@ class InvestigationRunRow(Base):
             name="ck_investigation_runs_candidate_slot",
         ),
         CheckConstraint(
-            "status NOT IN ('await_human', 'await_candidate') OR "
-            "(workflow_version = 'v3' AND graph_version = 'dynamic-investigation-graph-v15' "
-            "AND data_source_mode = 'frozen')",
+            "status NOT IN ('await_human', 'await_candidate') OR (workflow_version = 'v3' AND "
+            "graph_version = 'dynamic-investigation-graph-v15' AND data_source_mode = 'frozen') "
+            "OR (workflow_version = 'v3' AND COALESCE(graph_version, '') = "
+            "'dynamic-investigation-graph-v16' AND data_source_mode = 'live' AND "
+            "COALESCE(evidence_policy_version, '') = 'task-evidence-live-dynamic-mcp-v1')",
             name="ck_investigation_runs_handoff_scope",
         ),
         CheckConstraint(
@@ -245,7 +266,7 @@ class InvestigationRunRow(Base):
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     working_summary_policy_version: Mapped[str | None] = mapped_column(String(32))
     context_policy_version: Mapped[str | None] = mapped_column(String(32))
-    evidence_policy_version: Mapped[str | None] = mapped_column(String(32))
+    evidence_policy_version: Mapped[str | None] = mapped_column(String(40))
     observation_cutoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     call_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     model_budget: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))

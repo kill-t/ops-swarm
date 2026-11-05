@@ -33,13 +33,14 @@ from opsswarm.investigation.persistence.source_validation import reuse_validated
 from opsswarm.investigation.persistence.tables import InvestigationAttemptRow, InvestigationRunRow
 from opsswarm.investigation.tasks.contracts import TaskAssignment
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.evidence_store import require_run_assignment
 from opsswarm.investigation.tasks.identity import round_content_hash, round_specification
 from opsswarm.investigation.tasks.store import create_round_in_transaction
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_FOLLOW_UP_GRAPH_VERSIONS,
-    DYNAMIC_INVESTIGATION_GRAPH_VERSIONS,
     DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSIONS,
+    is_supported_dynamic_source,
 )
 
 
@@ -53,6 +54,27 @@ def _supports_follow_up_plan_source(graph_version: str | None, source_round: int
     if source_round == 2:
         return graph_version in DYNAMIC_THIRD_ROUND_PLANNING_GRAPH_VERSIONS
     return False
+
+
+def _allow_partial_start_second(run: InvestigationRunRow) -> bool:
+    return (
+        run.workflow_version == "v3"
+        and run.data_source_mode == "live"
+        and is_supported_dynamic_source(
+            run.graph_version, run.data_source_mode, run.evidence_policy_version
+        )
+    )
+
+
+def _require_plan_assignments(
+    run: InvestigationRunRow, assignments: tuple[TaskAssignment, ...]
+) -> None:
+    if run.workflow_version == "v3" and not is_supported_dynamic_source(
+        run.graph_version, run.data_source_mode, run.evidence_policy_version
+    ):
+        raise TaskFactConflict("coordination_context_not_supported", "协调计划来源与图版本不一致")
+    for assignment in assignments:
+        require_run_assignment(run, assignment)
 
 
 def validated_policy(row: InvestigationCoordinationPolicyRow) -> CoordinationPolicyRecord:
@@ -123,6 +145,7 @@ async def validated_plan(
             session, record.investigation_run_id, record.plan.assignment.round_number
         )
         assignments = record.plan.assignment.tasks
+        _require_plan_assignments(run, assignments)
         snapshot_id = assignments[0].evidence_snapshot_id
         cutoff = assignments[0].window_end
         if snapshot_id is None or any(
@@ -138,6 +161,7 @@ async def validated_plan(
             existing_task_count=prior_task_count,
             observation_cutoff_at=cutoff,
             evidence_snapshot_id=snapshot_id,
+            allow_partial_start_second=_allow_partial_start_second(run),
         )
         if rebuilt != record.plan:
             raise ValueError("计划不能由持久来源重建")
@@ -396,15 +420,22 @@ class CoordinationPlanStore:
                 ) from error
             if (
                 run.workflow_version not in ("v2", "v3")
-                or run.data_source_mode != "frozen"
-                or run.evidence_policy_version != "task-evidence-v1"
+                or (
+                    run.workflow_version == "v2"
+                    and (
+                        run.data_source_mode != "frozen"
+                        or run.evidence_policy_version != "task-evidence-v1"
+                    )
+                )
                 or run.call_budget is None
                 or model_policy is None
                 or model_policy.profile.structured_output_method != "function_calling"
                 or (
                     run.workflow_version == "v3"
                     and (
-                        run.graph_version not in DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
+                        not is_supported_dynamic_source(
+                            run.graph_version, run.data_source_mode, run.evidence_policy_version
+                        )
                         or run.coordination_policy_version != "dynamic-coordination-v1"
                         or run.context_policy_version != "summary-context-v1"
                     )
@@ -412,7 +443,7 @@ class CoordinationPlanStore:
             ):
                 raise TaskFactConflict(
                     "coordination_context_not_supported",
-                    "协调模型只支持契约完整且已配置共享预算的 v2 或 v3 冻结运行",
+                    "协调模型只支持契约完整且已配置共享预算的冻结历史或现场动态运行",
                 )
             rounds = list(
                 await session.scalars(
@@ -465,7 +496,9 @@ class CoordinationPlanStore:
                 existing_task_count=await _prior_task_count(session, run_id, proposal.round_number),
                 observation_cutoff_at=observation_cutoff_at,
                 evidence_snapshot_id=evidence_snapshot_id,
+                allow_partial_start_second=_allow_partial_start_second(run),
             )
+            _require_plan_assignments(run, plan.assignment.tasks)
             policy_record, _ = await _fix_policy(session, run_id, policy, now, rounds)
             policy_sha256 = policy_record.content_sha256
             if source_call_id is not None:
@@ -601,7 +634,9 @@ class CoordinationPlanStore:
                 existing_task_count=await _prior_task_count(session, run_id, proposal.round_number),
                 observation_cutoff_at=observation_cutoff_at,
                 evidence_snapshot_id=evidence_snapshot_id,
+                allow_partial_start_second=_allow_partial_start_second(run),
             )
+            _require_plan_assignments(run, plan.assignment.tasks)
             fixed_policy, _ = await _fix_policy(session, run_id, policy_record.policy, now, rounds)
             if fixed_policy.content_sha256 != route.policy_sha256:
                 raise TaskFactConflict(

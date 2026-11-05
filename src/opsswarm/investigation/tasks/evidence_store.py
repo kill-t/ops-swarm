@@ -9,6 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.investigation.budget.tables import CallReservationRow
+from opsswarm.investigation.dynamic_live_source import (
+    POLICY_VERSION as DYNAMIC_LIVE_POLICY,
+)
+from opsswarm.investigation.dynamic_live_source import (
+    require_dynamic_live_assignment,
+)
 from opsswarm.investigation.models import EvidenceKind, EvidenceObservation
 from opsswarm.investigation.persistence.lease import active_investigation_transaction
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
@@ -27,6 +33,7 @@ from opsswarm.investigation.tasks.evidence import (
 from opsswarm.investigation.tasks.evidence_tables import AgentTaskEvidenceRow
 from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.tables import AgentTaskAttemptRow, AgentTaskRow
+from opsswarm.investigation.workflow_versions import LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
 
 
 class TaskEvidenceStore:
@@ -136,6 +143,7 @@ async def _current_assignment(
         ("task-evidence-live-v1", "live"),
         ("task-evidence-live-mcp-log-v1", "live"),
         ("task-evidence-live-mcp-v1", "live"),
+        (DYNAMIC_LIVE_POLICY, "live"),
     ):
         raise TaskFactConflict("task_evidence_policy_mismatch", "运行未启用受支持的取证策略")
     task = await session.get(AgentTaskRow, task_id)
@@ -163,6 +171,16 @@ def require_run_assignment(run: InvestigationRunRow, assignment: TaskAssignment)
     if run.data_source_mode != "live":
         return
     cutoff = run.observation_cutoff_at
+    if run.evidence_policy_version == DYNAMIC_LIVE_POLICY:
+        if cutoff is None or run.graph_version != LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+            raise TaskFactConflict("task_evidence_scope_mismatch", "现场动态任务缺少固定图与截止")
+        require_dynamic_live_assignment(
+            assignment,
+            service_name=assignment.service_name,
+            cutoff=cutoff,
+            snapshot_id=live_snapshot_id(run.id, cutoff),
+        )
+        return
     duration = (
         timedelta(hours=6) if assignment.role is EvidenceKind.CHANGE else timedelta(minutes=15)
     )

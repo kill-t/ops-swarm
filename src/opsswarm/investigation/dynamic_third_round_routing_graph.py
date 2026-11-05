@@ -34,6 +34,7 @@ from opsswarm.investigation.dynamic_contracts import (
     ThirdRoundSynthesisResult,
 )
 from opsswarm.investigation.dynamic_graph import FirstRoundPlanner
+from opsswarm.investigation.dynamic_live_source import DynamicLiveDataSource
 from opsswarm.investigation.errors import SpecialistKindMismatch, UnverifiedEvidenceReference
 from opsswarm.investigation.follow_up_planning.service import (
     FollowUpPlanService,
@@ -66,6 +67,8 @@ from opsswarm.investigation.tasks.results import SpecialistTaskResult
 from opsswarm.investigation.tasks.runtime import DynamicTaskRuntime
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    InvestigationGraphVersion,
     WorkflowVersion,
 )
 
@@ -129,7 +132,7 @@ class DynamicThirdRoundRoutingGraph:
         policy: CoordinationPolicy,
         observation_cutoff_at: datetime,
         evidence_snapshot_id: str,
-        data_source: FrozenScenarioDataSource,
+        data_source: FrozenScenarioDataSource | DynamicLiveDataSource,
         analyst: SpecialistAnalyst,
         task_runtime: DynamicTaskRuntime,
         synthesizer: FirstRoundSynthesizer,
@@ -144,22 +147,34 @@ class DynamicThirdRoundRoutingGraph:
         third_round_reviewer: ThirdRoundHypothesisReviewer,
         third_round_router: ThirdRoundReviewRoutingService,
         checkpointer: BaseCheckpointSaver[str],
+        graph_version: InvestigationGraphVersion = DYNAMIC_INVESTIGATION_GRAPH_VERSION,
     ) -> None:
+        live = isinstance(data_source, DynamicLiveDataSource)
         if (
             task_runtime.run_id != run_id
             or task_runtime.snapshot_id != evidence_snapshot_id
-            or task_runtime.data_source_mode != "frozen"
+            or task_runtime.data_source_mode != ("live" if live else "frozen")
+            or graph_version
+            != (
+                LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                if live
+                else DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            )
             or data_source.snapshot_id != evidence_snapshot_id
             or data_source.snapshot_time != observation_cutoff_at
         ):
             raise ValueError("动态首轮图的运行、来源与任务快照不一致")
         self._run_id = run_id
+        self._graph_version = graph_version
         self._planner = planner
         self._policy = policy
         self._observation_cutoff_at = observation_cutoff_at
         self._evidence_snapshot_id = evidence_snapshot_id
-        self._data_source: AsyncInvestigationDataSource = ThreadedInvestigationDataSource(
-            data_source
+        self._live_source = data_source if isinstance(data_source, DynamicLiveDataSource) else None
+        self._data_source: AsyncInvestigationDataSource | None = (
+            ThreadedInvestigationDataSource(data_source)
+            if isinstance(data_source, FrozenScenarioDataSource)
+            else None
         )
         self._analyst = analyst
         self._runtime = task_runtime
@@ -232,7 +247,7 @@ class DynamicThirdRoundRoutingGraph:
         builder.add_edge("route_third_round_review", END)
         self._workflow = builder.compile(
             checkpointer=checkpointer,
-            name="dynamic_investigation_v15",
+            name=f"dynamic_investigation_{self._graph_version.rsplit('-', 1)[-1]}",
         )
 
     async def investigate(
@@ -244,7 +259,7 @@ class DynamicThirdRoundRoutingGraph:
             {
                 "request": request,
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": self._graph_version,
                 "specialist_results": [],
                 "follow_up_results": [],
                 "third_round_results": [],
@@ -364,6 +379,9 @@ class DynamicThirdRoundRoutingGraph:
             )
 
         async def query() -> Sequence[EvidenceObservation]:
+            if self._live_source is not None:
+                return await self._live_source.collect(assignment)
+            assert self._data_source is not None
             seconds = (assignment.window_end - assignment.window_start).total_seconds()
             if assignment.role is EvidenceKind.LOG:
                 items = await self._data_source.query_logs(
@@ -841,11 +859,10 @@ class DynamicThirdRoundRoutingGraph:
             raise RuntimeError("checkpoint 第三轮停止路由与业务事实不一致")
         return result
 
-    @staticmethod
-    def _validate_state_version(state: Mapping[str, object]) -> None:
+    def _validate_state_version(self, state: Mapping[str, object]) -> None:
         if (
             state.get("workflow_version") != WorkflowVersion.V3.value
-            or state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or state.get("graph_version") != self._graph_version
         ):
             raise RuntimeError("第三轮停止路由图状态版本不兼容")
 
@@ -858,13 +875,12 @@ class DynamicThirdRoundRoutingGraph:
             "max_concurrency": 3,
             "metadata": {
                 "workflow_version": WorkflowVersion.V3.value,
-                "graph_version": DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+                "graph_version": self._graph_version,
             },
             "configurable": {"thread_id": normalized},
         }
 
-    @staticmethod
-    def _validate_checkpoint_contract(checkpoint: CheckpointTuple) -> None:
+    def _validate_checkpoint_contract(self, checkpoint: CheckpointTuple) -> None:
         values = checkpoint.checkpoint["channel_values"]
         initial = values.get("__start__")
         state = initial if isinstance(initial, dict) else values
@@ -872,7 +888,7 @@ class DynamicThirdRoundRoutingGraph:
             raise RuntimeError("checkpoint 工作流版本不兼容")
         if state.get("workflow_version") != WorkflowVersion.V3.value:
             raise RuntimeError("checkpoint 状态工作流版本不兼容")
-        if checkpoint.metadata.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if checkpoint.metadata.get("graph_version") != self._graph_version:
             raise RuntimeError("checkpoint 图版本不兼容")
-        if state.get("graph_version") != DYNAMIC_INVESTIGATION_GRAPH_VERSION:
+        if state.get("graph_version") != self._graph_version:
             raise RuntimeError("checkpoint 状态图版本不兼容")

@@ -94,6 +94,7 @@ from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tasks.settlement import interrupt_tasks, require_complete_results
 from opsswarm.investigation.workflow_versions import (
     DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION,
     InvestigationGraphVersion,
     WorkflowVersion,
     validate_workflow_route,
@@ -166,13 +167,12 @@ class InvestigationStore:
                 raise ValueError("不支持的协调经验上下文策略")
             if (
                 workflow_version is not WorkflowVersion.V3
-                or data_source_mode is not InvestigationDataSourceMode.FROZEN
                 or context_policy_version != "summary-context-v1"
                 or model_budget is None
                 or model_budget.profile.structured_output_method != "function_calling"
                 or DYNAMIC_INVESTIGATION_GRAPH_VERSION != "dynamic-investigation-graph-v15"
             ):
-                raise ValueError("协调经验上下文只支持当前冻结 v3 调查")
+                raise ValueError("协调经验上下文只支持当前 v3 调查")
         if workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
             call_budget = call_budget or CallBudgetPolicy()
         if workflow_version is WorkflowVersion.V3:
@@ -195,7 +195,13 @@ class InvestigationStore:
                 workflow_version is WorkflowVersion.V2
                 and data_source_mode is InvestigationDataSourceMode.LIVE
             )
-            if live_v2:
+            live_v3 = (
+                workflow_version is WorkflowVersion.V3
+                and data_source_mode is InvestigationDataSourceMode.LIVE
+            )
+            if live_v3:
+                resolved_evidence_policy = "task-evidence-live-dynamic-mcp-v1"
+            elif live_v2:
                 resolved_evidence_policy = "task-evidence-live-mcp-v1"
             elif workflow_version in (WorkflowVersion.V2, WorkflowVersion.V3):
                 resolved_evidence_policy = "task-evidence-v1"
@@ -213,7 +219,9 @@ class InvestigationStore:
                 ),
                 workflow_version=workflow_version.value,
                 graph_version=(
-                    DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                    LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
+                    if live_v3
+                    else DYNAMIC_INVESTIGATION_GRAPH_VERSION
                     if workflow_version is WorkflowVersion.V3
                     else None
                 ),
@@ -227,7 +235,9 @@ class InvestigationStore:
                 working_summary_policy_version="task-working-summary-v1"
                 if context_policy_version in ("evidence-read-v1", "summary-context-v1")
                 else None,
-                observation_cutoff_at=occurred_at.replace(microsecond=0) if live_v2 else None,
+                observation_cutoff_at=occurred_at.replace(microsecond=0)
+                if live_v2 or live_v3
+                else None,
                 evidence_policy_version=resolved_evidence_policy,
                 graph_thread_id=(
                     build_graph_thread_id(run_id) if mode is InvestigationMode.MULTI_AGENT else None

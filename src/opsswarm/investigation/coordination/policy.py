@@ -27,6 +27,7 @@ def compile_coordination_plan(
     existing_task_count: int,
     observation_cutoff_at: datetime,
     evidence_snapshot_id: str,
+    allow_partial_start_second: bool = False,
 ) -> CompiledCoordinationPlan:
     """校验资源和角色权限，并注入调用方不能由模型伪造的运行范围。"""
 
@@ -42,7 +43,13 @@ def compile_coordination_plan(
         or existing_task_count + len(proposal.tasks) > policy.max_total_tasks
     ):
         raise TaskFactConflict("coordination_task_budget_exceeded", "协调提案超过任务资源上限")
-    if cutoff < request.started_at:
+    # 现场截止按整秒固定，仅允许覆盖事故开始时所在的这一秒。
+    earliest_cutoff = (
+        request.started_at.replace(microsecond=0)
+        if allow_partial_start_second
+        else request.started_at
+    )
+    if cutoff < earliest_cutoff:
         raise TaskFactConflict("coordination_window_invalid", "调查截止时间早于事故开始时间")
     if (
         evidence_snapshot_id != evidence_snapshot_id.strip()

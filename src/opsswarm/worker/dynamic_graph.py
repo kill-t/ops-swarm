@@ -14,6 +14,7 @@ from opsswarm.investigation.coordination.planner import CoordinationPlanner
 from opsswarm.investigation.dynamic_first_round_graph import DynamicFirstRoundGraph
 from opsswarm.investigation.dynamic_follow_up_graph import DynamicFollowUpGraph
 from opsswarm.investigation.dynamic_graph import DynamicCoordinationGraph
+from opsswarm.investigation.dynamic_live_source import DynamicLiveDataSource
 from opsswarm.investigation.dynamic_review_graph import DynamicReviewGraph
 from opsswarm.investigation.dynamic_routing_graph import DynamicRoutingGraph
 from opsswarm.investigation.dynamic_second_round_graph import DynamicSecondRoundGraph
@@ -39,9 +40,11 @@ from opsswarm.investigation.follow_up_planning.service import (
     ThirdRoundPlanService,
 )
 from opsswarm.investigation.graph_thread import build_graph_thread_id
+from opsswarm.investigation.live import LiveInvestigationDataSource
 from opsswarm.investigation.loop.agent import EvidenceLoopAnalyst
 from opsswarm.investigation.loop.service import EvidenceLoopService
 from opsswarm.investigation.models import InvestigationDataSourceMode, InvestigationMode
+from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.review.service import (
     IndependentHypothesisReviewer,
     SecondRoundHypothesisReviewer,
@@ -63,7 +66,7 @@ from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.tasks.runtime import DynamicTaskRuntime
 from opsswarm.investigation.tasks.store import InvestigationTaskStore, utc_now
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    CURRENT_DYNAMIC_GRAPH_VERSIONS,
     LEGACY_DYNAMIC_COORDINATION_GRAPH_VERSION,
     LEGACY_DYNAMIC_FIRST_ROUND_GRAPH_VERSION,
     LEGACY_DYNAMIC_FOLLOW_UP_GRAPH_VERSION,
@@ -79,6 +82,7 @@ from opsswarm.investigation.workflow_versions import (
     LEGACY_DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSION,
     LEGACY_DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSION,
     WorkflowVersion,
+    is_supported_dynamic_source,
 )
 from opsswarm.worker.runner import ProcessorContext
 
@@ -1871,34 +1875,40 @@ class DynamicThirdRoundReviewGraphFactory:
 
 
 class DynamicThirdRoundRoutingGraphFactory:
-    """按图 v15 装配第三轮最大轮次停止路由与恢复。"""
+    """按持久来源装配v15冻结或v16现场的有界多轮调查。"""
 
     def __init__(
         self,
         *,
         session_factory: async_sessionmaker[AsyncSession],
-        data_source: FrozenScenarioDataSource,
+        data_source: FrozenScenarioDataSource | LiveInvestigationDataSource,
         model: ChatOpenAI,
         checkpointer: BaseCheckpointSaver[str],
         clock: Callable[[], datetime] = utc_now,
+        query_executor: ReadOnlyQueryExecutor | None = None,
     ) -> None:
-        if not isinstance(data_source, FrozenScenarioDataSource):
-            raise ValueError("v3 第三轮停止路由图需要冻结场景数据源")
+        if not isinstance(data_source, (FrozenScenarioDataSource, LiveInvestigationDataSource)):
+            raise ValueError("动态停止路由图需要明确的冻结或现场来源")
         self._session_factory = session_factory
         self._source = data_source
         self._model = model
         self._checkpointer = checkpointer
         self._clock = clock
+        self._query_executor = query_executor
 
     def __call__(self, context: ProcessorContext) -> DynamicThirdRoundRoutingGraph:
         if (
             context.workflow_version is not WorkflowVersion.V3
-            or context.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or context.graph_version not in CURRENT_DYNAMIC_GRAPH_VERSIONS
         ):
             raise ValueError("第三轮停止路由图只接受当前图版本的 v3 调查")
         if (
             context.mode is not InvestigationMode.MULTI_AGENT
-            or context.data_source_mode is not InvestigationDataSourceMode.FROZEN
+            or not is_supported_dynamic_source(
+                context.graph_version,
+                context.data_source_mode.value,
+                context.evidence_policy_version,
+            )
             or context.investigation_run_id is None
             or context.lease_token is None
             or context.graph_thread_id is None
@@ -1907,10 +1917,30 @@ class DynamicThirdRoundRoutingGraphFactory:
             or context.call_budget is None
             or context.model_budget is None
             or context.context_policy_version != "summary-context-v1"
-            or context.evidence_policy_version != "task-evidence-v1"
-            or context.observation_cutoff_at is not None
         ):
-            raise ValueError("v3 第三轮停止路由图缺少完整的冻结运行契约")
+            raise ValueError("v3 第三轮停止路由图缺少完整的来源运行契约")
+        live = context.data_source_mode is InvestigationDataSourceMode.LIVE
+        source: FrozenScenarioDataSource | DynamicLiveDataSource
+        if live:
+            if (
+                not isinstance(self._source, LiveInvestigationDataSource)
+                or context.observation_cutoff_at is None
+                or self._query_executor is None
+            ):
+                raise ValueError("现场动态图缺少固定截止、MCP来源或受限执行器")
+            source = self._source.bind_dynamic_window(
+                run_id=context.investigation_run_id,
+                service_name=context.request.service_name,
+                cutoff=context.observation_cutoff_at,
+                executor=self._query_executor,
+            )
+        else:
+            if (
+                not isinstance(self._source, FrozenScenarioDataSource)
+                or context.observation_cutoff_at is not None
+            ):
+                raise ValueError("冻结动态图不能替换为现场来源或观测窗口")
+            source = self._source
         profile = context.model_budget.profile
         if (
             profile.structured_output_method != "function_calling"
@@ -1929,9 +1959,9 @@ class DynamicThirdRoundRoutingGraphFactory:
             lease_token=context.lease_token,
             store=InvestigationTaskStore(self._session_factory, clock=self._clock),
             queries=CollaborationQueries(self._session_factory),
-            snapshot_id=self._source.snapshot_id,
-            snapshot_time=self._source.snapshot_time,
-            data_source_mode="frozen",
+            snapshot_id=source.snapshot_id,
+            snapshot_time=source.snapshot_time,
+            data_source_mode="live" if live else "frozen",
             call_runner=runner,
             model_input_budget=True,
             evidence_store=TaskEvidenceStore(self._session_factory, clock=self._clock),
@@ -1970,9 +2000,9 @@ class DynamicThirdRoundRoutingGraphFactory:
                 clock=self._clock,
             ),
             policy=context.coordination_policy,
-            observation_cutoff_at=self._source.snapshot_time,
-            evidence_snapshot_id=self._source.snapshot_id,
-            data_source=self._source,
+            observation_cutoff_at=source.snapshot_time,
+            evidence_snapshot_id=source.snapshot_id,
+            data_source=source,
             analyst=EvidenceLoopAnalyst(
                 self._model,
                 policy=context.model_budget,
@@ -2044,4 +2074,5 @@ class DynamicThirdRoundRoutingGraphFactory:
                 clock=self._clock,
             ),
             checkpointer=self._checkpointer,
+            graph_version=context.graph_version,
         )

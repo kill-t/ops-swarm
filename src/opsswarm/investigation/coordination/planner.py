@@ -157,6 +157,11 @@ class CoordinationPlanner:
                 existing_task_count=coordination_input.existing_task_count,
                 observation_cutoff_at=coordination_input.observation_cutoff_at,
                 evidence_snapshot_id=coordination_input.evidence_snapshot_id,
+                allow_partial_start_second=(
+                    packet.manifest.workflow_version == "v3"
+                    and packet.manifest.evidence_policy_version
+                    == "task-evidence-live-dynamic-mcp-v1"
+                ),
             )
             return CoordinationModelResult(proposal=value)
 

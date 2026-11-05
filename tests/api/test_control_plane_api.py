@@ -1073,8 +1073,10 @@ async def test_start_multi_agent_investigation_persists_graph_thread(
     assert investigation["graph_thread_id"] == f"investigation-run:{investigation['id']}"
 
 
-async def test_start_v3_investigation_returns_frozen_dynamic_contract(
+@pytest.mark.parametrize("source_mode", ["frozen", "live"])
+async def test_start_v3_investigation_returns_dynamic_contract(
     control_client: httpx2.AsyncClient,
+    source_mode: str,
 ) -> None:
     created = await control_client.post(
         "/api/v1/alerts",
@@ -1091,6 +1093,7 @@ async def test_start_v3_investigation_returns_frozen_dynamic_contract(
             "reason": "创建隔离的动态协作运行",
             "mode": "multi_agent",
             "workflow_version": "v3",
+            "data_source_mode": source_mode,
             "model_budget": model_budget,
             "coordination_policy": {"max_rounds": 2, "max_total_tasks": 5},
         },
@@ -1099,13 +1102,18 @@ async def test_start_v3_investigation_returns_frozen_dynamic_contract(
     assert started.status_code == 200
     investigation = started.json()["investigation"]
     assert investigation["workflow_version"] == "v3"
-    assert investigation["graph_version"] == "dynamic-investigation-graph-v15"
+    live = source_mode == "live"
+    assert investigation["graph_version"] == f"dynamic-investigation-graph-v{16 if live else 15}"
+    assert investigation["data_source_mode"] == source_mode
+    assert (investigation["observation_cutoff_at"] is not None) == live
     assert investigation["coordination_policy_version"] == "dynamic-coordination-v1"
     assert investigation["coordination_policy"]["max_rounds"] == 2
     assert investigation["coordination_policy"]["max_total_tasks"] == 5
     assert investigation["context_policy_version"] == "summary-context-v1"
     assert investigation["working_summary_policy_version"] == "task-working-summary-v1"
-    assert investigation["evidence_policy_version"] == "task-evidence-v1"
+    assert investigation["evidence_policy_version"] == (
+        "task-evidence-live-dynamic-mcp-v1" if live else "task-evidence-v1"
+    )
     assert investigation["call_budget"] is not None
     assert investigation["model_budget"] == model_budget
 
@@ -1118,7 +1126,6 @@ async def test_start_v3_investigation_returns_frozen_dynamic_contract(
     ("overrides", "message"),
     [
         ({"mode": "single_agent"}, "v3 当前只支持多 Agent 调查"),
-        ({"data_source_mode": "live"}, "v3 启动契约当前只支持冻结数据源"),
         ({"model_budget": None}, "v3 调查必须配置模型预算"),
     ],
 )

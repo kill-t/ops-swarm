@@ -22,6 +22,7 @@ from opsswarm.investigation.github_changes import GitHubChangeSettings
 from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.live import (
     LiveChangeProvider,
+    LiveInvestigationDataSource,
     LiveInvestigationSettings,
     create_live_investigation_data_source,
 )
@@ -176,8 +177,6 @@ async def run(*, once: bool) -> bool | None:
             )
             handoff_store = None
             if worker_settings.enable_dynamic_workflow:
-                if not isinstance(data_source, FrozenScenarioDataSource):
-                    raise ValueError("动态 Worker 需要冻结来源")
                 processor = WorkflowRoutingProcessor(
                     legacy=processor,
                     dynamic=DynamicInvestigationProcessor(
@@ -186,6 +185,10 @@ async def run(*, once: bool) -> bool | None:
                             model=task_model,
                             checkpointer=saver,
                             clock=utc_now,
+                            data_source=data_source
+                            if isinstance(data_source, LiveInvestigationDataSource)
+                            else None,
+                            query_executor=query_executor,
                         ),
                         model_name=llm_settings.model,
                     ),

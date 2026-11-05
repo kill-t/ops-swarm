@@ -38,7 +38,7 @@ from opsswarm.investigation.models import (
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    CURRENT_DYNAMIC_GRAPH_VERSIONS,
     InvestigationGraphVersion,
     WorkflowVersion,
 )
@@ -161,7 +161,7 @@ class InvestigationWorker:
             supported_workflow_versions=(WorkflowVersion.V1, WorkflowVersion.V2, WorkflowVersion.V3)
             if self._handoff_store is not None
             else (WorkflowVersion.V1, WorkflowVersion.V2),
-            supported_dynamic_graph_versions=(DYNAMIC_INVESTIGATION_GRAPH_VERSION,),
+            supported_dynamic_graph_versions=tuple(CURRENT_DYNAMIC_GRAPH_VERSIONS),
             model_name=self._model_name,
             model_pricing=(
                 self._usage_tracker.pricing if self._usage_tracker is not None else None

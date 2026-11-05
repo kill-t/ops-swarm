@@ -112,7 +112,8 @@ class ContextManifest(TaskModel):
                     or self.task_id is not None
                     or self.role_version != "dynamic-coordinator-experience-v1"
                     or self.prompt_version != "coordination-experience-plan-v1"
-                    or self.evidence_policy_version != "task-evidence-v1"
+                    or self.evidence_policy_version
+                    not in ("task-evidence-v1", "task-evidence-live-dynamic-mcp-v1")
                     or self.tool_names
                     or self.trimming
                     or not 3 <= len(kinds) <= 6
@@ -128,7 +129,12 @@ class ContextManifest(TaskModel):
                 or self.task_id is not None
                 or self.role_version != "dynamic-coordinator-v1"
                 or self.prompt_version != "coordination-plan-v1"
-                or self.evidence_policy_version != "task-evidence-v1"
+                or self.evidence_policy_version
+                not in ("task-evidence-v1", "task-evidence-live-dynamic-mcp-v1")
+                or (
+                    self.evidence_policy_version == "task-evidence-live-dynamic-mcp-v1"
+                    and self.workflow_version != "v3"
+                )
                 or self.tool_names
                 or self.trimming
                 or tuple(item.kind for item in self.materials)

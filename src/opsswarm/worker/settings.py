@@ -30,11 +30,10 @@ class InvestigationWorkerSettings(BaseSettings):
         if self.max_retry_delay_seconds < self.base_retry_delay_seconds:
             raise ValueError("max_retry_delay_seconds 不能小于 base_retry_delay_seconds")
         if self.enable_dynamic_workflow and (
-            self.data_source_mode is not InvestigationDataSourceMode.FROZEN
-            or self.processing_timeout_seconds < 180
+            self.processing_timeout_seconds < 180
             or self.lease_duration_seconds - self.processing_timeout_seconds < 30
         ):
-            raise ValueError("v3 需要 frozen、至少 180 秒处理窗口及 30 秒租约结算余量")
+            raise ValueError("v3 需要至少 180 秒处理窗口及 30 秒租约结算余量")
         return self
 
     @classmethod

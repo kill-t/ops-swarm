@@ -17,10 +17,16 @@ EvidencePolicyVersion = Literal[
     "task-evidence-live-v1",
     "task-evidence-live-mcp-log-v1",
     "task-evidence-live-mcp-v1",
+    "task-evidence-live-dynamic-mcp-v1",
 ]
 
 LIVE_EVIDENCE_POLICIES = frozenset(
-    {"task-evidence-live-v1", "task-evidence-live-mcp-log-v1", "task-evidence-live-mcp-v1"}
+    {
+        "task-evidence-live-v1",
+        "task-evidence-live-mcp-log-v1",
+        "task-evidence-live-mcp-v1",
+        "task-evidence-live-dynamic-mcp-v1",
+    }
 )
 
 
@@ -49,6 +55,11 @@ class TaskEvidenceSnapshot(TaskModel):
             raise ValueError("取证策略与数据来源模式不一致")
         if not timedelta(0) < self.window_end - self.window_start <= timedelta(days=1):
             raise ValueError("取证时间窗必须为正且不超过一天")
+        if self.version == "task-evidence-live-dynamic-mcp-v1":
+            seconds = (self.window_end - self.window_start).total_seconds()
+            maximum = 21600 if self.role is EvidenceKind.CHANGE else 900
+            if seconds % 60 != 0 or seconds > maximum:
+                raise ValueError("动态现场取证窗口必须为完整分钟且不超过专业上限")
         if len({e.evidence_id for e in self.evidence}) != len(self.evidence):
             raise ValueError("取证快照不能包含重复证据 ID")
         if any(

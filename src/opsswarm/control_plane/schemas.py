@@ -230,9 +230,8 @@ class StartInvestigationRequest(StrictApiModel):
         )
         if self.coordination_experience_policy_version is not None and (
             self.workflow_version is not WorkflowVersion.V3
-            or self.data_source_mode is not InvestigationDataSourceMode.FROZEN
         ):
-            raise ValueError("协调经验上下文只支持当前冻结 v3 调查")
+            raise ValueError("协调经验上下文只支持当前 v3 调查")
         return self
 
 

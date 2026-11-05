@@ -34,8 +34,9 @@ from opsswarm.investigation.errors import InvestigationRunNotFound
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 from opsswarm.investigation.tasks.errors import TaskFactConflict
+from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion, live_snapshot_id
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
+from opsswarm.investigation.workflow_versions import is_supported_dynamic_source
 
 if TYPE_CHECKING:
     from opsswarm.experience.context_contracts import ExperienceContextSelection
@@ -77,17 +78,26 @@ def build_coordination_context(
     model_policy: ModelBudgetPolicy,
     workflow_version: Literal["v2", "v3"] = "v2",
     experience_selection: ExperienceContextSelection | None = None,
+    evidence_policy_version: EvidencePolicyVersion = "task-evidence-v1",
 ) -> ContextPacket:
     if observation_cutoff_at.tzinfo is None or observation_cutoff_at.utcoffset() is None:
         raise TaskFactConflict("coordination_window_invalid", "协调观察截止时间必须带时区")
     observation_cutoff_at = observation_cutoff_at.astimezone(UTC)
-    if observation_cutoff_at < request.started_at:
+    live = evidence_policy_version == "task-evidence-live-dynamic-mcp-v1"
+    earliest_cutoff = (
+        request.started_at.replace(microsecond=0)
+        if live and workflow_version == "v3"
+        else request.started_at
+    )
+    if observation_cutoff_at < earliest_cutoff:
         raise TaskFactConflict("coordination_window_invalid", "协调观察截止时间早于事故开始时间")
     if (
         evidence_snapshot_id != evidence_snapshot_id.strip()
         or not 1 <= len(evidence_snapshot_id) <= 100
     ):
         raise TaskFactConflict("coordination_snapshot_invalid", "协调证据快照标识不合法")
+    if evidence_policy_version != "task-evidence-v1" and not (live and workflow_version == "v3"):
+        raise TaskFactConflict("coordination_context_not_supported", "协调取证策略不受支持")
     user_payload = {
         "incident": request.model_dump(mode="json"),
         "round_number": round_number,
@@ -95,6 +105,8 @@ def build_coordination_context(
         "policy": policy_record.policy.model_dump(mode="json"),
         "role_max_lookback_seconds": _ROLE_WINDOWS,
     }
+    if live:
+        user_payload["lookback_seconds_multiple_of"] = 60
     if experience_selection is not None:
         if (
             workflow_version != "v3"
@@ -103,6 +115,7 @@ def build_coordination_context(
             or experience_selection.scope.run_id != policy_record.investigation_run_id
             or experience_selection.scope.incident_id != request.incident_id
             or experience_selection.scope.service_name != request.service_name
+            or experience_selection.scope.data_source_mode != ("live" if live else "frozen")
         ):
             raise TaskFactConflict("coordination_experience_scope_conflict", "协调经验范围不一致")
         user_payload["historical_experience"] = experience_selection.model_dump(mode="json")
@@ -123,6 +136,12 @@ def build_coordination_context(
             TextModelMessage(
                 role="system",
                 content=_SYSTEM_PROMPT
+                + (
+                    "现场 lookback_seconds 必须为正的60倍数；"
+                    "log/metric不超过900，change不超过21600。"
+                    if live
+                    else ""
+                )
                 + (_EXPERIENCE_NOTICE if experience_selection is not None else ""),
             ),
             TextModelMessage(
@@ -154,7 +173,7 @@ def build_coordination_context(
             else "dynamic-coordinator-v1",
             workflow_version=workflow_version,
             prompt_version=prompt_version,
-            evidence_policy_version="task-evidence-v1",
+            evidence_policy_version=evidence_policy_version,
             materials=(
                 ContextMaterial(
                     kind="incident_input",
@@ -207,12 +226,19 @@ async def _sources(
 ]:
     if (
         run.workflow_version not in ("v2", "v3")
-        or run.data_source_mode != "frozen"
-        or run.evidence_policy_version != "task-evidence-v1"
+        or (
+            run.workflow_version == "v2"
+            and (
+                run.data_source_mode != "frozen"
+                or run.evidence_policy_version != "task-evidence-v1"
+            )
+        )
         or (
             run.workflow_version == "v3"
             and (
-                run.graph_version not in DYNAMIC_INVESTIGATION_GRAPH_VERSIONS
+                not is_supported_dynamic_source(
+                    run.graph_version, run.data_source_mode, run.evidence_policy_version
+                )
                 or run.coordination_policy_version != "dynamic-coordination-v1"
                 or run.context_policy_version != "summary-context-v1"
             )
@@ -220,7 +246,7 @@ async def _sources(
     ):
         raise TaskFactConflict(
             "coordination_context_not_supported",
-            "首版协调模型上下文只支持契约完整的 v2 或 v3 冻结运行",
+            "协调模型上下文只支持契约完整的冻结历史或现场动态运行",
         )
     incident = await session.get(IncidentRow, run.incident_id)
     policy_row = await session.get(InvestigationCoordinationPolicyRow, run.id)
@@ -247,6 +273,13 @@ async def _sources(
     )
 
 
+def _require_live_scope(run: InvestigationRunRow, cutoff: datetime, snapshot_id: str) -> None:
+    if run.data_source_mode == "live" and (
+        cutoff != run.observation_cutoff_at or snapshot_id != live_snapshot_id(run.id, cutoff)
+    ):
+        raise TaskFactConflict("coordination_window_invalid", "现场协调必须使用运行固定观察范围")
+
+
 async def validate_coordination_context(
     session: AsyncSession,
     run: InvestigationRunRow,
@@ -257,6 +290,7 @@ async def validate_coordination_context(
     reserved_at: datetime | None = None,
 ) -> None:
     request, policy_record, model_policy, workflow_version = await _sources(session, run)
+    _require_live_scope(run, model_input.observation_cutoff_at, model_input.evidence_snapshot_id)
     prior_task_count = int(
         await session.scalar(
             select(func.count())
@@ -302,6 +336,7 @@ async def validate_coordination_context(
         model_policy=model_policy,
         workflow_version=workflow_version,
         experience_selection=selection,
+        evidence_policy_version=cast(EvidencePolicyVersion, run.evidence_policy_version),
     )
     if expected.model_input != model_input or expected.manifest != manifest:
         raise TaskFactConflict(
@@ -344,6 +379,7 @@ class CoordinationContextService:
                     "首版协调模型上下文只支持创建第一轮计划",
                 )
             request, policy_record, model_policy, workflow_version = await _sources(session, run)
+            _require_live_scope(run, observation_cutoff_at, evidence_snapshot_id)
             selection = None
             if run.coordination_experience_policy_version is not None:
                 from opsswarm.experience.context_store import prepare_experience_selection
@@ -359,4 +395,5 @@ class CoordinationContextService:
                 model_policy=model_policy,
                 workflow_version=workflow_version,
                 experience_selection=selection,
+                evidence_policy_version=cast(EvidencePolicyVersion, run.evidence_policy_version),
             )

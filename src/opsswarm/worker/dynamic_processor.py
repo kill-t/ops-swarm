@@ -4,13 +4,13 @@ from collections.abc import Callable
 
 from opsswarm.investigation.dynamic_third_round_routing_graph import DynamicThirdRoundRoutingGraph
 from opsswarm.investigation.models import (
-    InvestigationDataSourceMode,
     InvestigationMode,
     WorkItemKind,
 )
 from opsswarm.investigation.workflow_versions import (
-    DYNAMIC_INVESTIGATION_GRAPH_VERSION,
+    CURRENT_DYNAMIC_GRAPH_VERSIONS,
     WorkflowVersion,
+    is_supported_dynamic_source,
 )
 from opsswarm.worker.runner import (
     InvestigationProcessor,
@@ -35,13 +35,17 @@ class DynamicInvestigationProcessor:
     async def process(self, context: ProcessorContext) -> TerminalProcessorOutcome:
         if (
             context.workflow_version is not WorkflowVersion.V3
-            or context.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
+            or context.graph_version not in CURRENT_DYNAMIC_GRAPH_VERSIONS
             or context.mode is not InvestigationMode.MULTI_AGENT
-            or context.data_source_mode is not InvestigationDataSourceMode.FROZEN
+            or not is_supported_dynamic_source(
+                context.graph_version,
+                context.data_source_mode.value,
+                context.evidence_policy_version,
+            )
             or context.work_item_kind is not WorkItemKind.RUN_MULTI_AGENT_INVESTIGATION
             or context.graph_thread_id is None
         ):
-            raise ValueError("动态处理器只接受冻结 v3 当前图的多 Agent 调查")
+            raise ValueError("动态处理器只接受来源匹配的当前图及v3多Agent调查")
         graph = self._factory(context)
         if await graph.has_checkpoint(thread_id=context.graph_thread_id):
             result = await graph.resume(thread_id=context.graph_thread_id)

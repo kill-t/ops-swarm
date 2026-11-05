@@ -31,6 +31,7 @@ from opsswarm.investigation.workflow_versions import (
     DYNAMIC_SECOND_ROUND_SYNTHESIS_GRAPH_VERSIONS,
     DYNAMIC_THIRD_ROUND_REVIEW_GRAPH_VERSIONS,
     DYNAMIC_THIRD_ROUND_SYNTHESIS_GRAPH_VERSIONS,
+    is_supported_dynamic_source,
 )
 from opsswarm.investigation.working_summary.contracts import SUMMARY_VERSION
 from opsswarm.investigation.working_summary.persistence import validated_summary
@@ -60,8 +61,19 @@ async def load_sources(
         "task-evidence-live-v1",
         "task-evidence-live-mcp-log-v1",
         "task-evidence-live-mcp-v1",
+        "task-evidence-live-dynamic-mcp-v1",
     ):
         raise TaskFactConflict("context_policy_mismatch", "运行没有受支持的上下文策略")
+    if (
+        run.workflow_version == "v3"
+        and not is_supported_dynamic_source(
+            run.graph_version, run.data_source_mode, run.evidence_policy_version
+        )
+    ) or (
+        run.workflow_version != "v3"
+        and run.evidence_policy_version == "task-evidence-live-dynamic-mcp-v1"
+    ):
+        raise TaskFactConflict("context_policy_mismatch", "上下文来源与固定图版本不一致")
     if (
         run.context_policy_version == "summary-context-v1"
         and run.working_summary_policy_version != SUMMARY_VERSION

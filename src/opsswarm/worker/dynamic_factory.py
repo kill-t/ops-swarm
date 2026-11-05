@@ -1,4 +1,4 @@
-"""为当前动态 Worker 装配按事故锚定、可复现的冻结演练图。"""
+"""为当前动态Worker按持久来源装配冻结或现场调查图。"""
 
 from collections.abc import Callable
 from datetime import datetime
@@ -8,7 +8,9 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.investigation.dynamic_third_round_routing_graph import DynamicThirdRoundRoutingGraph
-from opsswarm.investigation.models import InvestigationRequest
+from opsswarm.investigation.live import LiveInvestigationDataSource
+from opsswarm.investigation.models import InvestigationDataSourceMode, InvestigationRequest
+from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO, FrozenScenarioDataSource
 from opsswarm.worker.dynamic_graph import DynamicThirdRoundRoutingGraphFactory
 from opsswarm.worker.runner import ProcessorContext
@@ -35,7 +37,7 @@ def worker_frozen_source(request: InvestigationRequest) -> FrozenScenarioDataSou
 
 
 class CurrentDynamicGraphFactory:
-    """模拟源的版本和图版本固定，重试不依赖进程当前日期生成新材料。"""
+    """来源和图版本绑定运行，重试不依赖当前日期生成新材料。"""
 
     def __init__(
         self,
@@ -44,17 +46,29 @@ class CurrentDynamicGraphFactory:
         model: ChatOpenAI,
         checkpointer: BaseCheckpointSaver[str],
         clock: Callable[[], datetime],
+        data_source: LiveInvestigationDataSource | None = None,
+        query_executor: ReadOnlyQueryExecutor | None = None,
     ) -> None:
         self._sessions = session_factory
         self._model = model
         self._checkpointer = checkpointer
         self._clock = clock
+        self._source = data_source
+        self._query_executor = query_executor
 
     def __call__(self, context: ProcessorContext) -> DynamicThirdRoundRoutingGraph:
+        source: FrozenScenarioDataSource | LiveInvestigationDataSource
+        if context.data_source_mode is InvestigationDataSourceMode.LIVE:
+            if self._source is None or self._query_executor is None:
+                raise ValueError("现场动态图未注入MCP来源和受限取证执行器")
+            source = self._source
+        else:
+            source = worker_frozen_source(context.request)
         return DynamicThirdRoundRoutingGraphFactory(
             session_factory=self._sessions,
-            data_source=worker_frozen_source(context.request),
+            data_source=source,
             model=self._model,
             checkpointer=self._checkpointer,
             clock=self._clock,
+            query_executor=self._query_executor,
         )(context)

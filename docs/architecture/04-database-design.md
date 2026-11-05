@@ -1,5 +1,7 @@
 # OpsSwarm 数据库设计
 
+`0097_live_dynamic_investigation` 为现场 v3 固定 graph-v16、取证策略和 UTC 截止。任务与证据在既有表中持久化，原生约束复核任务窗口、来源、成功调用和内容散列。终端事务保存交接并释放 Worker。见[现场动态协作设计](live-dynamic-investigation.md)。
+
 第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
 
 0096_reflow_approval_decision新增reinvestigation_approval_decisions与reinvestigation_approval_decision_commands，保存完整草案、精确请求及迁移前后事件。决定、事故、事件和审计同事务；限定范围守卫拒绝孤立迁移，批准与负面收敛按各自阶段校验。

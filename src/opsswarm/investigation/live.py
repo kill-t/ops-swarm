@@ -26,6 +26,10 @@ from opsswarm.investigation.tasks.evidence import EvidencePolicyVersion
 from opsswarm.investigation.tools import InvestigationDataSource
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
+    from opsswarm.investigation.dynamic_live_source import DynamicLiveDataSource
+    from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
     from opsswarm.telemetry_mcp.client import TelemetryMcpClientSettings
     from opsswarm.telemetry_metrics_mcp.client import TelemetryMetricsMcpClientSettings
 
@@ -104,6 +108,33 @@ class LiveInvestigationDataSource:
             changes=self._changes,
             service_name=service_name,
             cutoff=cutoff,
+        )
+
+    def bind_dynamic_window(
+        self,
+        *,
+        run_id: "UUID",
+        service_name: str,
+        cutoff: datetime,
+        executor: "ReadOnlyQueryExecutor",
+    ) -> "DynamicLiveDataSource":
+        from opsswarm.investigation.dynamic_live_source import DynamicLiveDataSource
+        from opsswarm.investigation.tasks.evidence import live_snapshot_id
+
+        if (
+            self._mcp_logs is None
+            or self._mcp_metrics is None
+            or not isinstance(self._changes, ChangeApiOnlyInvestigationDataSource)
+        ):
+            raise UnsupportedLiveTaskSource("现场动态调查需要完整MCP来源及本地历史变更源")
+        return DynamicLiveDataSource(
+            logs=self._mcp_logs,
+            metrics=self._mcp_metrics,
+            changes=self._changes,
+            service_name=service_name,
+            cutoff=cutoff,
+            snapshot_id=live_snapshot_id(run_id, cutoff),
+            executor=executor,
         )
 
     def query_logs(

@@ -39,9 +39,10 @@
 | 已验收 | 原候选链的条件核验、演练CAS执行、客观验证、收敛和首次回流调查组件：[121](../progress/121-candidate-condition-verification.md)、[127](../progress/127-candidate-release-worker.md)、[130](../progress/130-candidate-incident-convergence.md)、[134](../progress/134-reinvestigation-execution.md)、[136](../progress/136-reinvestigation-review.md)记录 |
 | 已有实现待集成 | 上述能力分布于旧图、独立任务及CLI，尚非统一现场发布链。旧MVP界面/Compose的[63验收](../progress/63-mvp-compose-release.md)不替代新链验收 |
 | 已有实现待验收 | 141审批决定已提交，单元及迁移通过，完整API链未通过；保留[原记录](../progress/141-reinvestigation-approval-decision.md)，不标记全部验收 |
-| 尚缺实现 | 现场v3及现场协调经验的兼容策略、发布链装配与交接出口、可信浏览器与新协作视图、当前部署/重启/幂等发布验收 |
+| 组件已验收 | 现场 v3 graph-v16 的动态调查、经验接入、checkpoint 恢复与终端交接已有实现及定向验收。见[现场动态调查记录](../progress/live-dynamic-investigation.md) |
+| 尚缺实现 | 现场人工续接至处置的链路装配、回流接管出口、可信浏览器与新协作视图、当前部署/重启/幂等发布验收 |
 
-现场接入有明确代码缺口：[v3启动门禁](../../src/opsswarm/investigation/workflow_versions.py)与[经验消费门禁](../../src/opsswarm/experience/context_store.py)当前均限制冻结模式；[浏览器HTTP访问](../../web/src/services/api.ts)与[SSE访问](../../web/src/services/incident-stream.ts)尚未接可信Bearer链。新策略保持旧运行、来源和checkpoint语义，不通过放宽旧契约接入现场。
+现场调查接入使用独立图版本和来源策略，完成的是调查至终端交接。浏览器可信访问和 SSE 属于后续协作台交付。见[现场策略](live-dynamic-investigation.md)、[浏览器 HTTP](../../web/src/services/api.ts)和[SSE](../../web/src/services/incident-stream.ts)。
 
 ## 4. 核心优先的剩余交付顺序
 

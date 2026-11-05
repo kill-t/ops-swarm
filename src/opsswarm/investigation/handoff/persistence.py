@@ -30,7 +30,10 @@ from opsswarm.investigation.review_routing.tables import InvestigationHypothesis
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.events import append_task_event
 from opsswarm.investigation.tasks.tables import AgentTaskRow, InvestigationRoundRow
-from opsswarm.investigation.workflow_versions import DYNAMIC_INVESTIGATION_GRAPH_VERSION
+from opsswarm.investigation.workflow_versions import (
+    CURRENT_DYNAMIC_GRAPH_VERSIONS,
+    is_supported_dynamic_source,
+)
 
 
 def waiting_status(destination: str) -> str:
@@ -45,8 +48,10 @@ async def terminal_source(
     row = await session.get(InvestigationHypothesisReviewRouteRow, route_id)
     if (
         run.workflow_version != "v3"
-        or run.graph_version != DYNAMIC_INVESTIGATION_GRAPH_VERSION
-        or run.data_source_mode != "frozen"
+        or run.graph_version not in CURRENT_DYNAMIC_GRAPH_VERSIONS
+        or not is_supported_dynamic_source(
+            run.graph_version, run.data_source_mode, run.evidence_policy_version
+        )
         or row is None
         or row.investigation_run_id != run.id
         or row.content_sha256 != source_sha256
