@@ -1,39 +1,39 @@
 # OpsSwarm 新窗口交接
 
-更新：2026-11-05。第140步已验收；第141步实现收尾并独立提交，单元与迁移通过，完整API链保留未验收欠项。
+更新：2026-11-05。当前收口为“可演示、可恢复的多 Agent 本地事故处置版本”，核心优先，范围见[交付设计](architecture/local-multi-agent-release-scope.md)。本次只完成文档决策，新增运行行为尚未验收；不按142及后续编号自动顺延。
 
 ## 当前事实
 
-- 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库`.venv/Scripts/`。本片基线main的50d6c4b；新增迁移head为`0096_reflow_approval_decision`，继续前核对Git。
-- 用户未跟踪目录`output/`未读取、修改或提交；续接时另见`tmp/`，同样未读取、修改或提交。验证用隔离PostgreSQL和假模型，未升级用户Compose、不连接生产。
-- 独立回流链已从131准入推进至140可信审批请求，141新增独立人工决定。v1/v2及v3 graph-v15保持，原父run仍settled持槽，旧图不重开。
-- 141由可信approver绑定140请求、139完整草案和138/137/135/136新依据，提交approve/reject/expire；决定、Incident相邻版本迁移、事件及applied审计同事务闭合。批准进mitigating，拒绝和显式到期回investigating；本片无执行动作或执行资格。
-- 批准按自己的mitigating/新版本及事件判断current，原草案/请求stale是正常阶段迁移。新告警、版本变化及原截止仍阻断；精确重放只读历史、不迁移或续期。负面决定不要求现在剩余额度或原截止未到，但完整历史仍继承131的父run为settled持槽不变量；释放后兼容待后续。
-- 原账本、unknown分配、Token/费用/次数和原截止不重置，无新模型调用或预留。本次凭据期限由服务端注入并在提交时复核，历史读取不因原操作者凭据现在过期改写合法事实，沿139/140快照边界。
-- 新契约/策略、临界完整草案及关联旧决定/身份单元通过；隔离PG元数据、0095空库往返、严格原始命令和凭据过期提交回滚通过。Ruff/格式/Mypy通过。补齐原生非法目标跳转守卫，API真实拒绝与孤立迁移等部分断言通过；整链失败不能作为完整API验收。
-- API欠项：一次批准在告警注入前提前拒绝，原因未定位；随后Linux诊断在131历史授权守卫中止。WSL/Docker时钟倒退另有实测，不能把所有失败均归因于环境。详见[141记录](progress/141-reinvestigation-approval-decision.md)，报告在`.pytest_cache/slice141-*`。
-- 按用户本轮要求停止长链复跑、自然TTL等待及共享环境修复，不放宽业务守卫。夹具从创建时固定合法1800秒额度，使用实时UTC和三份固定失败样本；未扩展运行中预算。测试只使用本项目临时容器，未启动整套Compose；共享内核参数未改。本轮收尾时Docker不可用，未重新启动，也不恢复其他项目容器。
+- 仓库固定为`D:\PyCharm\job-project\ops-swarm`，使用仓库`.venv/Scripts/`。本次文档决策基线main的da55c50；迁移head仍为`0096_reflow_approval_decision`，继续前核对Git。
+- 用户未跟踪目录`output/`、`tmp/`未读取、修改或提交。未升级用户Compose，不连接生产，不自动重启共享环境或修改内核参数。
+- 冻结v3已有三轮动态专业任务、逐轮综合/独立审查、确定性路由、checkpoint及Worker终端交接；现场v2已有日志/指标只读MCP。当前v3启动和首轮协调经验仍有冻结模式门禁，现场v3不是已交付事实。
+- 已有任务上下文、工作摘要、材料清单、共享预算及可信经验生命周期，经验已实际进入冻结v3首轮协调；现场消费仍需兼容策略和集成。
+- 人工等待已有可信补充/取消、独立输入准备、实际模型重评和候选方向消费；不能写成人工只存命令，也不能写成旧graph-v15图内interrupt/resume。后续所有follow_up方向并未全部消费。
+- 原候选链已有可信审批、条件核验、演练CAS执行、业务探针、父运行收尾及Incident收敛；首次失败回流已有协调、专业新取证、综合及独立审查。这些有组件历史验收，尚不能替代统一现场版本的部署/界面/恢复验收。
+- 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
+- v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
+## 下一项完整行为
 
-## 下一步
+先交付**现场动态协作**：确定现场v3的状态/接口/持久来源、兼容策略、上下文与预算/经验绑定、失败和恢复边界，再接通受限MCP及实际多轮调查。复用已有领域与端口，不通过解除冻结门禁冒充完成，不新建通用Harness或编排平台。
 
-本轮不继续长链复测。完整API欠项应在推进实际执行前关闭，不自动进行共享调参。后续目标为**第142步新批准的受限执行前检查**：先读旧120模块复用边界，精确绑定新决定与完整新草案，保留全部未决条件与观察窗口；检查事实不能代替条件核验、动作授权或新鲜执行依据。
+随后打通人工实际续接与单步骤客观恢复、一次失败再调查和明确交接，最后补最小可信协作台与可复现部署。依赖、必要测试及三条场景统一见[交付设计](architecture/local-multi-agent-release-scope.md)，不在交接重复维护清单。
 
-follow_up分派、预算追加、held/unknown人工处理、终端取消、多步骤、前端和完整发布仍待后续；原settled父run的旧等待输入命令未开放。
+141及时间问题单列：先用最小探针定位首个拒绝边界，无相关修复或新证据不再整链复跑。不纳入本版的回流新方案再审批执行保持未验收；影响首发主链的安全或时钟问题仍阻断发布。全部本版必需项通过并完成演示/发布后结束，其余进入后续版本。
 
 ## 最小阅读与代码入口
 
-先读[AGENTS](../AGENTS.md)、本文、[进度索引](progress/README.md)与[141设计](architecture/141-reinvestigation-approval-decision.md)，其他按本片依赖定向补读。
+先读[AGENTS](../AGENTS.md)、本文、[进度索引](progress/README.md)和[当前交付设计](architecture/local-multi-agent-release-scope.md)。长期系统规则按需查[64路线](architecture/64-full-multi-agent-roadmap.md)/[65设计](architecture/65-agent-system-design.md)，不逐篇重读历史。
 
 | 入口 | 用途 |
 | --- | --- |
-| [141 contracts](../src/opsswarm/approval/reinvestigation_decision/contracts.py)、[policy](../src/opsswarm/approval/reinvestigation_decision/policy.py) | 严格动作、完整草案保全及负面时限 |
-| [store](../src/opsswarm/approval/reinvestigation_decision/store.py)、[queries](../src/opsswarm/approval/reinvestigation_decision/queries.py) | 原子决定、可信审计、精确重放与自己的批准阶段 |
-| [0096迁移](../alembic/versions/0096_reinvestigation_approval_decision.py)、[API测试](../tests/api/test_reinvestigation_decision_api.py) | 原生四事实、真实前缀、孤立迁移与写后依据守卫 |
-| [140请求](architecture/140-reinvestigation-approval-request.md)、[旧120设计](architecture/120-candidate-execution-preflight.md) | 本片来源与下一片复用边界，不借用旧批准执行 |
-
-总方向见[64路线](architecture/64-full-multi-agent-roadmap.md)、[65设计](architecture/65-agent-system-design.md)；数据库/API事实同步[04](architecture/04-database-design.md)/[05](architecture/05-api-design.md)。131～140冻结SQL与旧图恢复语义保持。
+| [v3门禁](../src/opsswarm/investigation/workflow_versions.py)、[动态图](../src/opsswarm/investigation/dynamic_third_round_routing_graph.py) | 现场新策略及多轮协作的实际边界 |
+| [Worker装配](../src/opsswarm/worker/main.py)、[MCP客户端](../src/opsswarm/telemetry_mcp/client.py) | 数据源、模型与独立Worker的集成位置 |
+| [经验上下文](../src/opsswarm/experience/context_store.py)、[预算仓储](../src/opsswarm/investigation/budget/store.py) | 首调冻结、共享额度及历史引用 |
+| [人工重评](../src/opsswarm/investigation/human_review/worker.py)、[候选来源](../src/opsswarm/investigation/candidate/source.py) | 人工输入后的实际继续 |
+| [执行Worker](../src/opsswarm/execution/release_jobs/worker.py)、[恢复判据](../src/opsswarm/verification/candidate/policy.py) | 原操作对账与客观业务样本 |
+| [141设计](architecture/141-reinvestigation-approval-decision.md)、[141记录](progress/141-reinvestigation-approval-decision.md) | 已提交能力及未验收欠项，不是自动下一步 |
 
 ## 开发与验证偏好
 
-遵循AGENTS按风险验证：受影响单元、必要真实PG/API与代表性链；通过后不因文档更新重跑，失败精准定位复验，长链串行。进度通常几百字；主Agent统一核验及提交。`output/`与`tmp/`保持未读取、修改或提交。
+按完整业务行为组织交付，不逐个内部状态追加发布前置，不顺带重构历史模块。必要权限、预算、事务、幂等、租约及审批绑定检查保留；下层已验证规则不在上层重复穷举，同一代码通过一次即可。同根因两次长链失败后改最小探针，相关修复或新证据出现再定向复验。真实模型调用须本会话明确授权。
