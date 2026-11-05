@@ -2,14 +2,18 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import httpx2
 import pytest
+import pytest_asyncio
 
 from opsswarm.checkpoints import initialize_checkpoint_schema, open_checkpoint_saver
 from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
+from opsswarm.investigation.budget.contracts import CallBudgetPolicy
+from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.human_wait.store import HumanWaitStore
@@ -36,6 +40,7 @@ from tests.live_dynamic_postgres import (
     migrated_database_url as migrated_database_url,
 )
 from tests.live_task_helpers import LiveHttpFixture
+from tests.loop_helpers import loop_policy
 from tests.model_budget_helpers import sdk_response
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -51,6 +56,10 @@ class ReleaseChangeFixture(LiveHttpFixture):
 
 
 class ReleaseInvestigationReplies(LiveReplies):
+    def __init__(self, db, *, human_wait):
+        super().__init__(db)
+        self.human_wait = human_wait
+
     async def __call__(self, request):
         payload = json.loads(request.content)
         data = json.loads(payload["messages"][1]["content"])
@@ -71,16 +80,21 @@ class ReleaseInvestigationReplies(LiveReplies):
                 },
             )
         if "open_hypothesis" in data:
+            supporting = data["open_hypothesis"]["hypothesis"]["supporting_evidence_ids"]
             return sdk_response(
                 payload,
                 {
-                    "support_is_sufficient": False,
-                    "rationale": "需要工程师核对发布与告警的关系",
-                    "accepted_supporting_evidence_ids": [],
+                    "support_is_sufficient": not self.human_wait,
+                    "rationale": "已审查发布记录，可评估候选"
+                    if not self.human_wait
+                    else "需要工程师核对发布与告警的关系",
+                    "accepted_supporting_evidence_ids": [] if self.human_wait else supporting,
                     "counter_evidence_ids": [],
-                    "evidence_gaps": ["缺少工程师确认"],
+                    "evidence_gaps": ["缺少工程师确认"] if self.human_wait else [],
                     "competing_explanations": [],
-                    "suggested_direction": "human_review",
+                    "suggested_direction": "human_review"
+                    if self.human_wait
+                    else "evaluate_for_routing",
                     "follow_up_suggestions": [],
                 },
             )
@@ -107,27 +121,48 @@ class Clock:
         return datetime.now(UTC) if self.live else self.current
 
 
-async def test_live_human_input_reaches_objective_recovery(
-    database_session_factory, migrated_database_url, checkpoint_database_url, live_query_executor
+@pytest_asyncio.fixture
+async def live_handoff_context(
+    database_session_factory,
+    migrated_database_url,
+    checkpoint_database_url,
+    live_query_executor,
+    request,
 ):
     db = database_session_factory
     clock = Clock()
     cutoff = clock().replace(microsecond=0) - timedelta(seconds=1)
-    store, started = await create_live_run(db, cutoff=cutoff)
+    budgets = {}
+    reflow = getattr(request, "param", None) == "reflow"
+    if reflow:
+        base = loop_policy()
+        # 原运行创建时为完整回流上下文和四次模型阶段留出额度。
+        budgets = {
+            "call_budget": CallBudgetPolicy(max_model_calls=14, max_duration_seconds=900),
+            "model_budget": ModelBudgetPolicy.model_validate(
+                {
+                    **base.model_dump(),
+                    "profile": base.profile.model_copy(update={"context_window_tokens": 262144}),
+                    "max_input_tokens_per_call": 200000,
+                    "max_input_tokens": 3000000,
+                    "max_estimated_cost_usd": Decimal("20"),
+                }
+            ),
+        }
+    store, started = await create_live_run(db, cutoff=cutoff, **budgets)
     await initialize_checkpoint_schema(checkpoint_database_url)
     telemetry = WindowedTelemetry()
     fixture = ReleaseChangeFixture(cutoff, clock, mcp_logs=telemetry, mcp_metrics=telemetry)
+    replies = ReleaseInvestigationReplies(db, human_wait=not reflow)
     async with (
-        httpx2.AsyncClient(
-            transport=httpx2.MockTransport(ReleaseInvestigationReplies(db))
-        ) as model,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(replies)) as model,
         open_checkpoint_saver(checkpoint_database_url) as saver,
     ):
         runner = make_worker(db, store, fixture.source, model, saver, clock, live_query_executor)
         assert await runner.run_once()
     handoff = await TerminalHandoffStore(db).get(started.run.id)
     assert handoff is not None, (await store.get_run(started.run.id)).last_error
-    assert handoff.destination == "await_human"
+    assert handoff.destination == ("candidate_evaluation" if reflow else "await_human")
     fixture.assert_windows()
 
     settings = auth_settings()
@@ -151,7 +186,7 @@ async def test_live_human_input_reaches_objective_recovery(
         ) as client,
     ):
         app.state.human_wait_store = HumanWaitStore(db, clock=clock)
-        c = SimpleNamespace(
+        yield SimpleNamespace(
             db=db,
             app=app,
             client=client,
@@ -160,34 +195,44 @@ async def test_live_human_input_reaches_objective_recovery(
             handoff=handoff,
             base=f"/api/v1/investigations/{started.run.id}/human-wait",
         )
-        await execution.ready(c, kind="human_route", real=True)
+
+
+async def rollback(c, *, kind="human_route"):
+    await execution.ready(c, kind=kind, real=True)
+    if kind == "human_route":
         assert c.artifact.prepared_input.manifest.graph_version == GRAPH
-        budget = await CallBudgetQueries(db).get_snapshot(started.run.id)
+        budget = await CallBudgetQueries(c.db).get_snapshot(c.started.run.id)
         assert budget.deadline == c.artifact.budget.deadline
         assert budget.calls[: len(c.artifact.budget.calls)] == c.artifact.budget.calls
         assert any(call.human_review_attempt_id for call in budget.calls)
-        c.recovery = CandidateRecoveryStore(db, clock=clock)
-        c.app.state.candidate_recovery_store = c.recovery
-        c.recovery_base = c.execution_base + "/recovery-verification"
-        first = await execution.post(c)
-        assert first.status_code == 201, first.text
-        runner = execution.worker(c, c.dispatch_client)
-        assert await runner.run_once()
-        replay = await execution.post(c)
-        assert replay.status_code == 200, replay.text
-        assert replay.json()["job"]["record"]["id"] == first.json()["job"]["record"]["id"]
-        assert replay.json()["job"]["result"]["outcome"] == "applied_current", replay.text
-        assert not await runner.run_once()
-        assert sum(method == "PUT" for method, _ in c.lab_transport.calls) == 1
+    c.recovery = CandidateRecoveryStore(c.db, clock=c.clock)
+    c.app.state.candidate_recovery_store = c.recovery
+    c.recovery_base = c.execution_base + "/recovery-verification"
+    first = await execution.post(c)
+    assert first.status_code == 201, first.text
+    runner = execution.worker(c, c.dispatch_client)
+    assert await runner.run_once()
+    return runner, first.json()["job"]["record"]["id"]
 
-        assert await recovery.recovery_worker(c, c.lab_transport).run_once()
-        view = (await recovery.get(c)).json()
-        assert view["result"]["outcome"] == "recovered", view
-        assert [item["observation"]["http_status"] for item in view["samples"]] == [200, 200, 200]
-        await settlement.bind(c)
-        assert await c.settlement.settle_next()
-        await convergence.bind(c)
-        assert await c.convergence.converge_next()
-        incident = (await c.incidents.get_incident(started.run.incident_id)).incident
-        assert incident.status == "resolved"
-        assert (await c.lab_store.get()).version == "stable"
+
+async def test_live_human_input_reaches_objective_recovery(live_handoff_context):
+    c = live_handoff_context
+    runner, job_id = await rollback(c)
+    replay = await execution.post(c)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["job"]["record"]["id"] == job_id
+    assert replay.json()["job"]["result"]["outcome"] == "applied_current", replay.text
+    assert not await runner.run_once()
+    assert sum(method == "PUT" for method, _ in c.lab_transport.calls) == 1
+
+    assert await recovery.recovery_worker(c, c.lab_transport).run_once()
+    view = (await recovery.get(c)).json()
+    assert view["result"]["outcome"] == "recovered", view
+    assert [item["observation"]["http_status"] for item in view["samples"]] == [200, 200, 200]
+    await settlement.bind(c)
+    assert await c.settlement.settle_next()
+    await convergence.bind(c)
+    assert await c.convergence.converge_next()
+    incident = (await c.incidents.get_incident(c.started.run.incident_id)).incident
+    assert incident.status == "resolved"
+    assert (await c.lab_store.get()).version == "stable"

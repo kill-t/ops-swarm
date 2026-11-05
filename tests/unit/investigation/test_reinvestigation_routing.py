@@ -97,6 +97,12 @@ def test_three_intents_preserve_material_and_original_counts(direction, route, m
         record.observation_windows[0].effective_window == source.professionals[0].effective_window
     )
 
+    handoff = compile_for(source, direction, manual_takeover=True)
+    assert handoff.route == "await_human"
+    assert handoff.blocking_reason_codes == ("live_reflow_manual_takeover",)
+    assert handoff.base_decision == record.base_decision
+    assert handoff.dispatch_status == "not_dispatched"
+
 
 @pytest.mark.parametrize("field", ["evidence_gaps", "competing_explanations"])
 def test_sufficient_opinion_with_objections_cannot_enter_candidate(field):

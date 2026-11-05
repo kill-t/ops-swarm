@@ -27,6 +27,7 @@ from opsswarm.investigation.reinvestigation_routing.source import (
     load_source,
 )
 from opsswarm.investigation.reinvestigation_routing.tables import ReflowRouteRow
+from opsswarm.investigation.workflow_versions import LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
 
 
 class ReflowRoutingQueries:
@@ -53,6 +54,7 @@ class ReflowRoutingQueries:
                 content = ReflowRoutingContent.model_validate(row.content)
                 budget = await read_budget_snapshot(session, run)
                 captured = historical_budget(budget, content.budget, content.created_at)
+                manual_takeover = run.graph_version == LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
                 expected = compile_route(
                     source,
                     review,
@@ -62,6 +64,7 @@ class ReflowRoutingQueries:
                     basis_blocker=await historical_basis(
                         session, run, content.basis_event_cursor, content.created_at
                     ),
+                    manual_takeover=manual_takeover,
                 )
                 if (
                     content != expected
@@ -84,6 +87,7 @@ class ReflowRoutingQueries:
                         now=now,
                         basis_event_cursor=content.basis_event_cursor,
                         basis_blocker=reason,
+                        manual_takeover=manual_takeover,
                     ).blocking_reason_codes
                 return ReflowRoutingView(
                     record=content,

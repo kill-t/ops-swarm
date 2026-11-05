@@ -4,6 +4,8 @@
 
 `0098_live_human_continuation` 将该来源纳入可信人工事件、输入准备、重评、候选和收尾的原生准入。准备工件的图版本与原运行绑定。见[现场人工续接设计](live-human-continuation.md)。
 
+`0099_live_reflow_handoff` 复用不可变回流路由表，按原图版本核验现场人工接管结论。事故槽位继续绑定原运行。见[现场失败回流设计](live-reinvestigation-handoff.md)。
+
 第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
 
 0096_reflow_approval_decision新增reinvestigation_approval_decisions与reinvestigation_approval_decision_commands，保存完整草案、精确请求及迁移前后事件。决定、事故、事件和审计同事务；限定范围守卫拒绝孤立迁移，批准与负面收敛按各自阶段校验。

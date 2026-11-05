@@ -18,6 +18,7 @@ from opsswarm.investigation.reinvestigation_review.tables import ReflowReviewJob
 from opsswarm.investigation.reinvestigation_routing.policy import compile_route
 from opsswarm.investigation.reinvestigation_routing.source import current_basis, load_source
 from opsswarm.investigation.reinvestigation_routing.tables import ReflowRouteRow
+from opsswarm.investigation.workflow_versions import LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION
 
 
 class ReflowRoutingStore:
@@ -76,6 +77,7 @@ class ReflowRoutingStore:
                     now=now,
                     basis_event_cursor=await event_cursor(session, run),
                     basis_blocker=await current_basis(session, run, now),
+                    manual_takeover=run.graph_version == LIVE_DYNAMIC_INVESTIGATION_GRAPH_VERSION,
                 )
                 session.add(
                     ReflowRouteRow(

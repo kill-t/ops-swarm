@@ -34,6 +34,7 @@ def compile_route(
     now: datetime,
     basis_event_cursor: int,
     basis_blocker: BasisBlocker | None = None,
+    manual_takeover: bool = False,
 ) -> ReflowRoutingContent:
     packet = build_packet(source)
     validate_proposal(source, review.proposal)
@@ -76,6 +77,8 @@ def compile_route(
     )
     tools = len(base.follow_up_suggestions) if base.route == "follow_up" else 0
     blockers: list[Blocker] = [basis_blocker] if basis_blocker else []
+    if manual_takeover:
+        blockers.append("live_reflow_manual_takeover")
     if constraints:
         blockers.append("human_constraints_unresolved")
     assert budget.deadline is not None

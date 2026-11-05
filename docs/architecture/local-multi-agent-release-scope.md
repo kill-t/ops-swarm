@@ -41,7 +41,8 @@
 | 已有实现待验收 | 141审批决定已提交，单元及迁移通过，完整API链未通过；保留[原记录](../progress/141-reinvestigation-approval-decision.md)，不标记全部验收 |
 | 组件已验收 | 现场 v3 graph-v16 的动态调查、经验接入、checkpoint 恢复与终端交接已有实现及定向验收。见[现场动态调查记录](../progress/live-dynamic-investigation.md) |
 | 代表链已验收 | graph-v16 的可信人工补充、实际重评及单步骤回滚已在真实 PostgreSQL、固定变更响应和进程内演练服务中验证。见[人工续接记录](../progress/live-human-continuation.md) |
-| 尚缺实现 | 现场失败回流与接管出口、可信浏览器与新协作视图、当前部署及重启发布验收 |
+| 代表链已验收 | graph-v16 的客观未恢复触发一次再调查、独立复查和持久人工接管。验证使用真实 PostgreSQL、固定变更响应和进程内演练服务。见[现场失败回流记录](../progress/live-reinvestigation-handoff.md) |
+| 尚缺实现 | 可信浏览器与新协作视图、当前部署及重启发布验收 |
 
 现场调查接入使用独立图版本和来源策略，完成的是调查至终端交接。浏览器可信访问和 SSE 属于后续协作台交付。见[现场策略](live-dynamic-investigation.md)、[浏览器 HTTP](../../web/src/services/api.ts)和[SSE](../../web/src/services/incident-stream.ts)。
 

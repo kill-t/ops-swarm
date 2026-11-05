@@ -187,7 +187,9 @@ class LiveReplies:
         )
 
 
-async def create_live_run(db, *, experience=False, cutoff=CUTOFF):
+async def create_live_run(
+    db, *, experience=False, cutoff=CUTOFF, call_budget=None, model_budget=None
+):
     """直接通过创建用例启动当前现场 v3，不修改旧运行的持久版本。"""
     key = str(uuid4())
     incident = await IncidentStore(db).ingest_alert(
@@ -213,8 +215,8 @@ async def create_live_run(db, *, experience=False, cutoff=CUTOFF):
         mode=InvestigationMode.MULTI_AGENT,
         workflow_version=WorkflowVersion.V3,
         data_source_mode=LIVE,
-        call_budget=CallBudgetPolicy(max_model_calls=9, max_duration_seconds=900),
-        model_budget=loop_policy(),
+        call_budget=call_budget or CallBudgetPolicy(max_model_calls=9, max_duration_seconds=900),
+        model_budget=model_budget or loop_policy(),
         coordination_experience_policy_version="coordination-experience-v1" if experience else None,
     )
     assert started.run.graph_version == GRAPH

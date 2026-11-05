@@ -15,6 +15,7 @@ from opsswarm.verification.candidate.contracts import UtcTime
 ROUTE = "/api/v1/investigations/{run_id}/reinvestigation-routing"
 BasisBlocker = Literal["reflow_source_changed", "run_deadline_exceeded"]
 Blocker = Literal[
+    "live_reflow_manual_takeover",
     "reflow_source_changed",
     "run_deadline_exceeded",
     "human_constraints_unresolved",
@@ -46,7 +47,7 @@ class ReflowRoutingContent(HumanWaitModel):
     basis_blocker: BasisBlocker | None
     base_decision: ReviewRoutingDecision
     route: ReviewRoute
-    blocking_reason_codes: tuple[Blocker, ...] = Field(max_length=9)
+    blocking_reason_codes: tuple[Blocker, ...] = Field(max_length=10)
     unresolved_constraints: tuple[UnresolvedConstraint, ...] = Field(max_length=75)
     unresolved_questions: tuple[str, ...] = Field(min_length=1, max_length=20)
     observation_windows: tuple[RoutingWindow, ...] = Field(min_length=1, max_length=3)

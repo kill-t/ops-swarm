@@ -330,7 +330,7 @@ async def test_0064_new_governance_fact_blocks_destructive_downgrade(
         await asyncio.to_thread(command.downgrade, config(), "0063_trusted_experience_review")
     async with database_session_factory() as session:
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0098_live_human_continuation"
+            "0099_live_reflow_handoff"
         )
         assert (
             await session.scalar(text(f"SELECT id FROM {table} WHERE id = :id"), {"id": record_id})

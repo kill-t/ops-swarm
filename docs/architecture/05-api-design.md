@@ -4,6 +4,8 @@
 
 现场终端交接可使用既有可信人工补充、准备、重评及候选处置接口，沿用各接口的版本、依据和幂等键契约。见[现场人工续接设计](live-human-continuation.md)。
 
+现场一次回流沿用可信 `POST /api/v1/investigations/{run_id}/reinvestigation-admission`。独立审查完成后，`GET /api/v1/investigations/{run_id}/reinvestigation-routing` 返回 `await_human` 及 `live_reflow_manual_takeover`，保留原审查方向和新观察窗口。见[现场失败回流设计](live-reinvestigation-handoff.md)。
+
 第141步新增：[回流审批请求的可信决定与过期收敛](141-reinvestigation-approval-decision.md)。实现与验收见进度索引。
 
 可信POST/GET `/api/v1/investigations/{run_id}/reinvestigation-candidate/action-plan/approval-request/decision`及GET `/commands`；写入仅approver/decide_approval，支持approve/reject/expire及精确幂等。批准不提供执行资格；拒绝、显式到期不要求剩余预算，GET只读投影。
