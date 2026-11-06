@@ -12,7 +12,7 @@
 | 最新文档决策 | 2026-11-05 [本地版本收口与核心优先](local-release-scope-decision.md)已完成文档验收；新增运行行为仍待实现，不占实现编号 |
 | 最新实现切片 | 最小可信协作台通过组件与接口验收。见[协作台记录](trusted-collaboration-workroom.md)。141 完整 API 链欠项单列。见[实际验证及欠项](141-reinvestigation-approval-decision.md) |
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
-| 当前必需缺口 | 当前版本部署、浏览器现场联调、保留卷重启及发布演示 |
+| 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过；可信人工续接至实际处置、失败回流和跨进程恢复仍待整栈验收 |
 | 下一项完整行为 | 可复现部署与发布。优先复用现有 OpsSwarm 容器，核查业务卷迁移路径并完成发布场景 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
 

@@ -1,6 +1,6 @@
 # OpsSwarm 新窗口交接
 
-更新于 2026-11-05。最小可信协作台已通过组件与接口验收。下一项为可复现部署与发布。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
+更新于 2026-11-06。最小可信协作台已通过组件与接口验收，隔离 Compose 已通过本地启动冒烟。下一项为完成发布场景。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
 
 ## 当前事实
 
@@ -11,6 +11,7 @@
 - graph-v16 回滚后明确未恢复时，可可信准入一次回流，在原预算和截止内完成新窗口取证、综合和独立审查。持久路由记录人工接管原因，事故继续调查，槽位归原运行。已在真实 PostgreSQL、脚本模型、固定变更响应及进程内演练服务中验收。见[现场失败回流记录](progress/live-reinvestigation-handoff.md)。
 - 可信协作台接入现有事故详情，使用内存会话和授权 SSE。真实 PostgreSQL 验收复用现有 `ops-swarm-control-db-1` 的隔离验收库；已有业务库迁移停在 `0029_follow_up_governance_idx`。见[协作台记录](progress/trusted-collaboration-workroom.md)。
 - 已有 OpsSwarm 容器满足验证条件时直接复用，需写入的验收使用该实例内的隔离数据库。
+- 独立 `opsswarm-smoke` 已验收新库迁移、三类故障探针、真实 MCP 读取、保留卷后的事故读取与脚本模型驱动的现场 v3 单轮人工交接。前端本机端口为 15173；可信身份和 SSE 续读通过。见[本地启动记录](progress/local-compose-smoke.md)。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
