@@ -13,6 +13,7 @@
 | 最新实现切片 | 最小可信协作台通过组件与接口验收。见[协作台记录](trusted-collaboration-workroom.md)。141 完整 API 链欠项单列。见[实际验证及欠项](141-reinvestigation-approval-decision.md) |
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
 | 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过。[人工续接、正常恢复与只读对账](local-compose-continuation.md)通过指定整栈场景。失败回流在协调输入预算处受阻 |
+| 整改首批 | [旧入口依赖与四阶段输入基线](reflow-remediation-baseline.md)已核对，协调实测，后三阶段为回放估算 |
 | 下一项完整行为 | 优化失败回流协调输入，复验新取证、独立复查和人工接管，再完成可复现部署与发布 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
 

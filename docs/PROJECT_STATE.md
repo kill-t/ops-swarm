@@ -37,6 +37,19 @@
 | [执行Worker](../src/opsswarm/execution/release_jobs/worker.py)、[恢复判据](../src/opsswarm/verification/candidate/policy.py) | 原操作对账与客观业务样本 |
 | [141设计](architecture/141-reinvestigation-approval-decision.md)、[141记录](progress/141-reinvestigation-approval-decision.md) | 已提交能力及未验收欠项，不是自动下一步 |
 
+## 产品、兼容与评测入口
+
+| 用途 | 入口与依赖 |
+| --- | --- |
+| 产品主线 | [Compose](../compose.yaml)装配控制 API、调查 Worker、MCP、人工准备和重评等进程。[动态 Worker 门禁](../src/opsswarm/worker/runner.py)和[现行图工厂](../src/opsswarm/worker/dynamic_factory.py)仅接 graph-v15 冻结与 graph-v16 现场；两者复用[三轮路由图](../src/opsswarm/investigation/dynamic_third_round_routing_graph.py)。现场执行、恢复和回流部分 Worker 目前仍按 [README](../README.md) 显式启动。 |
+| v1/v2 调查兼容 | 同一个 [Worker 装配](../src/opsswarm/worker/main.py)继续路由既有单 Agent 与固定多 Agent；[固定任务图工厂](../src/opsswarm/worker/task_graph.py)仍有固定和现场任务的 checkpoint 回归。 |
+| v3 graph-v1 至 graph-v14 | [旧工厂](../src/opsswarm/worker/dynamic_graph.py)每一版均有 `tests/integration/test_dynamic_*_graph.py` 直接引用，覆盖从协调、各轮专业任务到综合与审查的持久行为，其中部分复用现行图底层节点。旧图工厂没有接入默认动态 Worker；[版本与来源门禁](../src/opsswarm/investigation/workflow_versions.py)以及[迁移](../alembic/versions)继续承载旧记录和数据库契约，执行工厂退役需单独验证历史读取与剩余恢复回归。 |
+| 冻结回流、审批与历史报告 | [回流协调至路由](../README.md)的显式入口同样是现场失败回流的生产路径，Python 重建与 [0087–0092 迁移](../alembic/versions)的 PostgreSQL 守卫共同绑定历史材料；后续候选、计划及审批有独立 API、迁移与测试。141 的验收欠项见上。 |
+| 发布脚本 | [MVP 验证](../scripts/verify-mvp.ps1)及[演示脚本](../scripts/demo-mvp-flow.ps1)仍是历史发布复现入口，由 [README](../README.md)引用。现场 Compose 验收的缓存脚本依赖隔离演练环境，详见[本地续接记录](progress/local-compose-continuation.md)。 |
+| 独立评测 | [版本化评测](../src/opsswarm/evaluation/main.py)、[真实模型单例](../src/opsswarm/evaluation/real_main.py)与[批量入口](../src/opsswarm/evaluation/real_batch_main.py)复用固定样本、版本化报告和评测持久化；[RCAEval RE2](../evaluations/rcaeval-re2)独立维护冻结协议、回放和配对实验入口。保留既有数据、脚本和报告。 |
+
+首批核对未删除代码。四阶段输入实测与回放差异见[回流整改基线](progress/reflow-remediation-baseline.md)。
+
 ## 开发与验证偏好
 
 按完整业务行为组织交付，不逐个内部状态追加发布前置，不顺带重构历史模块。必要权限、预算、事务、幂等、租约及审批绑定检查保留；下层已验证规则不在上层重复穷举，同一代码通过一次即可。同根因两次长链失败后改最小探针，相关修复或新证据出现再定向复验。真实模型调用须本会话明确授权。
