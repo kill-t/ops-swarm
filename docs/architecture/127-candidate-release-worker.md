@@ -14,7 +14,7 @@ API使用当前进程认证配置，Worker每次写前从配置provider重新加
 
 ## 写出、恢复与失败
 
-固定新授权→父work→candidate job→Incident→执行job锁序。领取跳过占用的父work并创建独立尝试，最多3次。首次网络POST前在独立事务永久提交phase=dispatched及首次尝试/时刻；原远端窗口已在入队时固定。POST只注册一次，PUT只执行一次，POST后、PUT前再用新事务完整重验来源/凭据/租约。远端126以固定窗口及CAS最终拒绝迟到写入。任何重领dispatched任务仅GET，连注册POST也不重发。
+固定新授权→父work→candidate job→Incident→执行job锁序。领取跳过占用的父work并创建独立尝试，最多3次。Worker 按领取时在父锁下核验的阶段选择首次派发或只读恢复，执行各分支时再检查当前租约及来源。首次网络POST前在独立事务永久提交phase=dispatched及首次尝试/时刻；原远端窗口已在入队时固定。POST只注册一次，PUT只执行一次，POST后、PUT前再用新事务完整重验来源/凭据/租约。远端126以固定窗口及CAS最终拒绝迟到写入。任何重领dispatched任务仅GET，连注册POST也不重发。
 
 网络错误、响应丢失或重验失败后只读同operation核对；有效观察精确绑定operation、完整CAS/摘要/固定窗口、来源、状态/回执关联及时间。结果保存材料与created_at：applied_current/applied_superseded只证明该历史应用及模拟效果；远端明确cancelled或prepared+expired为not_applied；prepared+ready、查询失败/冲突为unknown并停止，不换键/自动重发。尚未派发就失效为blocked。未知终态后没有自动轮询或人工重开接口，本片不宣称自动恢复全部未知结果。
 

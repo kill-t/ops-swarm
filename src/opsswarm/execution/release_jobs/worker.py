@@ -20,8 +20,9 @@ class ReleaseExecutionWorker:
         if claim is None:
             return False
         try:
-            command, recovery = await self._store.get_dispatch(claim)
-            if recovery:
+            # 领取时已在父锁下核对阶段，实际派发仍由新事务复核全部来源。
+            if claim.phase == "dispatched":
+                command, _ = await self._store.get_dispatch(claim)
                 observation = await self._client.lookup(command)
             else:
                 command = await self._store.begin_dispatch(claim)

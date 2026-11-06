@@ -35,6 +35,7 @@ class ExecutionClaim(HumanWaitModel):
     number: int = Field(strict=True, ge=1, le=3)
     lease_token: UUID
     lease_expires_at: AwareDatetime
+    phase: Literal["prepared", "dispatched"]
 
 
 class ExecutionResultContent(HumanWaitModel):

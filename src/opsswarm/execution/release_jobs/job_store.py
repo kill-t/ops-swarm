@@ -165,6 +165,7 @@ class ReleaseExecutionJobStore:
                     number=row.attempt_count,
                     lease_token=token,
                     lease_expires_at=row.locked_until,
+                    phase=view.record.phase,
                 )
                 _require_lease(row, claim, self._now())
                 return claim
