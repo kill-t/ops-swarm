@@ -1,0 +1,162 @@
+{
+  "date": "2026-11-06",
+  "base_commit": "74fdb2d",
+  "workflow": "dynamic-investigation-graph-v16",
+  "postgres_version": "17.11",
+  "postgres_session_timezone": "UTC",
+  "model": "scripted_sdk_transport",
+  "telemetry": "scripted_mcp_client",
+  "runs": [
+    {
+      "case": "baseline-no-experience",
+      "phases_ms": {
+        "persist_plan": [
+          108.611
+        ],
+        "coordination": [
+          287.887
+        ],
+        "specialist": [
+          391.064,
+          317.096
+        ],
+        "persist_synthesis": [
+          142.412,
+          429.805
+        ],
+        "synthesis_round_1": [
+          496.505
+        ],
+        "persist_review": [
+          373.356,
+          742.596
+        ],
+        "review_round_1": [
+          1261.131
+        ],
+        "synthesis_round_2": [
+          1648.072
+        ],
+        "review_round_2": [
+          3042.006
+        ],
+        "persist_handoff": [
+          314.464
+        ],
+        "worker_first": [
+          12787.653
+        ]
+      },
+      "model_requests": 9,
+      "resume_model_requests": 0,
+      "model_reservations": 9,
+      "tool_reservations": 4,
+      "attempts": 1,
+      "reviews": 2,
+      "handoff_events": 1,
+      "telemetry_reads": 2
+    },
+    {
+      "case": "baseline-experience",
+      "phases_ms": {
+        "persist_plan": [
+          132.244
+        ],
+        "coordination": [
+          321.211
+        ],
+        "specialist": [
+          401.088,
+          877.719
+        ],
+        "persist_synthesis": [
+          200.298,
+          390.236
+        ],
+        "synthesis_round_1": [
+          645.367
+        ],
+        "persist_review": [
+          285.53,
+          780.052
+        ],
+        "review_round_1": [
+          1895.249
+        ],
+        "synthesis_round_2": [
+          2221.035
+        ],
+        "review_round_2": [
+          3403.598
+        ],
+        "persist_handoff": [
+          359.858
+        ],
+        "worker_first": [
+          15278.889
+        ]
+      },
+      "model_requests": 9,
+      "resume_model_requests": 0,
+      "model_reservations": 9,
+      "tool_reservations": 4,
+      "attempts": 1,
+      "reviews": 2,
+      "handoff_events": 1,
+      "telemetry_reads": 2
+    },
+    {
+      "case": "recovery-experience",
+      "phases_ms": {
+        "persist_plan": [
+          328.098
+        ],
+        "coordination": [
+          611.853
+        ],
+        "specialist": [
+          473.681,
+          484.051
+        ],
+        "persist_synthesis": [
+          440.381,
+          438.199
+        ],
+        "synthesis_round_1": [
+          1181.69
+        ],
+        "persist_review": [
+          376.856,
+          822.765
+        ],
+        "review_round_1": [
+          1461.084
+        ],
+        "synthesis_round_2": [
+          1789.357
+        ],
+        "review_round_2": [
+          2258.757,
+          2695.016
+        ],
+        "worker_first": [
+          10486.032
+        ],
+        "persist_handoff": [
+          350.817
+        ],
+        "worker_resume": [
+          6093.288
+        ]
+      },
+      "model_requests": 9,
+      "resume_model_requests": 0,
+      "model_reservations": 9,
+      "tool_reservations": 4,
+      "attempts": 2,
+      "reviews": 2,
+      "handoff_events": 1,
+      "telemetry_reads": 2
+    }
+  ]
+}

@@ -15,6 +15,8 @@ from opsswarm.incidents import ActorType, AlertSubmission, IncidentActor, Incide
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy, CallOperation
 from opsswarm.investigation.budget.queries import CallBudgetQueries
+from opsswarm.investigation.coordination.persistence import CoordinationPlanStore
+from opsswarm.investigation.dynamic_third_round_routing_graph import DynamicThirdRoundRoutingGraph
 from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.models import (
     EvidenceKind,
@@ -27,12 +29,14 @@ from opsswarm.investigation.query_execution import ReadOnlyQueryExecutor
 from opsswarm.investigation.review.persistence import HypothesisReviewStore
 from opsswarm.investigation.review.queries import HypothesisReviewQueries
 from opsswarm.investigation.review_routing.queries import ReviewRoutingQueries
+from opsswarm.investigation.synthesis.persistence import OpenHypothesisStore
 from opsswarm.investigation.tasks.evidence import live_snapshot_id
 from opsswarm.investigation.tasks.queries import CollaborationQueries
 from opsswarm.investigation.workflow_versions import WorkflowVersion
 from opsswarm.worker.dynamic_factory import CurrentDynamicGraphFactory
 from opsswarm.worker.dynamic_processor import DynamicInvestigationProcessor
 from opsswarm.worker.runner import InvestigationWorker
+from tests.harness_recovery_metrics import PhaseMeasurements
 from tests.live_dynamic_postgres import (
     live_dynamic_postgres_config as live_dynamic_postgres_config,
 )
@@ -261,21 +265,42 @@ def make_worker(db, store, source, client, saver, clock, query_executor):
     )
 
 
-@pytest.mark.parametrize("interrupt_second_review", [False, True])
+@pytest.mark.parametrize(
+    ("interrupt_second_review", "experience"),
+    [(False, False), (False, True), (True, True)],
+    ids=["baseline-no-experience", "baseline-experience", "recovery-experience"],
+)
 async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
     database_session_factory,
     checkpoint_database_url,
     live_query_executor,
     monkeypatch,
     interrupt_second_review,
+    experience,
+    request,
 ):
     db = database_session_factory
     await initialize_checkpoint_schema(checkpoint_database_url)
-    store, started = await create_live_run(db, experience=interrupt_second_review)
+    store, started = await create_live_run(db, experience=experience)
     clock = TaskClock(CUTOFF + timedelta(seconds=2))
     telemetry = WindowedTelemetry()
     fixture = LiveHttpFixture(CUTOFF, clock, mcp_logs=telemetry, mcp_metrics=telemetry)
     replies = LiveReplies(db)
+    timing = PhaseMeasurements()
+    graph = DynamicThirdRoundRoutingGraph
+    for owner, name, phase in (
+        (graph, "_coordinate", "coordination"),
+        (graph, "_execute_specialist", "specialist"),
+        (graph, "_synthesize_open_hypothesis", "synthesis_round_1"),
+        (graph, "_synthesize_follow_up_hypothesis", "synthesis_round_2"),
+        (graph, "_review_open_hypothesis", "review_round_1"),
+        (graph, "_review_follow_up_hypothesis", "review_round_2"),
+        (CoordinationPlanStore, "create_plan", "persist_plan"),
+        (OpenHypothesisStore, "save", "persist_synthesis"),
+        (HypothesisReviewStore, "save", "persist_review"),
+        (TerminalHandoffStore, "handoff", "persist_handoff"),
+    ):
+        timing.instrument(monkeypatch, owner, name, phase)
     original_save = HypothesisReviewStore.save
     saves = 0
 
@@ -296,13 +321,15 @@ async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
             worker = make_worker(
                 db, store, fixture.source, client, saver, clock, live_query_executor
             )
-            assert await worker.run_once()
+            with timing.measure("worker_first"):
+                assert await worker.run_once()
             for error in worker._processor.errors:
                 if not (interrupt_second_review and "模拟第二轮审查模型成功后" in error):
                     pytest.fail(error, pytrace=False)
 
     budget_queries = CallBudgetQueries(db)
     before = await budget_queries.get_snapshot(started.run.id)
+    resume_model_requests = 0
     if interrupt_second_review:
         assert (await store.get_run(started.run.id)).status == "queued"
         assert len(await HypothesisReviewQueries(db).list_for_run(started.run.id)) == 1
@@ -314,6 +341,8 @@ async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
         clock.current += timedelta(seconds=1)
 
         def forbidden_model(_):
+            nonlocal resume_model_requests
+            resume_model_requests += 1
             raise AssertionError("已提交成功模型结果恢复不得再次发送 SDK 请求")
 
         async def forbidden_selection(*args, **kwargs):
@@ -327,7 +356,8 @@ async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
             worker = make_worker(
                 db, store, fixture.source, client, saver, clock, live_query_executor
             )
-            assert await worker.run_once()
+            with timing.measure("worker_resume"):
+                assert await worker.run_once()
             if worker._processor.errors:
                 pytest.fail("\n".join(worker._processor.errors), pytrace=False)
             assert not await worker.run_once()
@@ -385,7 +415,7 @@ async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
     assert handoff.source_review_route_id == routes[-1].id
     assert handoff.source_sha256 == routes[-1].content_sha256
     budget = await budget_queries.get_snapshot(run.id)
-    if interrupt_second_review:
+    if experience:
         async with db() as session:
             selection = await session.get(ExperienceContextRow, run.id)
             assert selection is not None
@@ -417,3 +447,22 @@ async def test_live_dynamic_follow_up_handoff_and_committed_call_recovery(
     async with open_checkpoint_saver(checkpoint_database_url) as saver:
         checkpoint = await saver.aget_tuple({"configurable": {"thread_id": run.graph_thread_id}})
         assert checkpoint is not None and checkpoint.metadata["graph_version"] == GRAPH
+    assert replies.request_count == 9 and resume_model_requests == 0
+    request.node.user_properties.append(
+        (
+            "harness_recovery_measurements",
+            json.dumps(
+                {
+                    "phases_ms": timing.durations_ms,
+                    "model_requests": replies.request_count,
+                    "resume_model_requests": resume_model_requests,
+                    "model_reservations": budget.reserved_model_calls,
+                    "tool_reservations": budget.reserved_tool_calls,
+                    "attempts": len(attempts),
+                    "reviews": len(reviews),
+                    "handoff_events": 1,
+                    "telemetry_reads": len(telemetry.calls),
+                }
+            ),
+        )
+    )
