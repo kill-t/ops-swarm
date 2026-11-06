@@ -1,0 +1,183 @@
+name: opsswarm-local-release
+
+x-release-auth: &release-auth
+  OPSSWARM_OPERATOR_AUTH_MODE: bearer
+  OPSSWARM_OPERATOR_AUTH_CREDENTIALS: ${OPSSWARM_OPERATOR_AUTH_CREDENTIALS:?请配置本地发布身份}
+
+x-release-db: &release-db
+  OPSSWARM_DATABASE_URL: postgresql+psycopg://opsswarm:local-development-only@control-db:5432/opsswarm
+
+x-release-model: &release-model
+  <<: *release-db
+  LLM_API_KEY: ${LLM_API_KEY:?请配置模型密钥}
+  LLM_BASE_URL: ${LLM_BASE_URL:?请配置模型地址}
+  LLM_MODEL: ${LLM_MODEL:?请配置模型名称}
+  LLM_STRUCTURED_OUTPUT_METHOD: function_calling
+  LLM_BUDGET_PROFILE_ID: ${LLM_BUDGET_PROFILE_ID:?请配置预算模型标识}
+  LLM_CONTEXT_WINDOW_TOKENS: ${LLM_CONTEXT_WINDOW_TOKENS:?请配置模型窗口}
+  LLM_INPUT_COST_PER_MILLION_USD: ${LLM_INPUT_COST_PER_MILLION_USD:?请配置输入单价}
+  LLM_OUTPUT_COST_PER_MILLION_USD: ${LLM_OUTPUT_COST_PER_MILLION_USD:?请配置输出单价}
+
+x-release-worker: &release-worker
+  image: ${OPSSWARM_RUNTIME_IMAGE:-ops-swarm-runtime:local}
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 3m
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [control]
+  environment: *release-db
+  depends_on: &release-workers-ready
+    control-api:
+      condition: service_healthy
+    release-prepare:
+      condition: service_completed_successfully
+
+services:
+  control-db:
+    ports: !reset []
+    command: [postgres, -c, timezone=UTC, -c, jit=off]
+  control-api:
+    environment: *release-auth
+    ports: !override ["127.0.0.1:38080:8000"]
+    depends_on:
+      release-prepare:
+        condition: service_completed_successfully
+    healthcheck:
+      start_period: 60s
+      timeout: 8s
+  web:
+    ports: !override ["127.0.0.1:35173:8080"]
+  order-service:
+    environment:
+      OPSSWARM_LAB_RELEASE_ENABLED: "true"
+      OPSSWARM_RUNTIME_METADATA_ENABLED: "false"
+    ports: !override ["127.0.0.1:38001:8000"]
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+  change-service:
+    environment:
+      OPSSWARM_DEPLOYMENT_INGESTION_ENABLED: "false"
+    ports: !override ["127.0.0.1:38002:8000"]
+  redis-proxy:
+    ports: !reset []
+  prometheus:
+    ports: !reset []
+  loki:
+    ports: !reset []
+  telemetry-mcp:
+    healthcheck: &release-telemetry-health
+      start_period: 60s
+      timeout: 8s
+  telemetry-metrics-mcp:
+    healthcheck: *release-telemetry-health
+
+  release-prepare:
+    <<: *release-worker
+    command: [python, /release/prepare.py]
+    restart: "no"
+    volumes:
+      - ./docker/local-release/prepare.py:/release/prepare.py:ro
+    environment:
+      <<: [*release-auth, *release-model]
+      OPSSWARM_CHECKPOINT_DATABASE_URL: postgresql://opsswarm:local-development-only@control-db:5432/opsswarm_checkpoints
+    depends_on:
+      control-migrate:
+        condition: service_completed_successfully
+
+      telemetry-mcp:
+        condition: service_healthy
+      telemetry-metrics-mcp:
+        condition: service_healthy
+
+  investigation-worker-live:
+    environment:
+      <<: *release-model
+      OPSSWARM_WORKER_ENABLE_DYNAMIC_WORKFLOW: "true"
+      OPSSWARM_WORKER_LEASE_DURATION_SECONDS: "360"
+      OPSSWARM_WORKER_PROCESSING_TIMEOUT_SECONDS: "300"
+      OPSSWARM_INVESTIGATION_CHANGE_PROVIDER: simulator
+      OPSSWARM_OTEL_ENABLED: "false"
+    depends_on: &release-telemetry-ready
+      <<: *release-workers-ready
+      telemetry-mcp:
+        condition: service_healthy
+      telemetry-metrics-mcp:
+        condition: service_healthy
+  candidate-evaluation-worker:
+    environment: *release-model
+    depends_on: *release-workers-ready
+  human-review-worker:
+    environment: *release-model
+    depends_on: *release-workers-ready
+  human-preparation-worker:
+    depends_on: *release-workers-ready
+  experience-worker:
+    depends_on: *release-workers-ready
+    restart: unless-stopped
+
+  release-execution-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.execution.release_jobs.main]
+    environment:
+      <<: [*release-db, *release-auth]
+      OPSSWARM_EXECUTOR_FAULT_LAB_BASE_URL: http://order-service:8000
+    networks: [control, lab]
+    depends_on: &release-probe-ready
+      <<: *release-workers-ready
+      order-service:
+        condition: service_healthy
+
+  recovery-sampling-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.verification.candidate.main]
+    environment:
+      <<: *release-db
+      OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
+    networks: [control, lab]
+    depends_on: *release-probe-ready
+
+  run-settlement-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.settlement.main]
+
+  incident-convergence-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.incidents.convergence.main]
+
+  reflow-coordination-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_coordination.main, --continuous]
+    environment: *release-model
+
+  reflow-dispatch-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_dispatch.main, --continuous]
+
+  reflow-execution-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_execution.main, --continuous]
+    environment:
+      <<: *release-model
+      OPSSWARM_INVESTIGATION_CHANGE_BASE_URL: http://change-service:8000
+      OPSSWARM_TELEMETRY_MCP_ENDPOINT_URL: http://telemetry-mcp:8000/mcp
+      OPSSWARM_TELEMETRY_METRICS_MCP_ENDPOINT_URL: http://telemetry-metrics-mcp:8000/mcp
+    networks: [control, lab, telemetry]
+    depends_on: *release-telemetry-ready
+
+  reflow-synthesis-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_synthesis.main, --continuous]
+    environment: *release-model
+
+  reflow-review-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_review.main, --continuous]
+    environment: *release-model
+
+  reflow-routing-worker:
+    <<: *release-worker
+    command: [python, -m, opsswarm.investigation.reinvestigation_routing.main, --continuous]

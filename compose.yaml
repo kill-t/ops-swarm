@@ -1,5 +1,5 @@
 x-opsswarm-runtime: &opsswarm-runtime
-  image: ops-swarm-runtime:local
+  image: ${OPSSWARM_RUNTIME_IMAGE:-ops-swarm-runtime:local}
   build:
     context: .
     dockerfile: docker/fault-lab.Dockerfile
@@ -242,7 +242,7 @@ services:
       - lab
 
   web:
-    image: ops-swarm-web:local
+    image: ${OPSSWARM_WEB_IMAGE:-ops-swarm-web:local}
     build:
       context: .
       dockerfile: docker/web.Dockerfile
