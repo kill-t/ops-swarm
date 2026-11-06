@@ -14,6 +14,7 @@ from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.models import SpecialistReport
 from opsswarm.investigation.reinvestigation_coordination.context import MATERIAL_KINDS
 from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowError, ReflowSource
+from opsswarm.investigation.reinvestigation_coordination.projection import project_source
 from opsswarm.investigation.reinvestigation_dispatch.contracts import DispatchContent
 from opsswarm.investigation.reinvestigation_dispatch.policy import task_id as dispatch_task_id
 from opsswarm.investigation.reinvestigation_execution.contracts import (
@@ -65,7 +66,7 @@ def build_packet(
         raise ReflowError("execution_context_invalid", "专业上下文缺少完整同源分派或原始材料")
     _validate_snapshot(assignment, task_id, window, snapshot)
     payload = {
-        "source": source.model_dump(mode="json"),
+        "source": project_source(source.model_dump(mode="json")),
         "dispatch_sha256": content_hash(dispatch),
         "task_id": str(task_id),
         "assignment": assignment.model_dump(mode="json"),

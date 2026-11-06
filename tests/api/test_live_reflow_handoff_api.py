@@ -1,10 +1,12 @@
 """用真实 PostgreSQL 和进程内故障服务覆盖一次失败再调查。"""
 
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
 import httpx2
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from opsswarm.investigation.budget.queries import CallBudgetQueries
@@ -140,7 +142,32 @@ async def test_live_failure_reinvestigates_once_then_hands_off(live_handoff_cont
     assert len(change.windows) == 1 and floor < change.windows[0][0] < change.windows[0][1]
 
     async with c.db() as session:
+        packets = await session.scalars(
+            text(
+                "SELECT packet FROM investigation_reflow_jobs WHERE investigation_run_id=:run "
+                "UNION ALL SELECT packet FROM investigation_reflow_task_packets "
+                "WHERE investigation_run_id=:run "
+                "UNION ALL SELECT packet FROM investigation_reflow_synthesis_jobs "
+                "WHERE investigation_run_id=:run "
+                "UNION ALL SELECT packet FROM investigation_reflow_review_jobs "
+                "WHERE investigation_run_id=:run"
+            ),
+            {"run": c.started.run.id},
+        )
+        packets = packets.all()
         native = await routing.native_content(c, session)
+    assert len(packets) == 4
+    for packet in packets:
+        assert packet["allocation"]["estimated_input_tokens"] <= 48000
+        payload = json.loads(packet["model_input"]["messages"][1]["content"])
+        history = next(
+            item["content"]
+            for item in payload.get("source", payload)["materials"]
+            if item["kind"] == "original_investigation"
+        )
+        assert history["input_policy"] == "reflow-projection-v1"
+        assert history["evidence"] and history["working_summaries"]
+        assert "prior_input" not in history
     assert native["route"] == "await_human"
     with pytest.raises(DBAPIError, match="路由"):
         async with c.db() as session, session.begin():

@@ -147,7 +147,11 @@ async def rebuild_source(
         (
             "original_investigation",
             str(settlement.candidate_job_id),
-            {"candidate_source": original, "failed_calls": failed},
+            {
+                "candidate_source": original,
+                "failed_calls": failed,
+                **({"input_policy": run.reflow_input_policy} if run.reflow_input_policy else {}),
+            },
         ),
         ("current_review", f"{settlement.candidate_job_id}:review", original["review"]),
         ("human_inputs", f"{run.id}:human", {"events": original["human_inputs"]}),

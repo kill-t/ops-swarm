@@ -106,7 +106,11 @@ class ReflowJobStore:
                 except CallBudgetExceeded as error:
                     blocked = error.code
                 except ReflowError as error:
-                    if error.code not in ("reflow_source_changed", "run_deadline_exceeded"):
+                    if error.code not in (
+                        "reflow_source_changed",
+                        "run_deadline_exceeded",
+                        "reflow_projection_invalid",
+                    ):
                         raise
                     blocked = error.code
                 now = self._now()

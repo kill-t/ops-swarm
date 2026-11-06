@@ -48,6 +48,11 @@ class InvestigationRunRow(Base):
     __tablename__ = "investigation_runs"
     __table_args__ = (
         CheckConstraint(
+            "reflow_input_policy IS NULL OR (reflow_input_policy='reflow-projection-v1' "
+            "AND graph_version IS NOT DISTINCT FROM 'dynamic-investigation-graph-v16')",
+            name="ck_investigation_runs_reflow_input_policy",
+        ),
+        CheckConstraint(
             "(working_summary_policy_version IS NULL AND "
             "context_policy_version IS DISTINCT FROM 'summary-context-v1') OR "
             "(COALESCE(working_summary_policy_version, '') = 'task-working-summary-v1' AND "
@@ -275,6 +280,7 @@ class InvestigationRunRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     working_summary_policy_version: Mapped[str | None] = mapped_column(String(32))
+    reflow_input_policy: Mapped[str | None] = mapped_column(String(32))
     context_policy_version: Mapped[str | None] = mapped_column(String(32))
     evidence_policy_version: Mapped[str | None] = mapped_column(String(40))
     observation_cutoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

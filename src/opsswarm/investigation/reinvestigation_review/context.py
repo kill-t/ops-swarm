@@ -8,6 +8,7 @@ from opsswarm.investigation.budget.model_contracts import ModelInput, TextModelM
 from opsswarm.investigation.budget.model_policy import allocate_input
 from opsswarm.investigation.budget.policy import CallBudgetExceeded
 from opsswarm.investigation.context.hashing import content_hash
+from opsswarm.investigation.reinvestigation_coordination.projection import project_source
 from opsswarm.investigation.reinvestigation_review.contracts import (
     PROMPT_VERSION,
     ReflowReviewError,
@@ -76,7 +77,10 @@ def validate_source(source: ReflowReviewSource) -> None:
 def build_packet(source: ReflowReviewSource) -> ReflowReviewPacket:
     validate_source(source)
     encoded = json.dumps(
-        source.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        project_source(source.model_dump(mode="json")),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     if len(encoded.encode("utf-8")) > 262144:
         raise CallBudgetExceeded("model_input_budget_exceeded")

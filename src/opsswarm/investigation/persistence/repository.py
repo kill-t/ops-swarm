@@ -231,6 +231,7 @@ class InvestigationStore:
                 coordination_experience_policy_version=(coordination_experience_policy_version),
                 call_budget=call_budget.model_dump(mode="json") if call_budget else None,
                 model_budget=model_budget.model_dump(mode="json") if model_budget else None,
+                reflow_input_policy="reflow-projection-v1" if live_v3 else None,
                 context_policy_version=context_policy_version,
                 working_summary_policy_version="task-working-summary-v1"
                 if context_policy_version in ("evidence-read-v1", "summary-context-v1")

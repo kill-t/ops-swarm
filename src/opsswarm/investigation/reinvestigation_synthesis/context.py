@@ -12,6 +12,7 @@ from opsswarm.investigation.reinvestigation_coordination.context import (
     build_packet as original_packet,
 )
 from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowSource
+from opsswarm.investigation.reinvestigation_coordination.projection import project_source
 from opsswarm.investigation.reinvestigation_dispatch.policy import task_id
 from opsswarm.investigation.reinvestigation_execution.context import (
     build_packet as professional_packet,
@@ -88,7 +89,10 @@ def validate_source(source: SynthesisSource) -> None:
 def build_packet(source: SynthesisSource) -> SynthesisPacket:
     validate_source(source)
     encoded = json.dumps(
-        source.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        project_source(source.model_dump(mode="json")),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     if len(encoded.encode("utf-8")) > 262144:
         raise CallBudgetExceeded("model_input_budget_exceeded")

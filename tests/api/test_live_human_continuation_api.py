@@ -136,15 +136,15 @@ async def live_handoff_context(
     reflow = getattr(request, "param", None) == "reflow"
     if reflow:
         base = loop_policy()
-        # 原运行创建时为完整回流上下文和四次模型阶段留出额度。
+        # 原运行创建时按 Compose 演练额度约束四阶段输入。
         budgets = {
-            "call_budget": CallBudgetPolicy(max_model_calls=14, max_duration_seconds=900),
+            "call_budget": CallBudgetPolicy(max_model_calls=14, max_duration_seconds=1800),
             "model_budget": ModelBudgetPolicy.model_validate(
                 {
                     **base.model_dump(),
-                    "profile": base.profile.model_copy(update={"context_window_tokens": 262144}),
-                    "max_input_tokens_per_call": 200000,
-                    "max_input_tokens": 3000000,
+                    "profile": base.profile.model_copy(update={"context_window_tokens": 65536}),
+                    "max_input_tokens_per_call": 48000,
+                    "max_input_tokens": 500000,
                     "max_estimated_cost_usd": Decimal("20"),
                 }
             ),
