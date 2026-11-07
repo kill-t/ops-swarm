@@ -25,13 +25,13 @@
 - 包入口后的标准案例写出前失效，修订 32 未回滚；后续仅增加事务计时的案例完成唯一回滚至修订 35，但正式恢复首次探针超时，收敛为 `held_uncertain` 并保留槽位。独立探针再次复现 UTC 倒退，随后已获授权重置 WSL。见[事务与时钟诊断](progress/local-release-transaction-phase.md)。
 - WSL 重置后原卷与整栈恢复通过，就绪后的短探针未复现 UTC 倒退。标准案例仍写出前失效；后续临时协程栈诊断案例回滚至修订 39，捕获恢复 Worker 未处理提前准入而退出。现增加同一尝试内的有界等待，单元、真实 PostgreSQL 及静态回归通过，完整 Compose 收敛待复验。诊断入口已撤回。见[采样等待修复](progress/local-recovery-sample-wait.md)。
 - 采样等待修复部署后的案例仍在写出前失效，修订 40 未回滚。完整发布审批来源改为共享一次有界只读遍历，同一历史来源 SQL 从 344 降至 168，结果一致；作用域、并发变更及写前撤销回归通过。同钟 Linux 容器的真实 CAS/恢复用例通过，Windows 与容器时钟混用的原夹具拒绝事实保留。完整标准栈收敛待验收。见[来源遍历复用](progress/local-release-source-traversal.md)。
-- 来源遍历镜像构建和标准栈恢复通过，但空闲阶段仍周期性 UTC 倒退。只读核查发现 Ubuntu 22.04 的时间同步服务运行，其 NTP 报文时刻与倒退对应；双重校时是待对照的候选解释。临时停止服务需另行授权，尚未操作，未开启新事故长链。见[校时来源核查](progress/local-wsl-clock-source.md)。
+- 来源遍历镜像构建和标准栈恢复通过，但空闲阶段仍周期性 UTC 倒退。按新增授权临时停止 Ubuntu 22.04 的时间同步服务，四分钟仍捕获 8 次倒退，Windows 同期未捕获倒退；不能认定单一服务是唯一原因。服务已恢复 `active/running/enabled`，标准栈健康。平台剩余调整来源未定位，未开启新事故长链。见[校时来源核查](progress/local-wsl-clock-source.md)。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
 ## 下一项完整行为
 
-推进**可复现部署与发布**。恢复来源优化、执行状态快照、包入口整理、提前采样等待及发布来源遍历通过各自定向回归。标准栈已恢复，WSL 重置后时钟倒退仍存在，当前等待临时停止 Ubuntu 时间同步服务的受控对照授权。时钟稳定后用新案例复验正常恢复收敛，再核查已有业务卷的隔离迁移及演示。见[校时来源核查](progress/local-wsl-clock-source.md)及[交付设计](architecture/local-multi-agent-release-scope.md)。
+推进**可复现部署与发布**。恢复来源优化、执行状态快照、包入口整理、提前采样等待及发布来源遍历通过各自定向回归。标准栈已恢复，WSL 重置与授权停服务对照均未消除 UTC 倒退，临时服务操作已恢复原状。当前阻塞在所选环境的连续时钟前提；稳定后用新案例复验正常恢复收敛，再核查已有业务卷的隔离迁移及演示。见[校时来源核查](progress/local-wsl-clock-source.md)及[交付设计](architecture/local-multi-agent-release-scope.md)。
 
 部署时给执行 Worker 传入可信身份配置，并让恢复相关 Worker 在有效窗口内消费样本。失败回流的整栈证据见[投影验收](progress/reflow-input-projection.md)。
 

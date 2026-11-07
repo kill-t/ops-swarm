@@ -8,12 +8,16 @@
 
 查阅于 2026-11-08：[Ubuntu 官方时间同步说明](https://ubuntu.com/wsl/docs/stable/explanation/time-sync/)指出 Ubuntu 24.04 及之前默认启用的时间同步服务可能与 Hyper-V 隐式校时冲突；[Microsoft WSL 架构说明](https://learn.microsoft.com/en-us/windows/wsl/about)说明 WSL 2 发行版共享内核。外部资料只用于诊断假设与受控对照，不作为本机根因证明或项目已实现能力。
 
-下一步需另行授权临时停止 Ubuntu 22.04 的时间同步服务，再在同一标准栈观察时钟；不修改启用状态或配置，不停止发行版或 Docker。拟执行命令为：
+用户随后明确授权临时停止 Ubuntu 22.04 的时间同步服务，在同一标准栈对照；不修改启用状态或配置，不停止发行版或 Docker。实际执行命令为：
 
 ```powershell
 wsl --distribution Ubuntu-22.04 --user root --exec systemctl stop systemd-timesyncd.service
 ```
 
-可撤销命令将 `stop` 改为 `start`。服务与系统时钟属于共享环境，先前 WSL 重置授权不扩展为该项操作，遵循[交付设计第 7 节](../architecture/local-multi-agent-release-scope.md)。准备脚本仅保存于忽略缓存，尚未执行。未获授权前不继续正常发布长链；恢复结果、事故收敛和槽位释放保持待验收。
+停止前四分钟捕获 16 次负 UTC 增量，停止后四分钟仍捕获 8 次；另一个 Windows 四分钟探针没有负增量或超过一百毫秒的跳变，其窗口覆盖停服务和恢复后的部分时段。停服务没有消除异常，因此不能认定该服务是唯一原因，更不能据此宣称平台时钟已修复。另以 `adjtimex` 的零模式只读查询记录内核时钟参数，并比较原始与调整后时钟，尚未定位剩余调整来源。查询边界依据 [Linux 接口说明](https://man7.org/linux/man-pages/man2/adjtimex.2.html)，未设置频率、tick 或时钟源。WSL 系统发行版的进一步只读查询返回 `WSAETIMEDOUT`，不继续扩大平台操作。
+
+对照后已将命令改为 `start` 恢复服务，并独立确认 `active/running/enabled`。标准栈保留，前端、控制 API 与演练服务健康检查均为 200。用户未跟踪目录保持未触及，诊断脚本与日志仅保存于忽略缓存。
+
+下一项仍是正常恢复、事故收敛与槽位释放。所选 WSL 环境的连续 UTC 尚不满足验收前提，先恢复稳定校时环境，再以新案例继续；不重复整链，不将 Linux 组件用例成功当作完整 Compose 发布通过，也不自动调整共享内核或系统配置。边界见[交付设计第 7 节](../architecture/local-multi-agent-release-scope.md)。
 
 面试时可说明如何用空闲期最小探针区分应用迟滞与系统时钟异常，并将已验收代码、环境诊断与尚待对照的根因假设分开。
