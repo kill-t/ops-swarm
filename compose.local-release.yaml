@@ -40,7 +40,9 @@ services:
     ports: !reset []
     command: [postgres, -c, timezone=UTC, -c, jit=off]
   control-api:
-    environment: *release-auth
+    environment:
+      <<: *release-auth
+      OPSSWARM_EXECUTOR_REQUEST_TIMEOUT_SECONDS: "6"
     ports: !override ["127.0.0.1:38080:8000"]
     depends_on:
       release-prepare:
