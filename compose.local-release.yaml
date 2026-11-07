@@ -140,6 +140,7 @@ services:
     environment:
       <<: *release-db
       OPSSWARM_VERIFIER_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_VERIFIER_REQUEST_TIMEOUT_SECONDS: "6"
     networks: [control, lab]
     depends_on: *release-probe-ready
 
