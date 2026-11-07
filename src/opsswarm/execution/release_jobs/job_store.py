@@ -4,7 +4,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from opsswarm.execution.release.contracts import ReleaseRequestRecord
@@ -100,16 +101,36 @@ class ReleaseExecutionJobStore:
                     and row.locked_until <= now
                 ):
                     continue
-                _, request = await load_request(
-                    session, run, row.candidate_job_id, row.verification_version, clock=self._clock
-                )
-                if request is None:
-                    raise ExecutionJobError(
-                        "release_execution_integrity_violation", "执行任务缺少准备事实"
+                if row.status == "queued":
+                    # 原生守卫重建冻结事实。当前性仍在写出前由独立事务完整检查。
+                    try:
+                        await session.execute(
+                            text(
+                                "SELECT assert_release_job_history(job) "
+                                "FROM candidate_release_execution_jobs job WHERE id=:id"
+                            ),
+                            {"id": row.id},
+                        )
+                    except DBAPIError as error:
+                        if getattr(error.orig, "sqlstate", None) != "P0001":
+                            raise
+                        raise ExecutionJobError(
+                            "release_execution_integrity_violation", "执行任务历史无法完整重建"
+                        ) from error
+                else:
+                    _, request = await load_request(
+                        session,
+                        run,
+                        row.candidate_job_id,
+                        row.verification_version,
+                        clock=self._clock,
                     )
-                view = await read_view(session, row, request)
-                assert view.record is not None
-                if row.status == "running":
+                    if request is None:
+                        raise ExecutionJobError(
+                            "release_execution_integrity_violation", "执行任务缺少准备事实"
+                        )
+                    view = await read_view(session, row, request)
+                    assert view.record is not None
                     previous = await session.get(ReleaseExecutionAttemptRow, view.attempts[-1].id)
                     assert previous is not None
                     previous.status, previous.finished_at, previous.error_code = (
@@ -118,26 +139,26 @@ class ReleaseExecutionJobStore:
                         "release_execution_lease_lost",
                     )
                     await session.flush()
-                if row.attempt_count == 3:
-                    content = result_content(
-                        view.record,
-                        None,
-                        now=now,
-                        reason_code="release_execution_attempts_exhausted",
-                    )
-                    _finish(row, terminal_status(content), now, content.reason_code)
-                    await session.flush()
-                    session.add(
-                        ReleaseExecutionResultRow(
-                            job_id=row.id,
-                            attempt_id=view.attempts[-1].id,
-                            content=content.model_dump(mode="json"),
-                            content_sha256=content_hash(content),
-                            created_at=now,
+                    if row.attempt_count == 3:
+                        content = result_content(
+                            view.record,
+                            None,
+                            now=now,
+                            reason_code="release_execution_attempts_exhausted",
                         )
-                    )
-                    await session.flush()
-                    continue
+                        _finish(row, terminal_status(content), now, content.reason_code)
+                        await session.flush()
+                        session.add(
+                            ReleaseExecutionResultRow(
+                                job_id=row.id,
+                                attempt_id=view.attempts[-1].id,
+                                content=content.model_dump(mode="json"),
+                                content_sha256=content_hash(content),
+                                created_at=now,
+                            )
+                        )
+                        await session.flush()
+                        continue
                 attempt_id, token = uuid4(), uuid4()
                 row.attempt_count += 1
                 row.status, row.locked_by, row.lease_token = "running", worker_id, token
@@ -165,7 +186,7 @@ class ReleaseExecutionJobStore:
                     number=row.attempt_count,
                     lease_token=token,
                     lease_expires_at=row.locked_until,
-                    phase=view.record.phase,
+                    phase=row.phase,
                 )
                 _require_lease(row, claim, self._now())
                 return claim
