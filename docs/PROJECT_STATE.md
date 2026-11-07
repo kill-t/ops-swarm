@@ -2,6 +2,8 @@
 
 更新于 2026-11-08。最小可信协作台与隔离 Compose 启动已验收。正常代表场景已回滚并形成恢复结果，事故收敛仍待验收。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
 
+当前运行环境：已按用户要求停止 `opsswarm-local-release` 全栈及 `release-fixture-model`，容器与数据卷保留，未关闭 Docker Desktop 或 WSL。下次恢复前核对时钟及隔离测试身份有效期，原验收欠项保持。
+
 ## 当前事实
 
 - 仓库固定为`D:\PyCharm\job-project\ops-swarm`，使用仓库`.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
