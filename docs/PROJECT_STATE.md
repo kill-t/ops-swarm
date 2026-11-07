@@ -20,7 +20,8 @@
 - 恢复来源读取复用 PostgreSQL 完整执行历史守卫，保留原请求契约及执行视图校验。单元、静态和 PostgreSQL 的并发接管、上游损坏拒绝、两类来源收尾与收敛定向回归通过。完整 Compose 正常恢复收敛待复验。见[恢复来源复用](progress/local-recovery-history-reuse.md)。
 - 更新镜像后的案例在登记后失去租约，最终只读对账为 `not_applied`，修订 22 保留。执行状态 GET 的父级共享锁冲突已由最小探针复现，现改为一致性只读快照；读取与领取并发、历史损坏拒绝的 PostgreSQL 回归通过。见[状态快照记录](progress/local-release-status-snapshot.md)。
 - 状态快照后的案例在创建发布准备请求时遇到发布头观测超时。独立四秒行锁探针验证发布头与固定订单 GET 的三秒超时、六秒成功且修订不变，隔离控制 API 与恢复采样器的 HTTP 等待均设为六秒。原运行预算已结束，完整行为用新案例复验。见[发布头等待记录](progress/local-release-observation-wait.md)。
-- 六秒等待后的新案例在远端注册时超时，数据库守卫拒绝窗口外登记，修订 28 未回滚。临时分阶段诊断已撤回，Docker 虚拟机交换空间已满且出现明显内存/I/O压力；完整长链暂停，先处理验收环境资源。见[执行与资源诊断](progress/local-release-resource-diagnosis.md)。
+- 六秒等待后的新案例在远端注册时超时，数据库守卫拒绝窗口外登记，修订 28 未回滚。资源处理后的新案例完成审批，随后写出前失效为 `blocked`，修订 30 未回滚，执行期间仍有明显内存/I/O压力。临时诊断已撤回，停止长链重跑，先处理验收环境资源。见[执行与资源诊断](progress/local-release-resource-diagnosis.md)。
+- 调查与演练包的公开导出改为按需加载，纯数据模型不再隐式加载调查运行器或 HTTP 应用，兼容与相关单元、静态检查通过。完整执行 Worker 的历史工具 schema 校验仍需框架，尚未证明整栈内存下降。见[包入口整理](progress/local-package-import-boundary.md)。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
