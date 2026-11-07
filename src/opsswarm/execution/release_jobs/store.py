@@ -36,7 +36,7 @@ from opsswarm.identity.tables import OperatorAuthorizationRow
 from opsswarm.incidents.persistence.tables import IncidentRow
 from opsswarm.investigation.candidate.tables import CandidateJobRow
 from opsswarm.investigation.context.hashing import content_hash
-from opsswarm.investigation.human_wait.state import lock_wait_run
+from opsswarm.investigation.human_wait.state import lock_wait_run, read_wait_run_snapshot
 from opsswarm.investigation.persistence.lease import normalized_now
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 
@@ -310,7 +310,7 @@ class ReleaseExecutionStore:
 
     async def get(self, run_id: UUID, job_id: UUID, version: int) -> ExecutionJobView:
         async with self._factory() as session, session.begin():
-            run = await lock_parent(session, run_id, job_id, read=True)
+            run = await read_wait_run_snapshot(session, run_id)
             _, request = await load_request(session, run, job_id, version, clock=self._clock)
             if request is None:
                 return ExecutionJobView(record=None, attempts=(), result=None)

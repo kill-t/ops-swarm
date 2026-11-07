@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from opsswarm.investigation.handoff.contracts import TerminalHandoffRecord
@@ -24,6 +24,22 @@ async def lock_wait_run(session: AsyncSession, run_id: UUID, *, read: bool) -> I
     if run is None:
         raise HumanWaitError("human_wait_run_not_found", "调查运行不存在", 404)
     if work is None:
+        raise HumanWaitError("human_wait_integrity_violation", "调查运行缺少父工作项")
+    return run
+
+
+async def read_wait_run_snapshot(session: AsyncSession, run_id: UUID) -> InvestigationRunRow:
+    """在事务首次查询前建立只读快照，读取身份关系时允许 Worker 推进。"""
+    await session.execute(
+        text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+    )
+    work_id = await session.scalar(
+        select(WorkItemRow.id).where(WorkItemRow.investigation_run_id == run_id)
+    )
+    run = await session.get(InvestigationRunRow, run_id)
+    if run is None:
+        raise HumanWaitError("human_wait_run_not_found", "调查运行不存在", 404)
+    if work_id is None:
         raise HumanWaitError("human_wait_integrity_violation", "调查运行缺少父工作项")
     return run
 

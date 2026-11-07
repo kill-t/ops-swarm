@@ -372,6 +372,42 @@ async def test_executor_strict_body_three_resources_canonical_version_and_origin
 
 
 @pytest.mark.parametrize("wait_context", ["candidate_with_change"], indirect=True)
+async def test_status_snapshot_allows_claim_and_keeps_one_committed_view(wait_context, monkeypatch):
+    from opsswarm.execution.release_jobs import store as release_store
+
+    c = wait_context
+    await ready(c)
+    c.clock.live = True
+    assert (await post(c)).status_code == 201
+    entered, resume = asyncio.Event(), asyncio.Event()
+    original_load = release_store.load_request
+
+    async def paused_load(*args, **kwargs):
+        entered.set()
+        await resume.wait()
+        return await original_load(*args, **kwargs)
+
+    monkeypatch.setattr(release_store, "load_request", paused_load)
+    reading = asyncio.create_task(get(c))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=30)
+        # 读取停在来源重建阶段时，Worker 仍须取得父锁并提交领取。
+        claim = await job_store(c).claim_next(worker_id="claim-during-status-read")
+        assert claim is not None
+    finally:
+        resume.set()
+        response = await reading
+    assert response.status_code == 200, response.text
+    snapshot = response.json()
+    assert snapshot["record"]["status"] == "queued"
+    assert snapshot["attempts"] == [] and snapshot["result"] is None
+    latest = (await get(c)).json()
+    assert latest["record"]["status"] == "running"
+    assert len(latest["attempts"]) == 1
+    assert latest["attempts"][0]["id"] == str(claim.attempt_id)
+
+
+@pytest.mark.parametrize("wait_context", ["candidate_with_change"], indirect=True)
 async def test_two_workers_claim_single_attempt_and_preserve_original_parent_facts(wait_context):
     c = wait_context
     await ready(c)
