@@ -14,7 +14,7 @@
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
 | 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过。[人工续接、正常恢复与只读对账](local-compose-continuation.md)通过指定整栈场景。[现场失败回流](reflow-input-projection.md)通过 Compose 代表场景，进程内 API 夹具的回滚欠项单列 |
 | 整改首批 | [旧入口依赖与四阶段输入基线](reflow-remediation-baseline.md)已核对，协调实测，后三阶段为回放估算 |
-| 下一项完整行为 | [本地发布入口](local-release-entry.md)通过启动及保留卷验收。[授权重启复验](local-release-restart-verification.md)完成回滚并取得最终尝试的三份 200，事故收敛因原窗口已过期而保留槽位，完整正常恢复收敛待验收 |
+| 下一项完整行为 | [授权重启复验](local-release-restart-verification.md)完成回滚并取得最终尝试的三份 200，事故收敛因原窗口已过期而保留槽位。[恢复来源复用](local-recovery-history-reuse.md)通过定向回归，当前恢复发布栈并复验完整正常恢复收敛 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。

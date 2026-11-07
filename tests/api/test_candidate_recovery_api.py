@@ -363,6 +363,27 @@ async def test_read_permissions_versions_and_corrupt_history_fail_closed(wait_co
         assert response.status_code == 422, response.text
     assert (await get(c)).headers["cache-control"] == "no-store"
     assert await counts(c) == (0, 0, 0, 0)
+    async with c.db() as session:
+        approval_id, approval_hash = (
+            await session.execute(
+                text(
+                    "SELECT approval.id,approval.content_sha256 "
+                    "FROM condition_approval_decisions approval "
+                    "JOIN candidate_release_execution_requests request "
+                    "ON request.approval_decision_id=approval.id WHERE request.id=:id"
+                ),
+                {"id": UUID(execution["record"]["request_id"])},
+            )
+        ).one()
+    approval_sql = "UPDATE condition_approval_decisions SET content_sha256=:value WHERE id=:id"
+    try:
+        await replace(c, approval_sql, {"id": approval_id, "value": "f" * 64})
+        assert (await get(c)).status_code == 409
+        with pytest.raises((RecoveryError, ExecutionJobError)):
+            await c.recovery.claim_next(worker_id="reject-corrupt-upstream-approval")
+        assert await counts(c) == (0, 0, 0, 0)
+    finally:
+        await replace(c, approval_sql, {"id": approval_id, "value": approval_hash})
     claim = await c.recovery.claim_next(worker_id="integrity-reader")
     assert claim is not None
     first = await c.recovery.save_sample(claim, 1, observation=observation(c))

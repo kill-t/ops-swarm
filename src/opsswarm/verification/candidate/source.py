@@ -4,11 +4,14 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from opsswarm.execution.release.contracts import ReleaseRequestRecord
+from opsswarm.execution.release.tables import CandidateReleaseRequestRow
 from opsswarm.execution.release_jobs.contracts import ExecutionJobView
 from opsswarm.execution.release_jobs.queries import read_view
-from opsswarm.execution.release_jobs.source import load_request
 from opsswarm.execution.release_jobs.tables import ReleaseExecutionJobRow
 from opsswarm.investigation.budget.contracts import CallBudgetPolicy
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
@@ -25,11 +28,23 @@ async def execution_source(
     row = await session.get(ReleaseExecutionJobRow, execution_id)
     if row is None or row.investigation_run_id != run.id:
         raise RecoveryError("recovery_source_missing", "恢复验证缺少原执行任务", 404)
-    _, request = await load_request(
-        session, run, row.candidate_job_id, row.verification_version, clock=clock
-    )
-    if request is None:
+    # 恢复只读取冻结历史。原生守卫核验完整批准链，当前写权限仍由执行入口校验。
+    try:
+        await session.execute(
+            text(
+                "SELECT assert_release_job_history(job) "
+                "FROM candidate_release_execution_jobs job WHERE id=:id"
+            ),
+            {"id": row.id},
+        )
+    except DBAPIError as error:
+        if getattr(error.orig, "sqlstate", None) != "P0001":
+            raise
+        raise RecoveryError("recovery_integrity_violation", "原执行历史无法完整校验") from error
+    request_row = await session.get(CandidateReleaseRequestRow, row.request_id)
+    if request_row is None:
         raise RecoveryError("recovery_integrity_violation", "恢复验证缺少原准备事实")
+    request = ReleaseRequestRecord.model_validate(request_row, from_attributes=True)
     view = await read_view(session, row, request)
     return view
 

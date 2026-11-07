@@ -17,12 +17,13 @@
 - 独立本地发布入口已通过新库迁移、完整装配、保留卷重启和浏览器补充及准备操作。常驻 Worker 已实际续接到候选评估，正常恢复代表场景先在派发前过期。省去一次重复来源读取后，复验到达远端注册，但返回 409 并进入 `unknown`。首次领取改用原生历史守卫后已缩短至约 1.8 秒，热栈复验曾在派发前来源重建时过期。复用已核验准备来源后，标准发布入口的新案例及时写入派发标记，随后远端注册响应超时，结果为 `unknown`。见[准备来源复验](progress/local-release-preparation-source-reuse.md)。见[发布入口验收](progress/local-release-entry.md)。
 - 隔离执行 Worker 的 HTTP 等待调至 6 秒后，新事故在原 30 秒派发窗口内完成回滚，同键重放复用原任务，订单修订号只增加一次。正式恢复在首次订单采样超时后持久保留事故与活动槽位。见[远端注册及回滚复验](progress/local-release-registration-timeout.md)。
 - 已按本会话授权重启 Docker Desktop，恢复原卷及续期的隔离测试身份，整栈就绪检查通过。观测超时后的新命令重试完成回滚，最终恢复尝试取得三份 200，但事故收敛为 `held_stale` 并保留槽位。标准 API 与执行入口均已恢复，环境时间调整单列。见[重启复验记录](progress/local-release-restart-verification.md)。
+- 恢复来源读取复用 PostgreSQL 完整执行历史守卫，保留原请求契约及执行视图校验。单元、静态和 PostgreSQL 的并发接管、上游损坏拒绝、两类来源收尾与收敛定向回归通过。完整 Compose 正常恢复收敛待复验。见[恢复来源复用](progress/local-recovery-history-reuse.md)。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
 ## 下一项完整行为
 
-推进**可复现部署与发布**。授权重启已完成，当前缩短恢复与收敛路径的重复历史重建，再复验正常恢复的事故收敛、已有业务卷的隔离迁移核查及演示。见[重启复验记录](progress/local-release-restart-verification.md)及[交付设计](architecture/local-multi-agent-release-scope.md)。
+推进**可复现部署与发布**。恢复来源优化已通过定向回归，当前更新隔离发布镜像并复验正常恢复的事故收敛，随后核查已有业务卷的隔离迁移及演示。测试期间停止的本任务发布栈须恢复。见[恢复来源复用](progress/local-recovery-history-reuse.md)及[交付设计](architecture/local-multi-agent-release-scope.md)。
 
 部署时给执行 Worker 传入可信身份配置，并让恢复相关 Worker 在有效窗口内消费样本。失败回流的整栈证据见[投影验收](progress/reflow-input-projection.md)。
 
