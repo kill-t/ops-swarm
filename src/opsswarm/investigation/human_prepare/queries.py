@@ -132,6 +132,17 @@ async def read_job(
     *,
     clock: Callable[[], datetime],
 ) -> PreparationJobView:
+    view, _ = await read_job_with_source(session, row, run, clock=clock)
+    return view
+
+
+async def read_job_with_source(
+    session: AsyncSession,
+    row: HumanPreparationJobRow,
+    run: InvestigationRunRow,
+    *,
+    clock: Callable[[], datetime],
+) -> tuple[PreparationJobView, PreparationSource]:
     source = await validated_source(session, row, run)
     attempts = list(
         await session.scalars(
@@ -199,7 +210,7 @@ async def read_job(
             now=normalized_now(clock),
         )
         availability, reason = diagnostic.status, diagnostic.reason_code
-    return PreparationJobView.model_validate(
+    view = PreparationJobView.model_validate(
         {
             **{
                 name: getattr(row, name)
@@ -226,3 +237,4 @@ async def read_job(
             "availability_reason": reason,
         }
     )
+    return view, source

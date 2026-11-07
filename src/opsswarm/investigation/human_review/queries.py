@@ -12,8 +12,7 @@ from opsswarm.identity.tables import OperatorAuthorizationRow
 from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.human_prepare.contracts import PreparationArtifact, PreparationSource
-from opsswarm.investigation.human_prepare.queries import read_job as read_preparation
-from opsswarm.investigation.human_prepare.queries import validated_source
+from opsswarm.investigation.human_prepare.queries import read_job_with_source
 from opsswarm.investigation.human_prepare.tables import HumanPreparationJobRow
 from opsswarm.investigation.human_review.authorization import validate_admission
 from opsswarm.investigation.human_review.contracts import (
@@ -92,10 +91,10 @@ async def preparation_source(
     prepared = await session.get(HumanPreparationJobRow, preparation_id)
     if prepared is None or prepared.investigation_run_id != run.id:
         raise HumanReviewError("human_review_preparation_not_found", "准备任务不存在", 404)
-    view = await read_preparation(session, prepared, run, clock=clock)
+    view, source = await read_job_with_source(session, prepared, run, clock=clock)
     if view.status != "succeeded" or view.artifact is None:
         raise HumanReviewError("human_review_preparation_required", "重评需要成功的完整准备工件")
-    return await validated_source(session, prepared, run), view.artifact, view.availability
+    return source, view.artifact, view.availability
 
 
 async def job_source(
