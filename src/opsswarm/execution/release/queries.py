@@ -25,6 +25,7 @@ from opsswarm.execution.release.tables import CandidateReleaseCommandRow, Candid
 from opsswarm.identity.tables import OperatorAuthorizationRow
 from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.persistence.lease import normalized_now
+from opsswarm.investigation.persistence.source_validation import source_validation_scope
 from opsswarm.investigation.persistence.tables import InvestigationRunRow
 
 
@@ -51,13 +52,14 @@ async def load_context(
     clock: Callable[[], datetime],
 ) -> ReleaseContext:
     try:
-        basis = await load_basis(session, run, job_id, version, clock=clock)
-        facts = await read_facts(session, basis)
-        if facts.decision is None:
-            raise ReleaseRequestError(
-                "candidate_release_approval_not_found", "核验审批决定不存在", 404
-            )
-        return ReleaseContext(basis, facts.decision)
+        async with source_validation_scope(session, run.id):
+            basis = await load_basis(session, run, job_id, version, clock=clock)
+            facts = await read_facts(session, basis)
+            if facts.decision is None:
+                raise ReleaseRequestError(
+                    "candidate_release_approval_not_found", "核验审批决定不存在", 404
+                )
+            return ReleaseContext(basis, facts.decision)
     except ReleaseRequestError:
         raise
     except ValueError as error:

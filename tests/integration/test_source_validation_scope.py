@@ -17,7 +17,10 @@ from opsswarm.investigation.budget.tables import CallReservationRow
 from opsswarm.investigation.coordination.persistence import CoordinationPlanStore
 from opsswarm.investigation.coordination.tables import InvestigationCoordinationPlanRow
 from opsswarm.investigation.persistence.source_revision import read_source_stamp
-from opsswarm.investigation.persistence.source_validation import reuse_validated_source
+from opsswarm.investigation.persistence.source_validation import (
+    reuse_validated_source,
+    source_validation_scope,
+)
 from opsswarm.investigation.tasks.errors import TaskFactConflict
 from opsswarm.investigation.tasks.tables import AgentTaskRow
 from opsswarm.investigation.workflow_versions import WorkflowVersion
@@ -137,6 +140,59 @@ async def test_scope_never_survives_root_transaction_or_session(database_session
         row = await session.get(InvestigationCoordinationPlanRow, record.round_id)
         await root(session, row)
     assert calls == 3
+
+
+async def test_explicit_traversal_reuses_sequential_roots_and_clears_on_return(
+    database_session_factory,
+):
+    _, record = await saved_plan(database_session_factory)
+    calls = 0
+
+    @reuse_validated_source
+    async def leaf(session, row):
+        nonlocal calls
+        calls += 1
+        return source_view(row)
+
+    async with database_session_factory() as session, session.begin():
+        row = await session.get(InvestigationCoordinationPlanRow, record.round_id)
+        before = dict(session.info)
+        async with source_validation_scope(session, row.investigation_run_id):
+            first = await leaf(session, row)
+            first.payload["goals"].append("不能污染共同祖先")
+            async with source_validation_scope(session, row.investigation_run_id):
+                second = await leaf(session, row)
+            assert second.payload["goals"] == [row.plan["proposal"]["goal"]]
+            assert calls == 1
+        assert session.info == before
+        await leaf(session, row)
+        assert calls == 2
+        assert session.info == before
+
+
+async def test_explicit_scope_exit_rechecks_changes_after_last_source_call(
+    database_session_factory,
+):
+    claim, record = await saved_plan(database_session_factory)
+
+    @reuse_validated_source
+    async def leaf(session, row):
+        return source_view(row)
+
+    async with database_session_factory() as session, session.begin():
+        row = await session.get(InvestigationCoordinationPlanRow, record.round_id)
+        before = dict(session.info)
+        with pytest.raises(TaskFactConflict) as caught:
+            async with source_validation_scope(session, claim.run.id):
+                await leaf(session, row)
+                async with database_session_factory() as writer, writer.begin():
+                    await writer.execute(
+                        update(AgentTaskRow)
+                        .where(AgentTaskRow.investigation_run_id == claim.run.id)
+                        .values(max_attempts=2)
+                    )
+        assert caught.value.code == "source_validation_changed"
+        assert session.info == before
 
 
 async def test_nested_validation_cannot_change_run_scope(database_session_factory):

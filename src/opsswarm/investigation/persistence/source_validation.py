@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from functools import wraps
 from typing import TypeVar, cast
 from uuid import UUID
@@ -122,6 +123,56 @@ class _ValidationScope:
             self.visiting.remove(key)
 
 
+@asynccontextmanager
+async def source_validation_scope(
+    session: AsyncSession, run_id: UUID
+) -> AsyncIterator[_ValidationScope | None]:
+    """只组织一次完整只读遍历，不跨业务操作保留已核验材料。"""
+
+    if not isinstance(getattr(session, "sync_session", None), Session):
+        yield None
+        return
+    existing = session.info.get(_SCOPE_KEY)
+    if isinstance(existing, _ValidationScope):
+        if existing.run_id != run_id:
+            existing.invalidate()
+            raise _changed()
+        await existing.check()
+        try:
+            yield existing
+            await existing.check()
+        except BaseException:
+            existing.invalidate()
+            raise
+        return
+    if session.new or session.dirty or session.deleted:
+        yield None
+        return
+    from opsswarm.investigation.persistence.tables import InvestigationRunRow
+
+    run = await session.get(InvestigationRunRow, run_id)
+    if run is None or run.workflow_version != "v3":
+        yield None
+        return
+    scope = _ValidationScope(session, run_id)
+    session.info[_SCOPE_KEY] = scope
+    callback = scope.invalidate
+    events = ("after_transaction_create", "after_transaction_end", "before_flush")
+    for name in events:
+        event.listen(session.sync_session, name, callback)
+    try:
+        await scope.initialize()
+        yield scope
+        await scope.check()
+    except BaseException:
+        scope.invalidate()
+        raise
+    finally:
+        for name in events:
+            event.remove(session.sync_session, name, callback)
+        session.info.pop(_SCOPE_KEY, None)
+
+
 def reuse_validated_source[Row, Result: BaseModel](
     function: Callable[[AsyncSession, Row], Awaitable[Result]],
 ) -> Callable[[AsyncSession, Row], Awaitable[Result]]:
@@ -143,28 +194,11 @@ def reuse_validated_source[Row, Result: BaseModel](
             or state is None
             or not state.persistent
             or state.session is not session.sync_session
-            or session.new
-            or session.dirty
-            or session.deleted
         ):
             return await function(session, row)
-        from opsswarm.investigation.persistence.tables import InvestigationRunRow
-
-        run = await session.get(InvestigationRunRow, run_id)
-        if run is None or run.workflow_version != "v3":
-            return await function(session, row)
-        scope = _ValidationScope(session, run_id)
-        session.info[_SCOPE_KEY] = scope
-        callback = scope.invalidate
-        events = ("after_transaction_create", "after_transaction_end", "before_flush")
-        for name in events:
-            event.listen(session.sync_session, name, callback)
-        try:
-            await scope.initialize()
+        async with source_validation_scope(session, run_id) as scope:
+            if scope is None:
+                return await function(session, row)
             return await scope.validate(function, row)
-        finally:
-            for name in events:
-                event.remove(session.sync_session, name, callback)
-            session.info.pop(_SCOPE_KEY, None)
 
     return wrapped

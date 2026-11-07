@@ -57,7 +57,7 @@ async def prepare(c, *, real=False, execute=True):
         assert await worker(c, remote).run_once()
         result = (await execution_get(c)).json()
         assert result["result"]["outcome"] == "applied_current", (
-            result["result"],
+            result["result"]["reason_code"],
             c.lab_transport.calls if real else None,
         )
     return (await execution_get(c)).json()
