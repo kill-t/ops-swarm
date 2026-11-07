@@ -22,7 +22,12 @@ from opsswarm.verification.candidate.contracts import (
     RecoverySampleRecord,
     RecoveryView,
 )
-from opsswarm.verification.candidate.policy import POLICY_VERSION, validate_observation
+from opsswarm.verification.candidate.policy import (
+    MIN_SAMPLE_INTERVAL_SECONDS,
+    POLICY_VERSION,
+    RECOVERY_LEASE_SECONDS,
+    validate_observation,
+)
 from opsswarm.verification.candidate.queries import make_result, recovery_view
 from opsswarm.verification.candidate.source import execution_source, fixed_window
 from opsswarm.verification.candidate.tables import (
@@ -180,7 +185,7 @@ class CandidateRecoveryStore:
                 )
                 row.lease_token, row.locked_until, row.updated_at = (
                     token,
-                    now + timedelta(seconds=30),
+                    now + timedelta(seconds=RECOVERY_LEASE_SECONDS),
                     now,
                 )
                 await session.flush()
@@ -242,7 +247,9 @@ class CandidateRecoveryStore:
             samples = tuple(s for s in view.samples if s.attempt_id == claim.attempt_id)
             if len(samples) >= 3 or any(s.error_code is not None for s in samples):
                 raise RecoveryError("recovery_samples_complete", "本尝试已完成采样")
-            if samples and self._now() < samples[-1].created_at + timedelta(seconds=2):
+            if samples and self._now() < samples[-1].created_at + timedelta(
+                seconds=MIN_SAMPLE_INTERVAL_SECONDS
+            ):
                 raise RecoveryError("recovery_sample_too_early", "恢复采样间隔不足")
             _require_lease(row, claim, self._now())
             return len(samples) + 1
@@ -265,10 +272,13 @@ class CandidateRecoveryStore:
                 observation = validate_observation(observation, now)
                 if observation.requested_at < view.attempts[-1].started_at or (
                     samples
-                    and observation.requested_at < samples[-1].created_at + timedelta(seconds=2)
+                    and observation.requested_at
+                    < samples[-1].created_at + timedelta(seconds=MIN_SAMPLE_INTERVAL_SECONDS)
                 ):
                     raise RecoveryError("recovery_sample_conflict", "恢复样本请求时间无效")
-            elif samples and now < samples[-1].created_at + timedelta(seconds=2):
+            elif samples and now < samples[-1].created_at + timedelta(
+                seconds=MIN_SAMPLE_INTERVAL_SECONDS
+            ):
                 raise RecoveryError("recovery_sample_too_early", "恢复采样间隔不足")
             sample = RecoverySampleRecord(
                 job_id=row.id,

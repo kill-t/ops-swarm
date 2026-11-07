@@ -16,6 +16,7 @@ from opsswarm.verification.candidate.contracts import (
 MAX_SAMPLE_AGE_SECONDS = 10
 MAX_REQUEST_SECONDS = 10
 MIN_SAMPLE_INTERVAL_SECONDS = 2
+RECOVERY_LEASE_SECONDS = 30
 _UTC_TIME = TypeAdapter(UtcTime)
 
 

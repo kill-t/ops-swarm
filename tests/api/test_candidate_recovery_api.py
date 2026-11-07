@@ -118,6 +118,7 @@ async def counts(c):
 async def test_actual_cas_business_orders_determine_recovery_without_parent_mutation(
     wait_context,
     pool_failure,
+    monkeypatch,
 ):
     c = wait_context
     execution = await prepare(c, real=True)
@@ -128,6 +129,18 @@ async def test_actual_cas_business_orders_determine_recovery_without_parent_muta
     assert await counts(c) == (0, 0, 0, 0)
     original_calls = list(c.lab_transport.calls)
     seen = []
+    early_claims = []
+    authorize = c.recovery.authorize_sample
+
+    async def authorize_after_wait(claim):
+        sequence = await authorize(claim)
+        if not pool_failure and sequence == 2 and not early_claims:
+            # 在真实租约核验后模拟一次尚需等待，Worker 必须重新准入后才可探测。
+            early_claims.append(claim)
+            raise RecoveryError("recovery_sample_too_early", "恢复采样间隔不足")
+        return sequence
+
+    monkeypatch.setattr(c.recovery, "authorize_sample", authorize_after_wait)
 
     class BusinessTransport(httpx2.AsyncBaseTransport):
         async def handle_async_request(self, request):
@@ -157,6 +170,9 @@ async def test_actual_cas_business_orders_determine_recovery_without_parent_muta
     assert view["result"]["outcome"] == ("not_recovered" if pool_failure else "recovered")
     assert view["result"]["parent_advanced"] is False
     assert len(view["attempts"]) == 1 and len(view["samples"]) == 3
+    assert len(early_claims) == (0 if pool_failure else 1)
+    if early_claims:
+        assert str(early_claims[0].attempt_id) == view["attempts"][0]["id"]
     assert [s["observation"]["http_status"] for s in view["samples"]] == (
         [200, 500, 500] if pool_failure else [200, 200, 200]
     )
