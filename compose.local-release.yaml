@@ -125,6 +125,7 @@ services:
     environment:
       <<: [*release-db, *release-auth]
       OPSSWARM_EXECUTOR_FAULT_LAB_BASE_URL: http://order-service:8000
+      OPSSWARM_EXECUTOR_REQUEST_TIMEOUT_SECONDS: "6"
     networks: [control, lab]
     depends_on: &release-probe-ready
       <<: *release-workers-ready

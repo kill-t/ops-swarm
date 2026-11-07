@@ -1,6 +1,6 @@
 # OpsSwarm 新窗口交接
 
-更新于 2026-11-06。最小可信协作台已通过组件与接口验收，隔离 Compose 已通过本地启动冒烟。下一项为完成发布场景。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
+更新于 2026-11-07。最小可信协作台与隔离 Compose 启动已验收。正常恢复代表场景已通过审批、派发和回滚，正式恢复采样待验收。见[本地版本交付设计](architecture/local-multi-agent-release-scope.md)。
 
 ## 当前事实
 
@@ -15,12 +15,13 @@
 - 同一隔离环境已验证浏览器人工补充及准备命令、跨容器检查点恢复、人工重评到事故收敛，以及回滚生效后中断的只读对账。当时的失败回流在协调输入预算处受阻，已用增量策略处理。见[人工续接与中断记录](progress/local-compose-continuation.md)。
 - 新现场运行的四阶段输入投影已通过隔离 Compose 失败回流代表场景。原预算下完成新取证、独立复查和持久人工接管，核对账本、槽位与唯一处置。进程内 API 长链的原回滚夹具仍触发 `release_dispatch_invalid`。见[回流输入投影记录](progress/reflow-input-projection.md)。
 - 独立本地发布入口已通过新库迁移、完整装配、保留卷重启和浏览器补充及准备操作。常驻 Worker 已实际续接到候选评估，正常恢复代表场景先在派发前过期。省去一次重复来源读取后，复验到达远端注册，但返回 409 并进入 `unknown`。首次领取改用原生历史守卫后已缩短至约 1.8 秒，热栈复验曾在派发前来源重建时过期。复用已核验准备来源后，标准发布入口的新案例及时写入派发标记，随后远端注册响应超时，结果为 `unknown`。见[准备来源复验](progress/local-release-preparation-source-reuse.md)。见[发布入口验收](progress/local-release-entry.md)。
+- 隔离执行 Worker 的 HTTP 等待调至 6 秒后，新事故在原 30 秒派发窗口内完成回滚，同键重放复用原任务，订单修订号只增加一次。正式恢复在首次订单采样超时后持久保留事故与活动槽位。见[远端注册及回滚复验](progress/local-release-registration-timeout.md)。
 - 141审批决定在da55c50提交，单元与迁移通过，完整API链未通过：批准在告警注入前提前拒绝尚未定位，后续诊断在131历史授权守卫中止；WSL/Docker时钟倒退另有实测，不能认定全部同根因。详见[141记录](progress/141-reinvestigation-approval-decision.md)。
 - v1/v2、既有v3 graph-v15、131—140冻结历史及原累计预算语义保持。新现场策略不得静默升级旧运行、复用不适用审批或清零未知占用。
 
 ## 下一项完整行为
 
-推进**可复现部署与发布**。使用已验证的独立入口，定位首次处置时效，完成已有业务卷的隔离迁移核查、代表场景及演示。见[交付设计](architecture/local-multi-agent-release-scope.md)。
+推进**可复现部署与发布**。先定位恢复 Worker 的固定订单探针超时，再完成正常恢复代表场景、已有业务卷的隔离迁移核查及演示。见[交付设计](architecture/local-multi-agent-release-scope.md)。
 
 部署时给执行 Worker 传入可信身份配置，并让恢复相关 Worker 在有效窗口内消费样本。失败回流的整栈证据见[投影验收](progress/reflow-input-projection.md)。
 
