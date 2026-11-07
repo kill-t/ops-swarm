@@ -21,7 +21,7 @@
 
 ## 下一项完整行为
 
-推进**可复现部署与发布**。恢复探针只读对照复现首个请求超时，继续测量时隔离栈三项健康检查同时受阻。先确认环境就绪并定位恢复探针超时，再完成正常恢复代表场景、已有业务卷的隔离迁移核查及演示。见[诊断记录](progress/local-release-registration-timeout.md#恢复采样诊断)及[交付设计](architecture/local-multi-agent-release-scope.md)。
+推进**可复现部署与发布**。恢复探针只读对照复现首个请求超时，隔离栈健康检查短暂恢复后再次超时，容器列表查询返回 Engine 500。当前需恢复引擎可用性后测量请求分段，重启授权已请求、尚待回复。再完成正常恢复代表场景、已有业务卷的隔离迁移核查及演示。见[诊断记录](progress/local-release-registration-timeout.md#恢复采样诊断)及[交付设计](architecture/local-multi-agent-release-scope.md)。
 
 部署时给执行 Worker 传入可信身份配置，并让恢复相关 Worker 在有效窗口内消费样本。失败回流的整栈证据见[投影验收](progress/reflow-input-projection.md)。
 
