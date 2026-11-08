@@ -57,7 +57,7 @@ uv sync --locked
 
 | 职责 | 入口 |
 | --- | --- |
-| 控制面协议与装配 | [control_plane/app.py](src/opsswarm/control_plane/app.py) |
+| 控制面协议与装配 | [应用工厂](src/opsswarm/control_plane/app.py)、[HTTP 错误转换](src/opsswarm/control_plane/error_handlers.py) |
 | 当前 v15/v16 图装配 | [worker/dynamic_factory.py](src/opsswarm/worker/dynamic_factory.py) |
 | 动态调查与 checkpoint | [dynamic_third_round_routing_graph.py](src/opsswarm/investigation/dynamic_third_round_routing_graph.py) |
 | 专业规划端口 | [coordination/ports.py](src/opsswarm/investigation/coordination/ports.py) |

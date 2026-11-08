@@ -5,79 +5,42 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 
-from fastapi import Depends, FastAPI, Request, Response, status
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import JsonValue
+from fastapi import Depends, FastAPI, Request, Response
 from starlette.middleware.base import RequestResponseEndpoint
 
 from opsswarm import __version__
-from opsswarm.approval import (
-    ActionPlanDoesNotRequireApproval,
-    ActionPlanNotCurrent,
-    ActionPlanNotDecidable,
-    ActionPlanNotExecutable,
-    ActionPlanNotSubmittable,
-    ApprovalActionPlanNotFound,
-    ApprovalDeciderMustBeHuman,
-    ApprovalError,
-    ApprovalPlanIntegrityViolation,
-    ApprovalRequestAlreadyDecided,
-    ApprovalRequesterMustBeHuman,
-    ApprovalRequestExpired,
-    ApprovalRequestNotFound,
-)
 from opsswarm.approval.candidate.api import create_candidate_approval_router
-from opsswarm.approval.candidate.contracts import RequestError
 from opsswarm.approval.candidate.store import CandidateApprovalStore
 from opsswarm.approval.conditions.api import create_condition_approval_router
-from opsswarm.approval.conditions.contracts import ApprovalError as ConditionApprovalError
 from opsswarm.approval.conditions.store import ConditionApprovalStore
 from opsswarm.approval.decision.api import create_candidate_decision_router
-from opsswarm.approval.decision.contracts import DecisionError
 from opsswarm.approval.decision.store import CandidateDecisionStore
 from opsswarm.approval.persistence import ApprovalRequestStore
 from opsswarm.approval.reinvestigation_candidate.api import create_reflow_approval_router
-from opsswarm.approval.reinvestigation_candidate.contracts import ReflowRequestError
 from opsswarm.approval.reinvestigation_candidate.store import ReflowApprovalStore
 from opsswarm.approval.reinvestigation_decision.api import create_reflow_approval_decision_router
-from opsswarm.approval.reinvestigation_decision.contracts import ReflowDecisionError
 from opsswarm.approval.reinvestigation_decision.store import ReflowApprovalDecisionStore
 from opsswarm.control_plane.collaboration import create_collaboration_navigation_router
+from opsswarm.control_plane.error_handlers import register_exception_handlers
 from opsswarm.control_plane.routes import Clock, create_router
 from opsswarm.control_plane.schemas import ApiErrorResponse
 from opsswarm.database import Database, DatabaseSettings
-from opsswarm.evaluation.errors import EvaluationAttemptNotFound, EvaluationRunNotFound
 from opsswarm.evaluation.persistence import EvaluationStore
 from opsswarm.execution import (
-    ExecutionError,
-    ExecutionLeaseLost,
     FaultLabOperationAdapter,
     OperationAdapter,
-    OperationExecutionFailed,
-    OperationExecutionNotFound,
-    OperationIdempotencyConflict,
-    OperationNotAuthorized,
-    OperationStepAlreadyRunning,
-    OperationStepAlreadySucceeded,
-    OperationStepNotFound,
 )
 from opsswarm.execution.candidate.api import create_candidate_preflight_router
-from opsswarm.execution.candidate.contracts import PreflightError
 from opsswarm.execution.candidate.store import CandidatePreflightStore
 from opsswarm.execution.conditions.api import create_candidate_condition_router
-from opsswarm.execution.conditions.contracts import ConditionError
 from opsswarm.execution.conditions.store import CandidateConditionStore
 from opsswarm.execution.persistence import OperationExecutionStore
 from opsswarm.execution.release.api import create_candidate_release_router
-from opsswarm.execution.release.contracts import ReleaseRequestError
 from opsswarm.execution.release.store import CandidateReleaseRequestStore
 from opsswarm.execution.release_jobs.api import create_release_execution_router
-from opsswarm.execution.release_jobs.contracts import ExecutionJobError
 from opsswarm.execution.release_jobs.store import ReleaseExecutionStore
 from opsswarm.execution.service import OperationExecutionService
 from opsswarm.experience.api import create_experience_router
-from opsswarm.experience.contracts import ExperienceError
 from opsswarm.experience.lifecycle_api import create_experience_lifecycle_router
 from opsswarm.experience.lifecycle_store import ExperienceLifecycleStore
 from opsswarm.experience.replacement_api import create_experience_replacement_router
@@ -86,56 +49,30 @@ from opsswarm.experience.review_api import create_experience_review_router
 from opsswarm.experience.review_store import ExperienceReviewStore
 from opsswarm.experience.search_store import ExperienceSearchStore
 from opsswarm.experience.store import ExperienceStore
-from opsswarm.follow_up import (
-    FollowUpReportNotFound,
-    ReportActionItemAlreadyCompleted,
-    ReportActionItemError,
-    ReportActionItemIdempotencyConflict,
-    ReportActionItemNotFound,
-    ReportActionItemValidationError,
-    ReportActionItemVersionConflict,
-)
 from opsswarm.follow_up.persistence import ReportActionItemStore
 from opsswarm.identity.api import authorize_control_request, create_identity_router
-from opsswarm.identity.models import OperatorAccessError
 from opsswarm.identity.settings import OperatorAuthSettings
 from opsswarm.identity.store import OperatorAuthorizationStore
-from opsswarm.incidents import (
-    IncidentDomainError,
-    IncidentNotFound,
-    IncidentValidationError,
-    IncidentVersionConflict,
-    InvalidIncidentTransition,
-)
 from opsswarm.incidents.convergence.api import create_candidate_incident_convergence_router
-from opsswarm.incidents.convergence.contracts import ConvergenceError
 from opsswarm.incidents.convergence.store import CandidateIncidentConvergenceStore
 from opsswarm.incidents.persistence import IncidentStore
 from opsswarm.investigation.budget.api import create_call_budget_router
 from opsswarm.investigation.budget.queries import CallBudgetQueries
 from opsswarm.investigation.candidate.api import create_candidate_router
-from opsswarm.investigation.candidate.contracts import CandidateError
 from opsswarm.investigation.candidate.store import CandidateStore
 from opsswarm.investigation.context.evidence_api import create_context_evidence_router
-from opsswarm.investigation.errors import InvestigationError, InvestigationRunNotFound
 from opsswarm.investigation.human_prepare.api import create_human_preparation_router
-from opsswarm.investigation.human_prepare.contracts import PreparationError
 from opsswarm.investigation.human_prepare.store import HumanPreparationStore
 from opsswarm.investigation.human_review.api import create_human_review_router
-from opsswarm.investigation.human_review.contracts import HumanReviewError
 from opsswarm.investigation.human_review.store import HumanReviewStore
-from opsswarm.investigation.human_routing.contracts import HumanRoutingError
 from opsswarm.investigation.human_wait.api import create_human_wait_router
-from opsswarm.investigation.human_wait.contracts import HumanWaitError
 from opsswarm.investigation.human_wait.store import HumanWaitStore
 from opsswarm.investigation.persistence import InvestigationStore
 from opsswarm.investigation.reinvestigation.api import create_candidate_reinvestigation_router
-from opsswarm.investigation.reinvestigation.contracts import ReinvestigationError
 from opsswarm.investigation.reinvestigation.store import CandidateReinvestigationStore
 from opsswarm.investigation.reinvestigation_candidate.api import create_reflow_candidate_router
 from opsswarm.investigation.reinvestigation_candidate.queries import ReflowCandidateQueries
 from opsswarm.investigation.reinvestigation_coordination.api import create_reflow_router
-from opsswarm.investigation.reinvestigation_coordination.contracts import ReflowError
 from opsswarm.investigation.reinvestigation_coordination.queries import ReflowQueries
 from opsswarm.investigation.reinvestigation_dispatch.api import create_dispatch_router
 from opsswarm.investigation.reinvestigation_dispatch.queries import DispatchQueries
@@ -148,7 +85,6 @@ from opsswarm.investigation.reinvestigation_routing.queries import ReflowRouting
 from opsswarm.investigation.reinvestigation_synthesis.api import create_reflow_synthesis_router
 from opsswarm.investigation.reinvestigation_synthesis.queries import SynthesisQueries
 from opsswarm.investigation.settlement.api import create_candidate_settlement_router
-from opsswarm.investigation.settlement.contracts import SettlementError
 from opsswarm.investigation.settlement.store import CandidateSettlementStore
 from opsswarm.investigation.tasks.api import create_collaboration_router
 from opsswarm.investigation.tasks.queries import CollaborationQueries
@@ -157,44 +93,17 @@ from opsswarm.observability import (
     create_tracing_runtime,
     current_trace_id_hex,
 )
-from opsswarm.planning import (
-    ActionPlanCapabilityUnavailable,
-    ActionPlanNotFound,
-    ActionPlanNotReady,
-    HypothesisNotSupported,
-    PlanningError,
-    UnsafeConfigurationRollbackTarget,
-    UnsafeDependencyRestoreTarget,
-    UnsafeRollbackTarget,
-    UnsupportedPlanningRootCause,
-)
 from opsswarm.planning.candidate.api import create_candidate_plan_router
-from opsswarm.planning.candidate.contracts import PlanError
 from opsswarm.planning.candidate.store import CandidatePlanStore
 from opsswarm.planning.persistence import ActionPlanStore
 from opsswarm.planning.reinvestigation_candidate.api import create_reflow_plan_router
-from opsswarm.planning.reinvestigation_candidate.contracts import ReflowPlanError
 from opsswarm.planning.reinvestigation_candidate.store import ReflowPlanStore
-from opsswarm.reports import (
-    IncidentReportError,
-    IncidentReportIntegrityViolation,
-    IncidentReportNotFound,
-    IncidentReportNotReady,
-    IncidentReportTooLarge,
-)
 from opsswarm.reports.persistence import IncidentReportStore
 from opsswarm.verification import (
-    OperationExecutionNotVerifiable,
     PrometheusVerificationAdapter,
-    UnsupportedVerificationRule,
     VerificationAdapter,
-    VerificationError,
-    VerificationRunCompleted,
-    VerificationRunNotFound,
-    VerificationWorkItemNotFound,
 )
 from opsswarm.verification.candidate.api import create_candidate_recovery_router
-from opsswarm.verification.candidate.contracts import RecoveryError
 from opsswarm.verification.candidate.store import CandidateRecoveryStore
 from opsswarm.verification.persistence import VerificationStore
 from opsswarm.verification.service import VerificationService
@@ -600,613 +509,6 @@ def create_app(
 
     selected_tracing_runtime.instrument_fastapi(app)
 
-    @app.exception_handler(HumanWaitError)
-    async def handle_human_wait_error(_: Request, error: HumanWaitError) -> JSONResponse:
-        return JSONResponse(
-            status_code=error.status_code,
-            content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
-                mode="json"
-            ),
-        )
-
-    @app.exception_handler(ReleaseRequestError)
-    @app.exception_handler(ReflowError)
-    @app.exception_handler(ReinvestigationError)
-    @app.exception_handler(ConvergenceError)
-    @app.exception_handler(SettlementError)
-    @app.exception_handler(RecoveryError)
-    @app.exception_handler(ExecutionJobError)
-    @app.exception_handler(ConditionApprovalError)
-    @app.exception_handler(ConditionError)
-    @app.exception_handler(PreflightError)
-    @app.exception_handler(DecisionError)
-    @app.exception_handler(ReflowDecisionError)
-    @app.exception_handler(ReflowRequestError)
-    @app.exception_handler(RequestError)
-    @app.exception_handler(ReflowPlanError)
-    @app.exception_handler(PlanError)
-    @app.exception_handler(CandidateError)
-    @app.exception_handler(HumanRoutingError)
-    @app.exception_handler(HumanReviewError)
-    async def handle_human_review_error(
-        _: Request,
-        error: HumanReviewError
-        | HumanRoutingError
-        | CandidateError
-        | ReflowPlanError
-        | PlanError
-        | ReflowDecisionError
-        | ReflowRequestError
-        | RequestError
-        | DecisionError
-        | PreflightError
-        | ConditionError
-        | ConditionApprovalError
-        | ReleaseRequestError
-        | ExecutionJobError
-        | RecoveryError
-        | SettlementError
-        | ConvergenceError
-        | ReinvestigationError
-        | ReflowError,
-    ) -> JSONResponse:
-        return JSONResponse(
-            status_code=error.status_code,
-            content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
-                mode="json"
-            ),
-        )
-
-    @app.exception_handler(PreparationError)
-    async def handle_human_preparation_error(_: Request, error: PreparationError) -> JSONResponse:
-        return JSONResponse(
-            status_code=error.status_code,
-            content=ApiErrorResponse(error_code=error.code, message=str(error)).model_dump(
-                mode="json"
-            ),
-        )
-
-    @app.exception_handler(ExperienceError)
-    async def handle_experience_error(_: Request, error: ExperienceError) -> JSONResponse:
-        response = ApiErrorResponse(error_code=error.code, message=error.message)
-        return JSONResponse(status_code=error.status_code, content=response.model_dump(mode="json"))
-
-    @app.exception_handler(OperatorAccessError)
-    async def handle_operator_access_error(
-        _: Request,
-        error: OperatorAccessError,
-    ) -> JSONResponse:
-        response = ApiErrorResponse(error_code=error.code, message=str(error))
-        return JSONResponse(
-            status_code=error.status_code,
-            content=response.model_dump(mode="json"),
-            headers={"WWW-Authenticate": "Bearer"} if error.status_code == 401 else None,
-        )
-
-    @app.exception_handler(RequestValidationError)
-    async def handle_request_validation_error(
-        _: Request,
-        error: RequestValidationError,
-    ) -> JSONResponse:
-        issues = [
-            {
-                "location": ".".join(str(part) for part in issue["loc"]),
-                "message": str(issue["msg"]),
-                "type": str(issue["type"]),
-            }
-            for issue in error.errors()
-        ]
-        response = ApiErrorResponse(
-            error_code="request_validation_error",
-            message="请求参数校验失败",
-            details={"issues": cast(JsonValue, issues)},
-        )
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(IncidentDomainError)
-    async def handle_incident_domain_error(
-        _: Request,
-        error: IncidentDomainError,
-    ) -> JSONResponse:
-        if isinstance(error, IncidentNotFound):
-            response = ApiErrorResponse(
-                error_code="incident_not_found",
-                message=str(error),
-                details={"incident_id": error.incident_id},
-            )
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content=response.model_dump(mode="json"),
-            )
-        if isinstance(error, IncidentVersionConflict):
-            response = ApiErrorResponse(
-                error_code="incident_version_conflict",
-                message=str(error),
-                details={
-                    "expected_version": error.expected_version,
-                    "actual_version": error.actual_version,
-                },
-            )
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=response.model_dump(mode="json"),
-            )
-        if isinstance(error, InvalidIncidentTransition):
-            response = ApiErrorResponse(
-                error_code="invalid_incident_transition",
-                message=str(error),
-                details={"status": error.status, "action": error.action},
-            )
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=response.model_dump(mode="json"),
-            )
-        if isinstance(error, IncidentValidationError):
-            response = ApiErrorResponse(
-                error_code="incident_validation_error",
-                message=str(error),
-            )
-            return JSONResponse(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                content=response.model_dump(mode="json"),
-            )
-
-        response = ApiErrorResponse(error_code="incident_domain_error", message=str(error))
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(InvestigationError)
-    async def handle_investigation_error(
-        _: Request,
-        error: InvestigationError,
-    ) -> JSONResponse:
-        if isinstance(error, InvestigationRunNotFound):
-            response = ApiErrorResponse(
-                error_code="investigation_run_not_found",
-                message=str(error),
-                details={"run_id": str(error.run_id)},
-            )
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content=response.model_dump(mode="json"),
-            )
-        response = ApiErrorResponse(error_code="investigation_error", message=str(error))
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(EvaluationRunNotFound)
-    async def handle_evaluation_run_not_found(
-        _: Request,
-        error: EvaluationRunNotFound,
-    ) -> JSONResponse:
-        response = ApiErrorResponse(
-            error_code="evaluation_run_not_found",
-            message=str(error),
-            details={"run_id": str(error.run_id)},
-        )
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(EvaluationAttemptNotFound)
-    async def handle_evaluation_attempt_not_found(
-        _: Request,
-        error: EvaluationAttemptNotFound,
-    ) -> JSONResponse:
-        response = ApiErrorResponse(
-            error_code="evaluation_attempt_not_found",
-            message=str(error),
-            details={"attempt_id": str(error.attempt_id)},
-        )
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(PlanningError)
-    async def handle_planning_error(
-        _: Request,
-        error: PlanningError,
-    ) -> JSONResponse:
-        if isinstance(error, ActionPlanNotFound):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_found",
-                message=str(error),
-                details={"run_id": str(error.run_id)},
-            )
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content=response.model_dump(mode="json"),
-            )
-        if isinstance(error, ActionPlanNotReady):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_ready",
-                message=str(error),
-                details={
-                    "run_id": str(error.run_id),
-                    "reason_code": error.reason_code,
-                },
-            )
-        elif isinstance(error, HypothesisNotSupported):
-            response = ApiErrorResponse(
-                error_code="hypothesis_not_supported",
-                message=str(error),
-                details={"hypothesis_status": error.status.value},
-            )
-        elif isinstance(error, UnsupportedPlanningRootCause):
-            response = ApiErrorResponse(
-                error_code="unsupported_planning_root_cause",
-                message=str(error),
-                details={"root_cause": error.root_cause.value},
-            )
-        elif isinstance(error, ActionPlanCapabilityUnavailable):
-            response = ApiErrorResponse(
-                error_code="action_plan_capability_unavailable",
-                message=str(error),
-                details=error.capability.model_dump(mode="json"),
-            )
-        elif isinstance(error, UnsafeRollbackTarget):
-            response = ApiErrorResponse(
-                error_code="unsafe_rollback_target",
-                message=str(error),
-            )
-        elif isinstance(error, UnsafeConfigurationRollbackTarget):
-            response = ApiErrorResponse(
-                error_code="unsafe_configuration_rollback_target",
-                message=str(error),
-            )
-        elif isinstance(error, UnsafeDependencyRestoreTarget):
-            response = ApiErrorResponse(
-                error_code="unsafe_dependency_restore_target",
-                message=str(error),
-            )
-        else:
-            response = ApiErrorResponse(error_code="planning_error", message=str(error))
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(ApprovalError)
-    async def handle_approval_error(
-        _: Request,
-        error: ApprovalError,
-    ) -> JSONResponse:
-        http_status = status.HTTP_409_CONFLICT
-        if isinstance(error, ApprovalActionPlanNotFound):
-            response = ApiErrorResponse(
-                error_code="approval_action_plan_not_found",
-                message=str(error),
-                details={"plan_id": str(error.plan_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, ApprovalRequestNotFound):
-            response = ApiErrorResponse(
-                error_code="approval_request_not_found",
-                message=str(error),
-                details={"request_id": str(error.request_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, ActionPlanNotCurrent):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_current",
-                message=str(error),
-                details={
-                    "plan_id": str(error.plan_id),
-                    "current_plan_id": str(error.current_plan_id),
-                },
-            )
-        elif isinstance(error, ActionPlanNotSubmittable):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_submittable",
-                message=str(error),
-                details={"plan_id": str(error.plan_id), "status": error.status},
-            )
-        elif isinstance(error, ActionPlanDoesNotRequireApproval):
-            response = ApiErrorResponse(
-                error_code="action_plan_does_not_require_approval",
-                message=str(error),
-            )
-        elif isinstance(error, ActionPlanNotExecutable):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_executable",
-                message=str(error),
-                details={
-                    "plan_id": str(error.plan_id),
-                    "action_type": error.action_type,
-                },
-            )
-        elif isinstance(error, ApprovalRequesterMustBeHuman):
-            response = ApiErrorResponse(
-                error_code="approval_requester_must_be_human",
-                message=str(error),
-            )
-        elif isinstance(error, ApprovalDeciderMustBeHuman):
-            response = ApiErrorResponse(
-                error_code="approval_decider_must_be_human",
-                message=str(error),
-            )
-        elif isinstance(error, ApprovalRequestAlreadyDecided):
-            response = ApiErrorResponse(
-                error_code="approval_request_already_decided",
-                message=str(error),
-                details={
-                    "request_id": str(error.request_id),
-                    "current_status": error.current_status,
-                    "requested_decision": error.requested_decision,
-                },
-            )
-        elif isinstance(error, ApprovalRequestExpired):
-            response = ApiErrorResponse(
-                error_code="approval_request_expired",
-                message=str(error),
-                details={
-                    "request_id": str(error.request_id),
-                    "expires_at": error.expires_at,
-                },
-            )
-        elif isinstance(error, ActionPlanNotDecidable):
-            response = ApiErrorResponse(
-                error_code="action_plan_not_decidable",
-                message=str(error),
-                details={"plan_id": str(error.plan_id), "status": error.status},
-            )
-        elif isinstance(error, ApprovalPlanIntegrityViolation):
-            response = ApiErrorResponse(
-                error_code="approval_plan_integrity_violation",
-                message=str(error),
-                details={"request_id": str(error.request_id)},
-            )
-        else:
-            response = ApiErrorResponse(error_code="approval_error", message=str(error))
-        return JSONResponse(
-            status_code=http_status,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(ExecutionError)
-    async def handle_execution_error(
-        _: Request,
-        error: ExecutionError,
-    ) -> JSONResponse:
-        http_status = status.HTTP_409_CONFLICT
-        if isinstance(error, OperationStepNotFound):
-            response = ApiErrorResponse(
-                error_code="operation_step_not_found",
-                message=str(error),
-                details={"step_id": str(error.step_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, OperationExecutionNotFound):
-            response = ApiErrorResponse(
-                error_code="operation_execution_not_found",
-                message=str(error),
-                details={"execution_id": str(error.execution_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, OperationExecutionFailed):
-            response = ApiErrorResponse(
-                error_code="operation_execution_failed",
-                message=str(error),
-                details={
-                    "execution_id": str(error.execution_id),
-                    "operation_error_code": error.error_code,
-                },
-            )
-            http_status = status.HTTP_502_BAD_GATEWAY
-        elif isinstance(error, OperationNotAuthorized):
-            response = ApiErrorResponse(
-                error_code="operation_not_authorized",
-                message=str(error),
-                details={
-                    "step_id": str(error.step_id),
-                    "reason_code": error.reason_code,
-                },
-            )
-        elif isinstance(error, OperationIdempotencyConflict):
-            response = ApiErrorResponse(
-                error_code="operation_idempotency_conflict",
-                message=str(error),
-                details={"idempotency_key": error.idempotency_key},
-            )
-        elif isinstance(error, OperationStepAlreadyRunning):
-            response = ApiErrorResponse(
-                error_code="operation_step_already_running",
-                message=str(error),
-                details={
-                    "step_id": str(error.step_id),
-                    "execution_id": str(error.execution_id),
-                },
-            )
-        elif isinstance(error, OperationStepAlreadySucceeded):
-            response = ApiErrorResponse(
-                error_code="operation_step_already_succeeded",
-                message=str(error),
-                details={
-                    "step_id": str(error.step_id),
-                    "execution_id": str(error.execution_id),
-                },
-            )
-        elif isinstance(error, ExecutionLeaseLost):
-            response = ApiErrorResponse(
-                error_code="execution_lease_lost",
-                message=str(error),
-                details={"execution_id": str(error.execution_id)},
-            )
-        else:
-            response = ApiErrorResponse(error_code="execution_error", message=str(error))
-        return JSONResponse(
-            status_code=http_status,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(VerificationError)
-    async def handle_verification_error(
-        _: Request,
-        error: VerificationError,
-    ) -> JSONResponse:
-        http_status = status.HTTP_409_CONFLICT
-        if isinstance(error, VerificationRunNotFound):
-            response = ApiErrorResponse(
-                error_code="verification_run_not_found",
-                message=str(error),
-                details={"run_id": str(error.run_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, VerificationWorkItemNotFound):
-            response = ApiErrorResponse(
-                error_code="verification_work_item_not_found",
-                message=str(error),
-                details={"work_item_id": str(error.work_item_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, OperationExecutionNotVerifiable):
-            response = ApiErrorResponse(
-                error_code="operation_execution_not_verifiable",
-                message=str(error),
-                details={
-                    "execution_id": str(error.execution_id),
-                    "reason_code": error.reason_code,
-                },
-            )
-        elif isinstance(error, VerificationRunCompleted):
-            response = ApiErrorResponse(
-                error_code="verification_run_completed",
-                message=str(error),
-                details={
-                    "run_id": str(error.run_id),
-                    "status": error.status,
-                },
-            )
-        elif isinstance(error, UnsupportedVerificationRule):
-            response = ApiErrorResponse(
-                error_code="unsupported_verification_rule",
-                message=str(error),
-                details={
-                    "signal": error.signal,
-                    "operator": error.operator,
-                },
-            )
-        else:
-            response = ApiErrorResponse(error_code="verification_error", message=str(error))
-        return JSONResponse(
-            status_code=http_status,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(IncidentReportError)
-    async def handle_incident_report_error(
-        _: Request,
-        error: IncidentReportError,
-    ) -> JSONResponse:
-        http_status = status.HTTP_409_CONFLICT
-        if isinstance(error, IncidentReportNotFound):
-            response = ApiErrorResponse(
-                error_code="incident_report_not_found",
-                message=str(error),
-                details={"incident_id": str(error.incident_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, IncidentReportNotReady):
-            response = ApiErrorResponse(
-                error_code="incident_report_not_ready",
-                message=str(error),
-                details={
-                    "incident_id": str(error.incident_id),
-                    "status": error.status,
-                },
-            )
-        elif isinstance(error, IncidentReportTooLarge):
-            response = ApiErrorResponse(
-                error_code="incident_report_too_large",
-                message=str(error),
-                details={
-                    "incident_id": str(error.incident_id),
-                    "maximum": error.maximum,
-                },
-            )
-        elif isinstance(error, IncidentReportIntegrityViolation):
-            response = ApiErrorResponse(
-                error_code="incident_report_integrity_violation",
-                message=str(error),
-                details={"report_id": str(error.report_id)},
-            )
-            http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
-        else:
-            response = ApiErrorResponse(error_code="incident_report_error", message=str(error))
-        return JSONResponse(
-            status_code=http_status,
-            content=response.model_dump(mode="json"),
-        )
-
-    @app.exception_handler(ReportActionItemError)
-    async def handle_report_action_item_error(
-        _: Request,
-        error: ReportActionItemError,
-    ) -> JSONResponse:
-        """把改进行动项领域错误映射为稳定 HTTP 契约。"""
-
-        http_status = status.HTTP_409_CONFLICT
-        if isinstance(error, FollowUpReportNotFound):
-            response = ApiErrorResponse(
-                error_code="follow_up_report_not_found",
-                message=str(error),
-                details={"report_id": str(error.report_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, ReportActionItemNotFound):
-            response = ApiErrorResponse(
-                error_code="report_action_item_not_found",
-                message=str(error),
-                details={"item_id": str(error.item_id)},
-            )
-            http_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, ReportActionItemValidationError):
-            response = ApiErrorResponse(
-                error_code="report_action_item_validation_error",
-                message=str(error),
-            )
-            http_status = status.HTTP_422_UNPROCESSABLE_CONTENT
-        elif isinstance(error, ReportActionItemVersionConflict):
-            response = ApiErrorResponse(
-                error_code="report_action_item_version_conflict",
-                message=str(error),
-                details={
-                    "expected_version": error.expected_version,
-                    "actual_version": error.actual_version,
-                },
-            )
-        elif isinstance(error, ReportActionItemIdempotencyConflict):
-            response = ApiErrorResponse(
-                error_code="report_action_item_idempotency_conflict",
-                message=str(error),
-                details={
-                    "report_id": str(error.report_id),
-                    "idempotency_key": error.idempotency_key,
-                },
-            )
-        elif isinstance(error, ReportActionItemAlreadyCompleted):
-            response = ApiErrorResponse(
-                error_code="report_action_item_already_completed",
-                message=str(error),
-                details={"item_id": str(error.item_id)},
-            )
-        else:
-            response = ApiErrorResponse(
-                error_code="report_action_item_error",
-                message=str(error),
-            )
-        return JSONResponse(
-            status_code=http_status,
-            content=response.model_dump(mode="json"),
-        )
+    register_exception_handlers(app)
 
     return app

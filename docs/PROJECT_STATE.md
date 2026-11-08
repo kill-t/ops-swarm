@@ -5,8 +5,8 @@
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- 用户已允许按需启动服务。本轮已启动 Docker Desktop 和新隔离项目 `opsswarm-local-demo`，完成启动验证后因 UTC 倒退停止全部演示容器；其配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 仍停止。不自动重启 WSL/Docker 或调整共享系统。
-- 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口及正式演示入口整理。见[装配整理](progress/legacy-assembly-and-project-entry-cleanup.md)和[正式入口](progress/local-demo-reproduction.md)。配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
+- 用户已允许按需启动服务。上一批启动 Docker Desktop 和新隔离项目 `opsswarm-local-demo`，完成启动验证后因 UTC 倒退停止全部演示容器；其配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 仍停止。本批未启动服务，不自动重启 WSL/Docker 或调整共享系统。
+- 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口、正式演示入口及[控制面错误转换整理](progress/control-plane-error-boundary.md)。装配历史见[整理记录](progress/legacy-assembly-and-project-entry-cleanup.md)。正式入口的配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界
@@ -26,6 +26,7 @@
 
 | 范围 | 入口及保留要求 |
 | --- | --- |
+| 控制面协议 | [应用工厂](../src/opsswarm/control_plane/app.py)装配资源、路由及响应元数据；[错误转换](../src/opsswarm/control_plane/error_handlers.py)统一注册与序列化，历史错误状态/字段、401 挑战与校验信息边界保持 |
 | 当前主线 | [Worker 装配](../src/opsswarm/worker/main.py)、[当前工厂](../src/opsswarm/worker/dynamic_factory.py)只接入当前 v15 冻结与 v16 现场动态图；复用[三轮路由图](../src/opsswarm/investigation/dynamic_third_round_routing_graph.py)，规划依赖[独立端口](../src/opsswarm/investigation/coordination/ports.py) |
 | v1/v2 | 继续由同一 Worker 路由单 Agent 与固定多 Agent，保留[固定图工厂](../src/opsswarm/worker/task_graph.py)、版本化数据和回归 |
 | v3 graph-v1—v14 | [历史工厂](../src/opsswarm/worker/dynamic_graph.py)共用冻结依赖装配，公开类名、各自图拓扑、版本门禁与恢复契约保留；不由当前 Worker 自动升级或领取。当前工厂的旧导入仍可用 |

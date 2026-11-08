@@ -14,7 +14,7 @@
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
 | 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过。[人工续接、正常恢复与只读对账](local-compose-continuation.md)通过指定整栈场景。[现场失败回流](reflow-input-projection.md)通过 Compose 代表场景，进程内 API 夹具的回滚欠项单列 |
 | 整改首批 | [旧入口依赖与四阶段输入基线](reflow-remediation-baseline.md)已核对，协调实测，后三阶段为回放估算 |
-| 当前代码整改 | [历史装配去重与项目入口收口](legacy-assembly-and-project-entry-cleanup.md)按整批完成依赖核对、重复代码清理、入口文档与定向验证；旧图恢复契约保留，当前主线继续使用[独立装配入口](current-dynamic-factory-boundary.md) |
+| 当前代码整改 | [控制面错误边界](control-plane-error-boundary.md)完成职责分离、重复封装清理和 HTTP 契约回归；[历史装配去重与首页收口](legacy-assembly-and-project-entry-cleanup.md)保持原验收，旧图恢复契约保留，当前主线继续使用[独立装配入口](current-dynamic-factory-boundary.md) |
 | 正式复现入口 | [本地演示整理](local-demo-reproduction.md)已通过配置、脚本协议、启动与阻断路径验证；三条完整场景已编排但尚未整栈验收。新隔离卷启动成功后，35 秒预检捕获 UTC 倒退，案例未开始，演示栈已停止并保留报告 |
 | 后续完整交付 | 使用[正式入口](../local-demo.md)在稳定环境补验三条代表场景及正常恢复收敛。[采样等待](local-recovery-sample-wait.md)与[来源遍历](local-release-source-traversal.md)已通过各自定向回归；[时钟问题](local-wsl-clock-source.md)及 141 原欠项单列。服务可按需启动，不自动调整共享系统，不阻塞无需整栈的代码整改 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
