@@ -5,8 +5,8 @@
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- 按用户要求，`opsswarm-local-release` 全栈与 `release-fixture-model` 均已停止，容器和数据卷保留。未关闭 Docker Desktop 或 WSL，不自动恢复服务、重跑长链或调整共享系统。
-- 当前整改已完成现行图与历史装配分离、历史工厂去重及首页收口。见[入口分离](progress/current-dynamic-factory-boundary.md)和[整批整改](progress/legacy-assembly-and-project-entry-cleanup.md)。下一批按完整问题推进，避免将内部操作拆成多轮交付。
+- 用户已允许按需启动服务。本轮已启动 Docker Desktop 和新隔离项目 `opsswarm-local-demo`，完成启动验证后因 UTC 倒退停止全部演示容器；其配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 仍停止。不自动重启 WSL/Docker 或调整共享系统。
+- 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口及正式演示入口整理。见[装配整理](progress/legacy-assembly-and-project-entry-cleanup.md)和[正式入口](progress/local-demo-reproduction.md)。配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界
@@ -35,7 +35,7 @@
 
 ## 后续工作
 
-先围绕完整演示与复现收拢正式入口，避免依赖忽略目录中的临时脚本；把必要清理、验证和文档放在同一批完成，不追加角色、平台或按 142 顺延功能。
+正式复现统一使用[演示手册](local-demo.md)中的 `scripts/local-demo.ps1`，不依赖旧缓存案例。它使用独立卷与脚本模型，默认配置位于忽略目录 `.pytest_cache/local-demo`，身份有效八小时；过期使用新子目录准备并启动。稳定环境下顺序补验 handoff、recovery、reflow，不追加角色、平台或按 142 顺延功能。
 
 完整发布仍须在稳定环境补验正常恢复、事故收敛和槽位释放，并核查部署、保留卷、演示与发布材料。时钟作为独立环境欠项，不阻塞无需整栈的代码整改；下次恢复前核对凭据有效期、模型配置及 UTC 连续性。141 与本版之外的再次自动执行保持原边界，具体发布影响见[交付范围](architecture/local-multi-agent-release-scope.md)。
 

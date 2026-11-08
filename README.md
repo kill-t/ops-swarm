@@ -32,15 +32,17 @@ OpsSwarm 是面向订单服务事故演练的本地多 Agent 项目：从告警�
 
 ## 本地运行
 
-在仓库根目录准备私下保管的 `.env.local-release`，填写可信角色凭据和容器可访问的模型配置。具体字段、角色与演练步骤见[本地发布运行手册](docs/local-release.md)。
+工程链演示使用仓库内脚本模型，可自动生成独立身份和隔离配置。先安装依赖并启动 Docker Desktop Linux 引擎，按[演示手册](docs/local-demo.md)运行：
 
 ```powershell
-.\scripts\local-release.ps1 -EnvFile .env.local-release -Action Start
-.\scripts\local-release.ps1 -EnvFile .env.local-release -Action Status
-.\scripts\local-release.ps1 -EnvFile .env.local-release -Action Stop
+uv sync --locked
+.\scripts\local-demo.ps1 -Action Start
+.\scripts\local-demo.ps1 -Action Check
+.\scripts\local-demo.ps1 -Action Run -Scenario recovery
+.\scripts\local-demo.ps1 -Action Stop
 ```
 
-入口使用独立项目名 `opsswarm-local-release`、镜像及数据卷；`Stop` 保留数据。启动前完成业务迁移、checkpoint 初始化和配置检查。模型调用可能产生实际费用；工程链验收使用明确标识的脚本模型，真实模型调用需另行安排。
+入口使用独立项目名 `opsswarm-local-demo` 和数据卷，支持人工交接、正常恢复、未恢复后一次回流；`Stop` 保留数据。预检失败时不开始业务案例。脚本模型结果只代表工程链验证。需要自配模型时使用[标准发布手册](docs/local-release.md)及项目 `opsswarm-local-release`；模型调用可能产生实际费用，需另行安排。两个项目共用以下端口，不能同时启动。
 
 | 入口 | 本机地址 |
 | --- | --- |

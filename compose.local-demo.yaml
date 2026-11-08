@@ -1,0 +1,53 @@
+name: opsswarm-local-demo
+
+x-script-model: &script-model
+  LLM_API_KEY: script-fixture-only
+  LLM_BASE_URL: http://demo-model:8000/v1
+  LLM_MODEL: opsswarm-script-demo
+  LLM_STRUCTURED_OUTPUT_METHOD: function_calling
+  LLM_BUDGET_PROFILE_ID: local-demo-v1
+  LLM_CONTEXT_WINDOW_TOKENS: "65536"
+  LLM_INPUT_COST_PER_MILLION_USD: "1"
+  LLM_OUTPUT_COST_PER_MILLION_USD: "2"
+
+services:
+  demo-model:
+    image: ${OPSSWARM_RUNTIME_IMAGE:-ops-swarm-runtime:local-release}
+    init: true
+    command: [python, -m, uvicorn, scripts.local_demo.model_server:app, --host, 0.0.0.0, --port, "8000"]
+    environment:
+      PYTHONPATH: /demo
+    volumes:
+      - ./scripts:/demo/scripts:ro
+    networks: [control]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+  release-prepare:
+    environment: *script-model
+    depends_on:
+      demo-model:
+        condition: service_healthy
+  investigation-worker-live:
+    environment: *script-model
+  human-review-worker:
+    environment: *script-model
+  candidate-evaluation-worker:
+    environment: *script-model
+  experience-worker:
+    environment: *script-model
+  reflow-coordination-worker:
+    environment: *script-model
+  reflow-execution-worker:
+    environment: *script-model
+  reflow-synthesis-worker:
+    environment: *script-model
+  reflow-review-worker:
+    environment: *script-model

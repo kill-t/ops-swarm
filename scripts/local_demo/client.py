@@ -1,0 +1,75 @@
+"""固定本机演示端口的可信 API 访问与有界状态等待。"""
+
+import time
+from collections.abc import Callable
+from typing import Any
+
+import httpx2
+
+from scripts.local_demo.config import ORIGIN
+
+
+class DemoError(RuntimeError):
+    def __init__(self, stage: str, code: str, *, details: dict | None = None) -> None:
+        self.stage, self.code = stage, code
+        self.details = details or {}
+        super().__init__(f"{stage}: {code}")
+
+
+class DemoClient:
+    def __init__(self, tokens: dict, *, transport=None, timeout=180) -> None:
+        self.tokens = tokens
+        self.timeout = timeout
+        self.http = httpx2.Client(
+            timeout=15, trust_env=False, follow_redirects=False, transport=transport
+        )
+
+    def close(self) -> None:
+        self.http.close()
+
+    def call(
+        self,
+        path: str,
+        body: dict | None = None,
+        *,
+        role="engineer",
+        method=None,
+        origin=ORIGIN,
+        status: int | None = None,
+    ) -> Any:
+        from scripts.local_demo.config import CHANGE, ORDER
+
+        if (
+            origin not in {ORIGIN, ORDER, CHANGE}
+            or not path.startswith("/")
+            or path.startswith("//")
+        ):
+            raise DemoError("request", "outside_local_demo")
+        verb = method or ("GET" if body is None else "POST")
+        headers = {"Authorization": f"Bearer {self.tokens[role]}"} if role else {}
+        try:
+            response = self.http.request(verb, origin + path, json=body, headers=headers)
+        except httpx2.HTTPError as error:
+            # 写请求结果未知时交由报告和持久记录核对，不盲目重发。
+            raise DemoError(path, "transport_result_unknown") from error
+        if status is not None:
+            require(response.status_code == status, path, f"expected_http_{status}")
+            return None
+        if not response.is_success:
+            raise DemoError(path, f"http_{response.status_code}")
+        return response.json() if response.content else None
+
+    def poll(self, stage: str, read: Callable[[], Any], ready: Callable[[Any], bool]) -> Any:
+        deadline = time.monotonic() + self.timeout
+        while True:
+            value = read()
+            if ready(value):
+                return value
+            if time.monotonic() >= deadline:
+                raise DemoError(stage, "worker_wait_expired")
+            time.sleep(1)
+
+
+def require(condition: bool, stage: str, code: str) -> None:
+    if not condition:
+        raise DemoError(stage, code)

@@ -1,20 +1,26 @@
-param(
+﻿param(
     [Parameter(Mandatory)]
     [string]$EnvFile,
     [ValidateSet("Start", "Status", "Stop")]
-    [string]$Action = "Start"
+    [string]$Action = "Start",
+    [switch]$ScriptedDemo,
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 $releaseConfig = (Resolve-Path -LiteralPath $EnvFile).Path
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$projectName = if ($ScriptedDemo) { "opsswarm-local-demo" } else { "opsswarm-local-release" }
 $compose = @(
-    "compose", "--project-directory", $root, "-p", "opsswarm-local-release",
+    "compose", "--project-directory", $root, "-p", $projectName,
     "--env-file", $releaseConfig, "--profile", "human-reassessment",
     "--profile", "candidate-evaluation",
     "-f", (Join-Path $root "compose.yaml"),
     "-f", (Join-Path $root "compose.local-release.yaml")
 )
+if ($ScriptedDemo) {
+    $compose += @("-f", (Join-Path $root "compose.local-demo.yaml"))
+}
 $services = @(
     "web", "change-service", "alloy", "investigation-worker-live",
     "human-preparation-worker", "human-review-worker", "experience-worker",
@@ -31,8 +37,10 @@ try {
     $env:OPSSWARM_WEB_IMAGE = "ops-swarm-web:local-release"
     switch ($Action) {
         "Start" {
-            docker @compose build control-migrate web
-            if ($LASTEXITCODE -ne 0) { throw "无法构建本地发布镜像" }
+            if (-not $SkipBuild) {
+                docker @compose build control-migrate web
+                if ($LASTEXITCODE -ne 0) { throw "无法构建本地发布镜像" }
+            }
             docker @compose up -d --no-build --wait --wait-timeout 240 @services
             if ($LASTEXITCODE -ne 0) { throw "本地发布服务未就绪，请查看 Compose 日志" }
         }
