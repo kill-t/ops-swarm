@@ -95,19 +95,27 @@ def test_dynamic_evidence_requires_bounded_complete_minutes(role, seconds, valid
             TaskEvidenceSnapshot(**body)
 
 
-def test_migration_and_metadata_share_the_same_new_constraints():
-    path = (
-        Path(__file__).resolve().parents[3] / "alembic/versions/0097_live_dynamic_investigation.py"
-    )
-    spec = importlib.util.spec_from_file_location("live_dynamic_migration", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+def test_migrations_and_metadata_share_current_live_constraints():
+    versions = Path(__file__).resolve().parents[3] / "alembic/versions"
+    migrations = []
+    for revision in ("0097_live_dynamic_investigation", "0098_live_human_continuation"):
+        spec = importlib.util.spec_from_file_location(revision, versions / f"{revision}.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        migrations.append(module)
+    investigation, continuation = migrations
+    # 0098 已扩展现场终端状态，当前元数据不能再与单独的 0097 快照比较。
+    expected = {
+        **investigation._LIVE_CONSTRAINTS,
+        **{
+            name: continuation._policy_expression(name, live=True)
+            for name in continuation._PREVIOUS_POLICIES
+        },
+    }
     constraints = {
         item.name: str(item.sqltext)
         for item in InvestigationRunRow.__table__.constraints
         if hasattr(item, "sqltext")
     }
-    assert all(
-        constraints[name] == expression for name, expression in module._LIVE_CONSTRAINTS.items()
-    )
+    assert {name: constraints[name] for name in expected} == expected
     assert InvestigationRunRow.__table__.c.evidence_policy_version.type.length >= len(POLICY)

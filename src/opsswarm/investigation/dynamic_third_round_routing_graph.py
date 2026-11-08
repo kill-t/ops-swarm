@@ -17,6 +17,7 @@ from opsswarm.investigation.async_source import (
     ThreadedInvestigationDataSource,
 )
 from opsswarm.investigation.coordination.contracts import CoordinationPlanRecord, CoordinationPolicy
+from opsswarm.investigation.coordination.ports import FirstRoundPlanner
 from opsswarm.investigation.dynamic_contracts import (
     FirstRoundInvestigationResult,
     FirstRoundReviewResult,
@@ -33,7 +34,6 @@ from opsswarm.investigation.dynamic_contracts import (
     ThirdRoundRoutingResult,
     ThirdRoundSynthesisResult,
 )
-from opsswarm.investigation.dynamic_graph import FirstRoundPlanner
 from opsswarm.investigation.dynamic_live_source import DynamicLiveDataSource
 from opsswarm.investigation.errors import SpecialistKindMismatch, UnverifiedEvidenceReference
 from opsswarm.investigation.follow_up_planning.service import (

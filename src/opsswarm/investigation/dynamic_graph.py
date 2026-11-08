@@ -1,8 +1,7 @@
 """v3 动态调查图的首轮协调节点与 checkpoint 契约。"""
 
-from collections.abc import Awaitable
 from datetime import datetime
-from typing import NotRequired, Protocol, TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 from uuid import UUID
 
 from langchain_core.runnables import RunnableConfig
@@ -13,6 +12,7 @@ from opsswarm.investigation.coordination.contracts import (
     CoordinationPlanRecord,
     CoordinationPolicy,
 )
+from opsswarm.investigation.coordination.ports import FirstRoundPlanner as FirstRoundPlanner
 from opsswarm.investigation.graph_thread import build_graph_thread_id, normalize_graph_thread_id
 from opsswarm.investigation.models import InvestigationRequest
 from opsswarm.investigation.workflow_versions import (
@@ -20,19 +20,6 @@ from opsswarm.investigation.workflow_versions import (
     InvestigationGraphVersion,
     WorkflowVersion,
 )
-
-
-class FirstRoundPlanner(Protocol):
-    """动态图协调节点依赖的最小规划端口。"""
-
-    def create_first_plan(
-        self,
-        *,
-        policy: CoordinationPolicy,
-        observation_cutoff_at: datetime,
-        evidence_snapshot_id: str,
-    ) -> Awaitable[tuple[CoordinationPlanRecord, bool, bool]]:
-        """创建或复用首轮计划。"""
 
 
 class _DynamicGraphState(TypedDict):

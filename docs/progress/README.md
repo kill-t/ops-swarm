@@ -14,7 +14,8 @@
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
 | 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过。[人工续接、正常恢复与只读对账](local-compose-continuation.md)通过指定整栈场景。[现场失败回流](reflow-input-projection.md)通过 Compose 代表场景，进程内 API 夹具的回滚欠项单列 |
 | 整改首批 | [旧入口依赖与四阶段输入基线](reflow-remediation-baseline.md)已核对，协调实测，后三阶段为回放估算 |
-| 下一项完整行为 | [有界采样等待](local-recovery-sample-wait.md)与[发布来源遍历复用](local-release-source-traversal.md)通过定向回归，同钟 Linux 的实际 CAS/恢复用例通过。标准栈健康；授权[停服务对照](local-wsl-clock-source.md)未消除 WSL 倒退，服务已恢复。完整正常收敛阻塞于环境时钟前提，141 原欠项单列 |
+| 当前代码整改 | [当前图装配与历史入口分离](current-dynamic-factory-boundary.md)通过导入、兼容及装配定向验收；下一批核对历史工厂的运行入口、恢复支持与数据契约，再决定退役范围 |
+| 后续完整交付 | 正常恢复收敛仍待在稳定环境补验。[采样等待](local-recovery-sample-wait.md)与[来源遍历](local-release-source-traversal.md)已通过各自定向回归；[时钟问题](local-wsl-clock-source.md)及 141 原欠项单列。服务保持关闭，不阻塞无需整栈的代码整改 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。

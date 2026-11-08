@@ -8,6 +8,10 @@
 
 旧v1/v2及冻结v3 graph-v15保持原契约。新现场运行固定`dynamic-investigation-graph-v16`、`task-evidence-live-dynamic-mcp-v1`和UTC观测截止；共享`summary-context-v1`、原协调策略和预算规则。图拓扑不重写，按实例绑定来源与恢复版本；v15/v16 checkpoint不得互相恢复。运行模式、版本和截止创建后不可改变。
 
+## 运行装配与兼容入口
+
+当前 v15/v16 的来源选择与图装配由 [当前工厂](../../src/opsswarm/worker/dynamic_factory.py)组织，不经历史工厂集合加载旧版专用装配。共用[首轮规划端口](../../src/opsswarm/investigation/coordination/ports.py)放在协调模块，现行图依赖端口而非旧协调图实现。[历史工厂入口](../../src/opsswarm/worker/dynamic_graph.py)继续导出同一当前工厂，旧协调图入口继续导出同一规划端口；原 v1—v14 工厂和恢复测试保留。本次只调整依赖与定义归属，版本检查、来源绑定、共享预算、图拓扑及 checkpoint 契约均保持，不据此宣称整体内存下降。
+
 ## 精确现场窗口与专业权限
 
 系统将运行服务、观测截止及稳定快照身份注入任务，协调模型只选择角色、目标和有界回看长度。新现场策略要求所有回看秒数为正的完整分钟，日志/指标至多15分钟，变更至多6小时；在任务入库前校验，提示输入同时说明此限制。旧冻结策略的秒级窗口规则不改。

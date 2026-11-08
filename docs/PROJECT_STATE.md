@@ -33,7 +33,9 @@
 
 ## 下一项完整行为
 
-推进**可复现部署与发布**。恢复来源优化、执行状态快照、包入口整理、提前采样等待及发布来源遍历通过各自定向回归。标准栈已恢复，WSL 重置与授权停服务对照均未消除 UTC 倒退，临时服务操作已恢复原状。当前阻塞在所选环境的连续时钟前提；稳定后用新案例复验正常恢复收敛，再核查已有业务卷的隔离迁移及演示。见[校时来源核查](progress/local-wsl-clock-source.md)及[交付设计](architecture/local-multi-agent-release-scope.md)。
+当前优先推进**项目代码整改**。当前 v15/v16 工厂与规划端口已从旧实现中提取，导入隔离、兼容与装配定向验收通过，见[当前工厂整理](progress/current-dynamic-factory-boundary.md)。下一批先核对历史工厂的运行入口、恢复支持及数据契约，形成有依据的退役范围；保留 v1/v2、历史评测和仍受支持的恢复行为。
+
+完整发布仍按[交付设计](architecture/local-multi-agent-release-scope.md)补齐正常恢复收敛、迁移及演示。当前服务已停止；[时钟问题](progress/local-wsl-clock-source.md)作为独立环境欠项，不再阻塞无需该环境的代码整理。后续在稳定环境用新案例补验，原有未通过事实保持。
 
 部署时给执行 Worker 传入可信身份配置，并让恢复相关 Worker 在有效窗口内消费样本。失败回流的整栈证据见[投影验收](progress/reflow-input-projection.md)。
 
@@ -58,7 +60,7 @@
 | --- | --- |
 | 产品主线 | [Compose](../compose.yaml)装配控制 API、调查 Worker、MCP、人工准备和重评等进程。[动态 Worker 门禁](../src/opsswarm/worker/runner.py)和[现行图工厂](../src/opsswarm/worker/dynamic_factory.py)仅接 graph-v15 冻结与 graph-v16 现场；两者复用[三轮路由图](../src/opsswarm/investigation/dynamic_third_round_routing_graph.py)。现场执行、恢复和回流部分 Worker 目前仍按 [README](../README.md) 显式启动。 |
 | v1/v2 调查兼容 | 同一个 [Worker 装配](../src/opsswarm/worker/main.py)继续路由既有单 Agent 与固定多 Agent；[固定任务图工厂](../src/opsswarm/worker/task_graph.py)仍有固定和现场任务的 checkpoint 回归。 |
-| v3 graph-v1 至 graph-v14 | [旧工厂](../src/opsswarm/worker/dynamic_graph.py)每一版均有 `tests/integration/test_dynamic_*_graph.py` 直接引用，覆盖从协调、各轮专业任务到综合与审查的持久行为，其中部分复用现行图底层节点。旧图工厂没有接入默认动态 Worker；[版本与来源门禁](../src/opsswarm/investigation/workflow_versions.py)以及[迁移](../alembic/versions)继续承载旧记录和数据库契约，执行工厂退役需单独验证历史读取与剩余恢复回归。 |
+| v3 graph-v1 至 graph-v14 | [旧工厂](../src/opsswarm/worker/dynamic_graph.py)每一版均有 `tests/integration/test_dynamic_*_graph.py` 直接引用，覆盖从协调、各轮专业任务到综合与审查的持久行为。当前 v15/v16 的实现已移至[当前入口](../src/opsswarm/worker/dynamic_factory.py)，旧位置兼容导出。旧图工厂没有接入默认动态 Worker；[版本与来源门禁](../src/opsswarm/investigation/workflow_versions.py)以及[迁移](../alembic/versions)继续承载旧记录和数据库契约。退役先核对恢复支持范围，测试引用本身不是永久保留依据。 |
 | 冻结回流、审批与历史报告 | [回流协调至路由](../README.md)的显式入口同样是现场失败回流的生产路径，Python 重建与 [0087–0092 迁移](../alembic/versions)的 PostgreSQL 守卫共同绑定历史材料；后续候选、计划及审批有独立 API、迁移与测试。141 的验收欠项见上。 |
 | 发布脚本 | [MVP 验证](../scripts/verify-mvp.ps1)及[演示脚本](../scripts/demo-mvp-flow.ps1)仍是历史发布复现入口，由 [README](../README.md)引用。现场 Compose 验收的缓存脚本依赖隔离演练环境，详见[本地续接记录](progress/local-compose-continuation.md)。 |
 | 独立评测 | [版本化评测](../src/opsswarm/evaluation/main.py)、[真实模型单例](../src/opsswarm/evaluation/real_main.py)与[批量入口](../src/opsswarm/evaluation/real_batch_main.py)复用固定样本、版本化报告和评测持久化；[RCAEval RE2](../evaluations/rcaeval-re2)独立维护冻结协议、回放和配对实验入口。保留既有数据、脚本和报告。 |
