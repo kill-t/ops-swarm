@@ -10,7 +10,7 @@
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)
 - `handoff` 使用冻结 v15 完成两轮补查并续接至候选。隔离 PostgreSQL 验证 API 与 Worker 实例替换后的账本对账和实际续接。Compose 容器重启和完整发布场景仍待稳定环境复验。[冻结演示记录](progress/local-demo-frozen-handoff.md)
-- 正常恢复脚本从订单响应读取核验时间，隔离 PostgreSQL 验证到有效发布准备。35 秒容器探针仍捕获 UTC 倒退，正式回滚、收敛及槽位释放保持待验收。[核验时间记录](progress/local-demo-approval-time.md)
+- 正式恢复脚本已在隔离 Linux、进程内 API 和真实 PostgreSQL 验证到事故收敛与槽位释放，包含原执行租约到期后的只读接手。上次容器预检仍捕获 UTC 倒退，正式 Compose 待稳定环境复验。[恢复验收](progress/local-demo-recovery-proof.md) [核验时间与环境记录](progress/local-demo-approval-time.md)
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界
@@ -21,7 +21,7 @@
 | 人工续接与单步骤处置 | 可信补充、实际重评、候选、核验、审批、唯一 CAS、客观采样及收敛已有真实 PG 和进程内演练代表链。见[人工续接](progress/live-human-continuation.md) |
 | 一次失败回流 | 现场新窗口取证、综合、独立复查及持久人工接管已在隔离 Compose 代表场景通过；原预算、账本、槽位和唯一操作保持。见[输入投影与整栈验证](progress/reflow-input-projection.md) |
 | 协作台与部署 | 最小可信协作台通过组件/API 验收，隔离 Compose 通过新库部署、保留卷读取、浏览器补充准备及指定跨容器续接。见[协作台](progress/trusted-collaboration-workroom.md)、[启动](progress/local-compose-smoke.md)、[续接与中断](progress/local-compose-continuation.md)、[发布入口](progress/local-release-entry.md) |
-| 正常发布完整行为 | 曾完成回滚和正式采样，但标准入口的事故收敛与槽位释放仍未完整通过。来源读取、状态快照和提前采样等待有定向修复；见[来源遍历](progress/local-release-source-traversal.md)、[状态快照](progress/local-release-status-snapshot.md)、[采样等待](progress/local-recovery-sample-wait.md) |
+| 正常发布完整行为 | 正式脚本的单次 CAS、中断后只读接手、三次业务采样、事故收敛和槽位释放已通过隔离 PostgreSQL 集成验收。正式 Compose 的完整场景待补验。见[恢复验收](progress/local-demo-recovery-proof.md)、[来源遍历](progress/local-release-source-traversal.md)、[状态快照](progress/local-release-status-snapshot.md)、[采样等待](progress/local-recovery-sample-wait.md) |
 | 环境与其他欠项 | WSL 重置及授权停服务对照未消除 UTC 倒退，服务已恢复原状；见[校时核查](progress/local-wsl-clock-source.md)。141 单元与迁移通过、完整 API 未验收，不能把其提前拒绝全部归因于时钟；见[原记录](progress/141-reinvestigation-approval-decision.md) |
 
 以上组件或指定场景成功均不代表当前完整版本已发布，不将脚本模型结果写成真实模型推理效果。已有业务卷曾停在 `0029_follow_up_governance_idx`，不能用新隔离库验收代替已有业务数据迁移。
@@ -42,6 +42,6 @@
 
 正式复现统一使用[演示手册](local-demo.md)中的 `scripts/local-demo.ps1`，不依赖旧缓存案例。它使用独立卷与脚本模型，默认配置位于忽略目录 `.pytest_cache/local-demo`，身份有效八小时；过期使用新子目录准备并启动。稳定环境下顺序补验 handoff、recovery、reflow，不追加角色、平台或按 142 顺延功能。
 
-完整发布仍须在稳定环境补验正常恢复、事故收敛和槽位释放，并核查部署、保留卷、演示与发布材料。时钟作为独立环境欠项，不阻塞无需整栈的代码整改；下次恢复前核对凭据有效期、模型配置及 UTC 连续性。141 与本版之外的再次自动执行保持原边界，具体发布影响见[交付范围](architecture/local-multi-agent-release-scope.md)。
+完整发布仍须在稳定环境用 Compose 补验三个场景，并核查部署、保留卷、演示与发布材料。时钟作为独立环境欠项，下次恢复前核对凭据有效期、模型配置及 UTC 连续性。141 与本版之外的再次自动执行保持原边界，具体发布影响见[交付范围](architecture/local-multi-agent-release-scope.md)。
 
 继续时阅读 [AGENTS](../AGENTS.md)、本文、[进度索引](progress/README.md)和本批相关代码；旧架构按依赖定向补读。当前必需项全部通过并完成演示与发布后结束本版，其余进入后续版本。

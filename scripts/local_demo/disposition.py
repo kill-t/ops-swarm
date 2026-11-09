@@ -138,7 +138,7 @@ def execute_and_converge(
             control.sampling(False)
         decision = c.call(version_path + "/approval-request/decision")["record"]
         release_path = version_path + "/release-execution-request"
-        prepared = flow.post(
+        preparation = flow.post(
             release_path,
             dict(
                 **flow.version(),
@@ -146,7 +146,17 @@ def execute_and_converge(
                 approval_content_sha256=decision["content_sha256"],
             ),
             role="executor",
-        )["request"]["record"]
+        )["request"]
+        prepared = preparation["record"]
+        require(prepared is not None, "execution", "release_preparation_missing")
+        flow.emit(
+            "release_prepared",
+            request_id=prepared["id"],
+            availability=preparation["availability"],
+            created_at=prepared["created_at"],
+            expires_at=prepared["expires_at"],
+        )
+        require(preparation["availability"] == "current", "execution", "release_preparation_stale")
         job_path = release_path + "/execution-job"
         body = dict(
             expected_incident_version=prepared["incident_version"],
@@ -179,6 +189,8 @@ def execute_and_converge(
         flow.emit(
             "executed",
             job_id=execution["record"]["id"],
+            operation_id=execution["record"]["operation_id"],
+            attempts=[dict(id=item["id"], status=item["status"]) for item in execution["attempts"]],
             duplicate_reused=True,
             revision_before=before["revision"],
             revision_after=after["revision"],
@@ -239,6 +251,8 @@ def execute_and_converge(
     require(run["status"] == "settled", "convergence", "run_not_settled")
     flow.emit(
         "recovery",
+        attempt_id=recovery["result"]["attempt_id"],
+        convergence_sha256=convergence["content_sha256"],
         samples=statuses,
         outcome=expected,
         incident_status=incident["status"],

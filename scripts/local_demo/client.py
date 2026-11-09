@@ -1,5 +1,6 @@
 """固定本机演示端口的可信 API 访问与有界状态等待。"""
 
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -65,11 +66,20 @@ class DemoClient:
         status: int | None = None,
     ) -> Any:
         response = self._request(path, body, role=role, method=method, origin=origin)
-        if status is not None:
-            require(response.status_code == status, path, f"expected_http_{status}")
+        if response.status_code == status:
             return None
-        if not response.is_success:
-            raise DemoError(path, f"http_{response.status_code}")
+        if status is not None or not response.is_success:
+            code = f"http_{response.status_code}" if status is None else f"expected_http_{status}"
+            details = {}
+            if origin == ORIGIN:
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = None
+                api_code = body.get("error_code") if isinstance(body, dict) else None
+                if isinstance(api_code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,79}", api_code):
+                    details["api_error_code"] = api_code
+            raise DemoError(path, code, details=details)
         return response.json() if response.content else None
 
     def observe_order_failure(self) -> datetime:

@@ -433,6 +433,58 @@ def test_clock_block_stops_before_api_and_report_never_contains_credentials(demo
     )
 
 
+@pytest.mark.parametrize(
+    ("body", "details"),
+    [
+        (
+            {"error_code": "release_execution_source_stale", "message": "内部详情"},
+            {"api_error_code": "release_execution_source_stale"},
+        ),
+        ({"error_code": "token: secret"}, {}),
+    ],
+)
+def test_failed_request_keeps_only_the_api_machine_code(body, details):
+    client = DemoClient(
+        {"engineer": "fixture"},
+        transport=httpx2.MockTransport(lambda _: httpx2.Response(409, json=body)),
+    )
+    try:
+        with pytest.raises(DemoError, match="http_409") as caught:
+            client.call("/execution-job")
+        assert caught.value.details == details
+    finally:
+        client.close()
+
+
+def test_expired_release_preparation_is_recorded_without_creating_execution_job():
+    client = MagicMock()
+    client.call.side_effect = [
+        dict(version="2026.01.01-rc1", revision=2),
+        dict(record=dict(id="approval", content_sha256="a" * 64)),
+    ]
+    record = dict(
+        id="request",
+        created_at="2026-11-09T06:00:00Z",
+        expires_at="2026-11-09T06:00:30Z",
+    )
+    flow = SimpleNamespace(
+        client=client,
+        version=lambda: dict(expected_incident_version=1),
+        post=MagicMock(return_value=dict(request=dict(record=record, availability="expired"))),
+        emit=MagicMock(),
+    )
+    with pytest.raises(DemoError, match="release_preparation_stale"):
+        execute_and_converge(flow, "/conditions/1", MagicMock(), failure=False)
+    flow.emit.assert_called_once_with(
+        "release_prepared",
+        request_id=record["id"],
+        availability="expired",
+        created_at=record["created_at"],
+        expires_at=record["expires_at"],
+    )
+    assert flow.post.call_count == 1
+
+
 def test_failure_scenario_restores_sampling_when_preparation_result_is_unknown():
     control = MagicMock()
     client = MagicMock()

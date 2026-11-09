@@ -17,6 +17,8 @@ from opsswarm.control_plane.app import create_app
 from opsswarm.database import DatabaseSettings
 from opsswarm.execution.release.observer import FaultLabReleaseObserver
 from opsswarm.execution.release.store import CandidateReleaseRequestStore
+from opsswarm.execution.release_jobs.client import DISPATCH_PATH, ReleaseDispatchClient
+from opsswarm.execution.settings import ExecutionSettings
 from opsswarm.fault_lab.app import create_app as create_lab_app
 from opsswarm.fault_lab.controller import FaultController
 from opsswarm.fault_lab.release.store import LabReleaseStore
@@ -28,9 +30,9 @@ from opsswarm.investigation.candidate.tables import CandidateJobRow
 from opsswarm.investigation.handoff.persistence import TerminalHandoffStore
 from opsswarm.investigation.human_wait.store import HumanWaitStore
 from opsswarm.verification.candidate.store import CandidateRecoveryStore
-from scripts.local_demo.client import DemoClient
+from scripts.local_demo.client import DemoClient, DemoError
 from scripts.local_demo.config import ORDER, ROLES
-from scripts.local_demo.disposition import approve_and_verify
+from scripts.local_demo.disposition import approve_and_verify, execute_and_converge
 from scripts.local_demo.investigation import Investigation
 from tests.api import test_candidate_convergence_api as convergence
 from tests.api import test_candidate_plan_api as planning
@@ -255,7 +257,7 @@ async def test_live_human_input_reaches_objective_recovery(live_handoff_context)
     assert (await c.lab_store.get()).version == "stable"
 
 
-async def test_demo_approval_uses_order_response_time_and_prepares_exact_release(
+async def test_demo_recovery_keeps_single_cas_after_worker_interruption(
     live_handoff_context,
 ):
     c = live_handoff_context
@@ -287,6 +289,42 @@ async def test_demo_approval_uses_order_response_time_and_prepares_exact_release
         observer=FaultLabReleaseObserver(transport=transport, clock=c.clock),
         clock=c.clock,
     )
+    c.recovery = CandidateRecoveryStore(c.db, clock=c.clock)
+    c.app.state.candidate_recovery_store = c.recovery
+    sampler = recovery.recovery_worker(c, transport)
+    await settlement.bind(c)
+    await convergence.bind(c)
+    settings = ExecutionSettings(fault_lab_base_url="http://order-service")
+    restored_operations = []
+
+    class InterruptedAfterCAS(BaseException):
+        """模拟远端已生效、本地结果尚未落库的进程中断。"""
+
+    class InterruptedDispatchClient(ReleaseDispatchClient):
+        async def execute(self, command):
+            await super().execute(command)
+            raise InterruptedAfterCAS
+
+    async def execute_with_interruption(path, headers):
+        interrupted = InterruptedDispatchClient(settings, transport=transport, clock=c.clock)
+        with pytest.raises(InterruptedAfterCAS):
+            await execution.worker(c, interrupted, worker_id="demo-interrupted-worker").run_once()
+        response = await c.client.get(path, headers=headers)
+        assert response.status_code == 200, response.text
+        original = response.json()
+        assert original["result"] is None and original["record"]["phase"] == "dispatched"
+        operation = original["record"]["operation_id"]
+        assert (await lab_store.get()).revision == before.revision + 1
+        lease_expiry = datetime.fromisoformat(original["attempts"][0]["lease_expires_at"])
+        async with asyncio.timeout(65):
+            while (delay := (lease_expiry - c.clock()).total_seconds()) >= 0:
+                await asyncio.sleep(delay + 0.05)
+        remote = ReleaseDispatchClient(settings, transport=transport, clock=c.clock)
+        calls_before = len(transport.calls)
+        assert await execution.worker(c, remote, worker_id="demo-recovery-worker").run_once()
+        assert transport.calls[calls_before:] == [("GET", f"{DISPATCH_PATH}/{operation}")]
+        restored_operations.append(operation)
+
     loop = asyncio.get_running_loop()
     observations = []
     events = []
@@ -305,6 +343,14 @@ async def test_demo_approval_uses_order_response_time_and_prepares_exact_release
                     observations.append(date)
                     response.headers["Date"] = date
             else:
+                if request.method == "GET":
+                    if path.endswith("/execution-job"):
+                        await execute_with_interruption(path, request.headers)
+                    elif path.endswith("/execution-job/recovery-verification"):
+                        assert await sampler.run_once()
+                    elif path.endswith("/incident-convergence"):
+                        assert await c.settlement.settle_next()
+                        assert await c.convergence.converge_next()
                 response = await c.client.request(
                     request.method,
                     path,
@@ -316,7 +362,7 @@ async def test_demo_approval_uses_order_response_time_and_prepares_exact_release
             )
 
         def dispatch(request):
-            return asyncio.run_coroutine_threadsafe(forward(request), loop).result(timeout=60)
+            return asyncio.run_coroutine_threadsafe(forward(request), loop).result(timeout=120)
 
         client = DemoClient(
             {role: token(role) for role in ROLES}, transport=httpx2.MockTransport(dispatch)
@@ -330,21 +376,27 @@ async def test_demo_approval_uses_order_response_time_and_prepares_exact_release
             version = await asyncio.to_thread(
                 approve_and_verify, flow, f"{c.candidate_base}/{c.job_id}"
             )
-            decision = await asyncio.to_thread(client.call, version + "/approval-request/decision")
-            prepared = await asyncio.to_thread(
-                flow.post,
-                version + "/release-execution-request",
-                dict(
-                    expected_incident_version=decision["record"]["incident_version"],
-                    approval_decision_id=decision["record"]["id"],
-                    approval_content_sha256=decision["record"]["content_sha256"],
-                ),
-                role="executor",
+            c.clock.live = True
+            result = await asyncio.to_thread(
+                execute_and_converge,
+                flow,
+                version,
+                None,
+                failure=False,
+            )
+        except DemoError as error:
+            pytest.fail(
+                f"{error}, {error.details}, {dict(events).get('release_prepared')}, {c.clock()}"
             )
         finally:
             client.close()
 
     assert len(observations) == 1
     assert events[0][0] == "approved" and events[0][1]["engineer_approval_rejected"]
-    assert prepared["request"]["availability"] == "current"
-    assert (await lab_store.get()) == before
+    executed = dict(events)["executed"]
+    assert restored_operations == [executed["operation_id"]]
+    assert [attempt["status"] for attempt in executed["attempts"]] == ["lease_expired", "succeeded"]
+    assert dict(events)["recovery"]["samples"] == [200, 200, 200]
+    assert sum(method == "PUT" for method, _ in transport.calls) == 1
+    assert (await lab_store.get()).revision == before.revision + 1
+    assert result["slot_released"] is True and await convergence.active_slot(c) == 0

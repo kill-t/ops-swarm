@@ -51,6 +51,8 @@ uv sync --locked
 
 每次 `Check` / `Run` 输出独立的 `runs/<case-id>/report.json`，包含阶段、对象身份及关键断言，失败时保留业务事实，不盲目重发结果未知的写请求。
 
+处置报告可按发布准备、执行和恢复三个阶段核对。发布准备记录可用性与有效期，执行记录操作 ID 和尝试，恢复记录采用的采样尝试与收敛内容哈希。控制面拒绝请求时，可用 `api_error_code` 对照命令审计。
+
 | 状态 | 含义 |
 | --- | --- |
 | `passed` | 所选检查或场景的全部断言通过；`check` 成功只代表预检 |
@@ -64,4 +66,4 @@ uv sync --locked
 
 `Stop` 保留容器、配置、报告和数据卷，也可在凭据过期后使用。不删除历史卷，不关闭 Docker Desktop。异常退出时先看报告，再通过只读 API、协作台和限定项目的 Compose 日志核对；不要直接重发旧命令。失败可能保留故障，下一次新案例会检查并恢复本演示的基线。
 
-当前实际验收结果见[本批记录](progress/local-demo-reproduction.md)。脚本存在、组件测试通过或服务健康均不能替代三个完整场景的整栈验收。
+当前实际验收结果见[正式入口记录](progress/local-demo-reproduction.md)和[隔离恢复验收](progress/local-demo-recovery-proof.md)。正式 Compose 的三条完整场景单独验收。
