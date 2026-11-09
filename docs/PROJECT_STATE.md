@@ -10,6 +10,7 @@
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)
 - `handoff` 使用冻结 v15 完成两轮补查并续接至候选。隔离 PostgreSQL 验证 API 与 Worker 实例替换后的账本对账和实际续接。Compose 容器重启和完整发布场景仍待稳定环境复验。[冻结演示记录](progress/local-demo-frozen-handoff.md)
+- 正常恢复脚本从订单响应读取核验时间，隔离 PostgreSQL 验证到有效发布准备。35 秒容器探针仍捕获 UTC 倒退，正式回滚、收敛及槽位释放保持待验收。[核验时间记录](progress/local-demo-approval-time.md)
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界

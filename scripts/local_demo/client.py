@@ -2,11 +2,13 @@
 
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx2
 
-from scripts.local_demo.config import ORIGIN
+from scripts.local_demo.config import CHANGE, ORDER, ORIGIN
 
 
 class DemoError(RuntimeError):
@@ -27,18 +29,15 @@ class DemoClient:
     def close(self) -> None:
         self.http.close()
 
-    def call(
+    def _request(
         self,
         path: str,
-        body: dict | None = None,
+        body: dict | None,
         *,
-        role="engineer",
-        method=None,
-        origin=ORIGIN,
-        status: int | None = None,
-    ) -> Any:
-        from scripts.local_demo.config import CHANGE, ORDER
-
+        role: str | None,
+        method: str | None,
+        origin: str,
+    ) -> httpx2.Response:
         if (
             origin not in {ORIGIN, ORDER, CHANGE}
             or not path.startswith("/")
@@ -50,16 +49,40 @@ class DemoClient:
             {"Authorization": f"Bearer {self.tokens[role]}"} if origin == ORIGIN and role else {}
         )
         try:
-            response = self.http.request(verb, origin + path, json=body, headers=headers)
+            return self.http.request(verb, origin + path, json=body, headers=headers)
         except httpx2.HTTPError as error:
             # 写请求结果未知时交由报告和持久记录核对，不盲目重发。
             raise DemoError(path, "transport_result_unknown") from error
+
+    def call(
+        self,
+        path: str,
+        body: dict | None = None,
+        *,
+        role="engineer",
+        method=None,
+        origin=ORIGIN,
+        status: int | None = None,
+    ) -> Any:
+        response = self._request(path, body, role=role, method=method, origin=origin)
         if status is not None:
             require(response.status_code == status, path, f"expected_http_{status}")
             return None
         if not response.is_success:
             raise DemoError(path, f"http_{response.status_code}")
         return response.json() if response.content else None
+
+    def observe_order_failure(self) -> datetime:
+        response = self._request("/orders/local-demo", None, role=None, method="GET", origin=ORDER)
+        require(response.status_code == 500, "conditions", "expected_http_500")
+        try:
+            observed_at = parsedate_to_datetime(response.headers["date"])
+        except (KeyError, ValueError, TypeError, OverflowError) as error:
+            raise DemoError("conditions", "invalid_order_response_time") from error
+        require(
+            observed_at.utcoffset() == timedelta(0), "conditions", "invalid_order_response_time"
+        )
+        return observed_at.astimezone(UTC)
 
     def poll(self, stage: str, read: Callable[[], Any], ready: Callable[[Any], bool]) -> Any:
         deadline = time.monotonic() + self.timeout

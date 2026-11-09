@@ -1,7 +1,7 @@
 """可信审批、唯一处置、客观采样及一次失败回流的演示用例。"""
 
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 
 from scripts.local_demo.client import require
 from scripts.local_demo.config import CHANGE, ORDER
@@ -57,7 +57,15 @@ def approve_and_verify(flow: Investigation, path: str) -> str:
     )
     state = c.call("/__admin/simulated-release", origin=ORDER)
     require(state["version"] == "2026.01.01-rc1", "conditions", "lab_version_changed")
-    c.call("/orders/local-demo", origin=ORDER, status=500)
+    approved_at = datetime.fromisoformat(approved["created_at"])
+    observed_at = c.observe_order_failure()
+    # HTTP Date 精确到秒。重新观察可以跨过批准边界，保留实际响应时间。
+    for _ in range(2):
+        if observed_at >= approved_at:
+            break
+        time.sleep(1.1)
+        observed_at = c.observe_order_failure()
+    require(observed_at >= approved_at, "conditions", "observation_predates_approval")
     text = f"脚本工程师观察本地版本 {state['version']}，修订 {state['revision']}，订单 HTTP 500。"
     flow.post(
         conditions_path,
@@ -76,7 +84,7 @@ def approve_and_verify(flow: Investigation, path: str) -> str:
                         dict(
                             kind="human_observation",
                             text=text,
-                            observed_at=datetime.now(UTC).isoformat(),
+                            observed_at=observed_at.isoformat(),
                         )
                     ],
                 )
@@ -107,7 +115,13 @@ def approve_and_verify(flow: Investigation, path: str) -> str:
         ),
         role="approver",
     )
-    flow.emit("approved", engineer_approval_rejected=True, revision_before=state["revision"])
+    flow.emit(
+        "approved",
+        engineer_approval_rejected=True,
+        revision_before=state["revision"],
+        observation_time=observed_at.isoformat(),
+        verification_id=latest["id"],
+    )
     return version_path
 
 

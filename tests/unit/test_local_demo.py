@@ -35,7 +35,7 @@ from scripts.local_demo.config import (
     prepare,
     read_config,
 )
-from scripts.local_demo.disposition import execute_and_converge
+from scripts.local_demo.disposition import approve_and_verify, execute_and_converge
 from scripts.local_demo.environment import ComposeControl, preflight
 from scripts.local_demo.fixture import completion
 from scripts.local_demo.investigation import Investigation
@@ -365,6 +365,54 @@ def test_write_timeout_is_not_retried_and_redirects_are_not_followed():
     with pytest.raises(DemoError, match="http_302"):
         client.call("/redirect")
     client.close()
+
+
+@pytest.mark.parametrize("date", [None, "invalid-date", "Mon, 09 Nov 2026 06:00:00 GMT"])
+def test_order_failure_uses_valid_server_response_time(date):
+    def respond(request):
+        assert request.method == "GET" and request.url.path == "/orders/local-demo"
+        assert "authorization" not in request.headers
+        return httpx2.Response(500, headers={"Date": date} if date else {})
+
+    client = DemoClient({}, transport=httpx2.MockTransport(respond))
+    try:
+        if date is None or date == "invalid-date":
+            with pytest.raises(DemoError, match="invalid_order_response_time"):
+                client.observe_order_failure()
+        else:
+            assert client.observe_order_failure() == datetime(2026, 11, 9, 6, tzinfo=UTC)
+    finally:
+        client.close()
+
+
+def test_conditions_stop_when_order_response_stays_older_than_approval(monkeypatch):
+    client = MagicMock()
+    client.call.side_effect = [
+        {"wait_version": 2, "result": {"content_sha256": "candidate-hash"}},
+        {"record": {"content_sha256": "plan-hash"}},
+        {"record": {"id": "request", "plan_content_sha256": "plan-hash"}},
+        {
+            "record": {
+                "id": "approval",
+                "outcome": "approved",
+                "content_sha256": "approval-hash",
+                "created_at": "2026-11-09T06:00:00.100000+00:00",
+            }
+        },
+        {"catalog": [{"text": "确认当前演练版本与发布依据一致"}]},
+        {"version": "2026.01.01-rc1", "revision": 2},
+    ]
+    client.observe_order_failure.return_value = datetime(2026, 11, 9, 6, tzinfo=UTC)
+    flow = SimpleNamespace(
+        client=client,
+        post=MagicMock(),
+        version=lambda: {"expected_incident_version": 2},
+    )
+    monkeypatch.setattr("scripts.local_demo.disposition.time.sleep", lambda _: None)
+    with pytest.raises(DemoError, match="observation_predates_approval"):
+        approve_and_verify(flow, "/candidate")
+    assert client.observe_order_failure.call_count == 3
+    assert all("/execution-conditions" not in call.args[0] for call in flow.post.call_args_list)
 
 
 def test_clock_block_stops_before_api_and_report_never_contains_credentials(demo_dir):
