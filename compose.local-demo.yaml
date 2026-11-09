@@ -37,6 +37,15 @@ services:
         condition: service_healthy
   investigation-worker-live:
     environment: *script-model
+  investigation-worker-frozen:
+    environment:
+      <<: *script-model
+      OPSSWARM_WORKER_ENABLE_DYNAMIC_WORKFLOW: "true"
+      OPSSWARM_WORKER_LEASE_DURATION_SECONDS: "360"
+      OPSSWARM_WORKER_PROCESSING_TIMEOUT_SECONDS: "300"
+    depends_on:
+      release-prepare:
+        condition: service_completed_successfully
   human-review-worker:
     environment: *script-model
   candidate-evaluation-worker:

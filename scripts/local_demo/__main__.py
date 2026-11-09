@@ -48,12 +48,17 @@ def execute(path: Path, *, scenario: str | None, client=None, control=None) -> t
     ready = False
     try:
         report.emit("preflight", **preflight(c, control))
+        if scenario == "handoff":
+            control.require_frozen_worker()
         ready = True
         if scenario is not None:
             flow = Investigation(c, report.case_id, report.emit)
-            flow.start()
-            if scenario != "handoff":
-                candidate = flow.continue_human()
+            frozen = scenario == "handoff"
+            snapshot = flow.start(frozen=frozen)
+            if frozen:
+                flow.recover_handoff(control, snapshot)
+            candidate = flow.continue_human(frozen=frozen)
+            if not frozen:
                 version = approve_and_verify(flow, candidate)
                 convergence = execute_and_converge(
                     flow, version, control, failure=scenario == "reflow"

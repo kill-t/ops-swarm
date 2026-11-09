@@ -29,6 +29,9 @@ $services = @(
     "reflow-dispatch-worker", "reflow-execution-worker", "reflow-synthesis-worker",
     "reflow-review-worker", "reflow-routing-worker"
 )
+if ($ScriptedDemo) {
+    $services += "investigation-worker-frozen"
+}
 
 $oldRuntimeImage = $env:OPSSWARM_RUNTIME_IMAGE
 $oldWebImage = $env:OPSSWARM_WEB_IMAGE

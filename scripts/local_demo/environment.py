@@ -70,6 +70,13 @@ class ComposeControl:
         else:
             self._run("stop", "-t", "15", "recovery-sampling-worker")
 
+    def require_frozen_worker(self) -> None:
+        running = self._run("ps", "--status", "running", "--services").split()
+        require("investigation-worker-frozen" in running, "preflight", "frozen_worker_not_running")
+
+    def restart_handoff_services(self) -> None:
+        self._run("restart", "--no-deps", "-t", "15", "control-api", "investigation-worker-frozen")
+
     def clock(self) -> dict:
         running = set(self._run("ps", "--status", "running", "--services").split())
         require(

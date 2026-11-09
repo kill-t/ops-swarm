@@ -2,7 +2,8 @@
 
 import json
 
-from scripts.local_demo.config import MODEL
+from opsswarm.investigation.context.prompts import HYPOTHESIS_REVIEW_PROMPT, OPEN_HYPOTHESIS_PROMPT
+from scripts.local_demo.config import FROZEN_HANDOFF_TITLE, MODEL
 
 
 def _review(ids, *, human=False) -> dict:
@@ -23,8 +24,12 @@ def completion(payload: dict) -> dict:
         raise ValueError("脚本端点只接受演示模型")
     messages = payload["messages"]
     data = json.loads(messages[1]["content"])
+    if not isinstance(data, dict):
+        raise ValueError("模型材料必须为对象")
     tools = [tool["function"]["name"] for tool in payload["tools"]]
     name = tools[0]
+    incident = data.get("incident")
+    frozen_handoff = isinstance(incident, dict) and incident.get("title") == FROZEN_HANDOFF_TITLE
     if "new_evidence" in data:
         items = data["new_evidence"]["evidence"]
         answer = dict(
@@ -80,14 +85,26 @@ def completion(payload: dict) -> dict:
             ][:1]
         )
     elif "policy" in data and "round_number" in data:
+        roles = ("log", "metric") if frozen_handoff else ("log", "metric", "change")
         answer = dict(
             round_number=1,
             goal="按专业读取现场材料",
             tasks=[
                 dict(task_key=role, role=role, goal=f"核对 {role} 专业材料", lookback_seconds=600)
-                for role in ("log", "metric", "change")
+                for role in roles
             ],
         )
+    elif "open_hypothesis" in data:
+        answer = _review([], human=True)
+        if frozen_handoff and messages[0]["content"] == HYPOTHESIS_REVIEW_PROMPT:
+            answer.update(
+                rationale="日志与指标说明故障存在，仍需核对发布记录",
+                evidence_gaps=["缺少结构化发布变更"],
+                suggested_direction="follow_up",
+                follow_up_suggestions=[
+                    dict(role="change", question="故障前有哪些发布变更？", rationale="核对发布依据")
+                ],
+            )
     elif "working_summaries" not in data:
         catalog = data["evidence_catalog"]
         if len(messages) == 2 and catalog["entries"]:
@@ -107,19 +124,25 @@ def completion(payload: dict) -> dict:
                 evidence_ids=[item["evidence_id"]] if item else [],
                 confidence=0.7,
             )
-    elif "open_hypothesis" not in data:
-        changes = [item for item in data["evidence"] if item["kind"] == "change"]
-        if not changes:
-            raise ValueError("缺少实际变更材料，不能制造演示依据")
+    else:
+        first_frozen = frozen_handoff and messages[0]["content"] == OPEN_HYPOTHESIS_PROMPT
+        evidence = data["evidence"]
+        support = (
+            evidence if first_frozen else [item for item in evidence if item["kind"] == "change"]
+        )
+        if not support:
+            raise ValueError("缺少实际材料，不能制造演示依据")
         answer = dict(
-            statement="现场变更与业务失败需要工程师核对",
+            statement=(
+                "固定日志与指标记录了业务失败，仍需补充发布依据"
+                if first_frozen
+                else "发布记录与业务失败的关系需要工程师核对"
+            ),
             confidence=0.7,
-            supporting_evidence_ids=[changes[0]["evidence_id"]],
+            supporting_evidence_ids=[support[0]["evidence_id"]],
             counter_evidence_ids=[],
             unresolved_questions=["等待人工核对当前演练发布"],
         )
-    else:
-        answer = _review([], human=True)
     if name not in tools:
         raise ValueError("响应工具不在本次授权集合内")
     return dict(

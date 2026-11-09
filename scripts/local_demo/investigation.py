@@ -3,8 +3,11 @@
 import time
 from uuid import UUID, uuid5
 
-from scripts.local_demo.client import DemoClient, require
-from scripts.local_demo.config import CHANGE, ORDER, model_budget
+from opsswarm.investigation.context.hashing import content_hash
+from opsswarm.investigation.human_routing.contracts import HumanRoutingRecord
+from opsswarm.investigation.scenarios import RELEASE_500_SCENARIO
+from scripts.local_demo.client import DemoClient, DemoError, require
+from scripts.local_demo.config import CHANGE, FROZEN_HANDOFF_TITLE, ORDER, model_budget
 
 REASON = "本地脚本模型工程链演示"
 
@@ -30,9 +33,6 @@ class Investigation:
     def version(self):
         return {"expected_incident_version": self.client.call(self.incident)["version"]}
 
-    def nav(self):
-        return self.client.call(self.incident + "/collaboration-navigation")
-
     def wait_job(self, stage, path):
         value = self.client.poll(
             stage,
@@ -42,7 +42,7 @@ class Investigation:
         require(value["status"] == "succeeded", stage, "worker_did_not_succeed")
         return value
 
-    def start(self) -> dict:
+    def _inject_live_fault(self) -> str:
         c = self.client
         pool = c.call("/__admin/configuration/database-pool", origin=ORDER)
         if pool["value"] != 50:
@@ -91,6 +91,16 @@ class Investigation:
         )
         # 截止按秒固定，等待变更落在截止以前，不修改服务时间或事件发生时间。
         time.sleep(1.1)
+        return changed["record"]["occurred_at"]
+
+    def start(self, *, frozen: bool = False) -> dict:
+        c = self.client
+        source_mode = "frozen" if frozen else "live"
+        occurred_at = (
+            RELEASE_500_SCENARIO.request.started_at.isoformat()
+            if frozen
+            else self._inject_live_fault()
+        )
         incident = c.call(
             "/api/v1/alerts",
             dict(
@@ -99,9 +109,9 @@ class Investigation:
                 fingerprint=self.case_id,
                 service_name="order-service",
                 severity="p1",
-                title="本地多 Agent 工程链演示",
-                occurred_at=changed["record"]["occurred_at"],
-                payload={"scripted_model": True},
+                title=FROZEN_HANDOFF_TITLE if frozen else "本地多 Agent 工程链演示",
+                occurred_at=occurred_at,
+                payload={"scripted_model": True, "data_source_mode": source_mode},
             ),
             role="alert_source",
         )["incident"]["id"]
@@ -114,7 +124,7 @@ class Investigation:
                 expected_version=1,
                 reason=REASON,
                 mode="multi_agent",
-                data_source_mode="live",
+                data_source_mode=source_mode,
                 workflow_version="v3",
                 model_budget=model_budget(),
                 call_budget=dict(
@@ -126,25 +136,31 @@ class Investigation:
             ),
         )["investigation"]["id"]
         self.base = f"/api/v1/investigations/{run}"
-        self.emit("investigation_started", run_id=run)
+        self.emit("investigation_started", run_id=run, data_source_mode=source_mode)
         state = c.poll(
             "investigation",
             lambda: c.call(self.base),
             lambda value: value["status"] not in {"queued", "running"},
         )
-        require(state["status"] == "await_human", "investigation", "did_not_handoff")
-        wait = c.call(self.base + "/human-wait")
-        require(wait["status"] == "waiting", "investigation", "handoff_not_waiting")
-        rounds = c.call(self.base + "/collaboration")["rounds"]
+        snapshot = self._waiting_snapshot(state["status"])
+        wait, rounds, budget = snapshot["wait"], snapshot["rounds"], snapshot["budget"]
         completed = [item for item in rounds if item["status"] == "completed"]
-        roles = {
-            task["assignment"]["role"]
+        round_roles = {
+            item["round_number"]: {
+                task["assignment"]["role"]
+                for task in item["tasks"]
+                if task["status"] == "succeeded"
+            }
             for item in completed
-            for task in item["tasks"]
-            if task["status"] == "succeeded"
         }
+        roles = set().union(*round_roles.values())
         require({"log", "metric", "change"} <= roles, "investigation", "professional_tasks_missing")
-        budget = c.call(self.base + "/call-budget")
+        if frozen:
+            require(
+                round_roles == {1: {"log", "metric"}, 2: {"change"}} and len(rounds) == 2,
+                "investigation",
+                "missing_dynamic_follow_up",
+            )
         self.emit(
             "handoff",
             run_id=run,
@@ -156,9 +172,45 @@ class Investigation:
             model_calls=budget["reserved_model_calls"],
             deadline=budget["deadline"],
         )
-        return budget
+        return snapshot
 
-    def continue_human(self) -> str:
+    def _waiting_snapshot(self, status: str) -> dict:
+        require(status == "await_human", "investigation", "did_not_handoff")
+        wait = self.client.call(self.base + "/human-wait")
+        require(wait["status"] == "waiting", "investigation", "handoff_not_waiting")
+        return dict(
+            wait=wait,
+            rounds=self.client.call(self.base + "/collaboration")["rounds"],
+            budget=self.client.call(self.base + "/call-budget"),
+        )
+
+    def recover_handoff(self, control, before: dict) -> None:
+        control.restart_handoff_services()
+
+        def read_identity():
+            try:
+                return self.client.call("/api/v1/operators/me")
+            except DemoError as error:
+                # 重启后只允许只读请求等待代理和 API 恢复。
+                if error.code in {"transport_result_unknown", "http_502", "http_503", "http_504"}:
+                    return None
+                raise
+
+        identity = self.client.poll(
+            "handoff_restart", read_identity, lambda value: value is not None
+        )
+        require(identity["role"] == "engineer", "handoff_restart", "role_mismatch")
+        after = self._waiting_snapshot(self.client.call(self.base)["status"])
+        require(after == before, "handoff_restart", "persisted_handoff_changed")
+        self.emit(
+            "handoff_recovered",
+            handoff_id=after["wait"]["handoff_id"],
+            wait_version=after["wait"]["state_version"],
+            deadline=after["budget"]["deadline"],
+            budget_unchanged=True,
+        )
+
+    def continue_human(self, *, frozen: bool = False) -> str:
         c = self.client
         wait_path = self.base + "/human-wait"
 
@@ -170,16 +222,17 @@ class Investigation:
             )
 
         before = c.call(wait_path)
+        statement = (
+            "脚本演示工程师已复核冻结发布样本及其中记录的订单失败。"
+            if frozen
+            else "脚本演示工程师已核对本地发布状态与订单 HTTP 失败。"
+        )
         saved = self.post(
             wait_path + "/supplements",
             dict(
                 action="supplement",
                 **basis(before),
-                items=[
-                    dict(
-                        kind="statement", text="脚本演示工程师已核对本地发布状态与订单 HTTP 失败。"
-                    )
-                ],
+                items=[dict(kind="statement", text=statement)],
             ),
         )
         wait = c.call(wait_path)
@@ -216,19 +269,14 @@ class Investigation:
             lambda: c.call(review_path + "/route"),
             lambda value: value["record"] is not None,
         )
-        route = routed["record"]
+        route = HumanRoutingRecord.model_validate(routed["record"])
         require(
             routed["availability"] == "current"
-            and route["decision"]["route"] == "candidate_evaluation"
-            and route["wait_version"] == wait["state_version"],
+            and route.decision.route == "candidate_evaluation"
+            and route.wait_version == wait["state_version"]
+            and str(route.job_id) == review_id,
             "human_route",
             "unsupported_direction",
-        )
-        nav = self.nav()
-        require(
-            nav["review_job_id"] == review_id and bool(nav["review_route_sha256"]),
-            "human_route",
-            "review_basis_changed",
         )
         candidates = self.base + "/candidate-evaluations"
         evaluation = self.post(
@@ -236,9 +284,9 @@ class Investigation:
             dict(
                 action="evaluate_candidate",
                 source_kind="human_route",
-                source_id=route["id"],
-                source_sha256=nav["review_route_sha256"],
-                expected_wait_version=route["wait_version"],
+                source_id=str(route.id),
+                source_sha256=content_hash(route),
+                expected_wait_version=route.wait_version,
             ),
         )
         candidate_id = evaluation["job"]["id"]
@@ -257,7 +305,7 @@ class Investigation:
             wait_version=wait["state_version"],
             preparation_id=preparation["job"]["id"],
             review_job_id=review_id,
-            review_route_id=route["id"],
+            review_route_id=str(route.id),
             candidate_id=candidate_id,
         )
         return candidate_path

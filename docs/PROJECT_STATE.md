@@ -5,10 +5,11 @@
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- 用户已允许按需启动服务。`opsswarm-local-demo` 完成启动验证后因 UTC 倒退停止，配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 保持原停止记录。本批使用前端测试，不自动重启 WSL/Docker 或调整共享系统。
+- 用户已允许按需启动服务。`opsswarm-local-demo` 完成启动验证后因 UTC 倒退停止，配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 保持原停止记录。本批启动 Docker Desktop 运行隔离 PostgreSQL 测试，环境验收仍沿用已有时钟预检。
 - 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口、正式演示入口及[控制面错误转换整理](progress/control-plane-error-boundary.md)。装配历史见[整理记录](progress/legacy-assembly-and-project-entry-cleanup.md)。正式入口的配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)
+- `handoff` 使用冻结 v15 完成两轮补查并续接至候选。隔离 PostgreSQL 验证 API 与 Worker 实例替换后的账本对账和实际续接。Compose 容器重启和完整发布场景仍待稳定环境复验。[冻结演示记录](progress/local-demo-frozen-handoff.md)
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界

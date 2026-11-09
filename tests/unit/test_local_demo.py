@@ -18,10 +18,7 @@ from opsswarm.control_plane.app import create_app
 from opsswarm.control_plane.schemas import AlertRequest, StartInvestigationRequest
 from opsswarm.identity.settings import OperatorAuthSettings
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
-from opsswarm.investigation.candidate.contracts import EvaluateCandidateCommand
 from opsswarm.investigation.coordination.contracts import CoordinationProposal
-from opsswarm.investigation.human_prepare.contracts import PrepareCommand
-from opsswarm.investigation.human_review.contracts import ReassessCommand
 from opsswarm.investigation.human_wait.contracts import SupplementWaitCommand
 from opsswarm.investigation.models import SpecialistReport
 from opsswarm.investigation.review.contracts import HypothesisReviewProposal
@@ -177,117 +174,65 @@ def test_start_sends_current_api_contract_and_reads_persisted_handoff(monkeypatc
     assert emit.call_args.kwargs["completed_rounds"] == [1]
 
 
-@pytest.mark.parametrize("persisted", [True, False], ids=["read-back", "missing-event"])
-def test_human_continuation_uses_persisted_wait_and_submitted_job_ids(persisted):
-    case, incident, run, handoff, event_id, prep, review, route, candidate = (
-        str(UUID(int=i)) for i in range(1, 10)
+def test_human_continuation_stops_if_supplement_is_missing_from_wait():
+    handoff = str(UUID(int=2))
+    wait = {
+        "handoff_id": handoff,
+        "source_sha256": "a" * 64,
+        "state_version": 1,
+        "status": "waiting",
+        "events": [],
+    }
+    client = MagicMock()
+    client.call.side_effect = [wait, {"applied": True, "event": {"id": str(UUID(int=3))}}, wait]
+    emit = MagicMock()
+    flow = Investigation(client, str(UUID(int=1)), emit)
+    flow.base = "/run"
+    with pytest.raises(DemoError, match="supplement_not_persisted"):
+        flow.continue_human()
+    assert [call.args[0] for call in client.call.call_args_list] == [
+        "/run/human-wait",
+        "/run/human-wait/supplements",
+        "/run/human-wait",
+    ]
+    command = SupplementWaitCommand.model_validate(client.call.call_args_list[1].args[1])
+    assert command.expected_wait_version == 1 and str(command.handoff_id) == handoff
+    emit.assert_not_called()
+
+
+def test_restart_waits_for_readiness_and_rejects_changed_budget(monkeypatch):
+    before = {"wait": {"status": "waiting"}, "rounds": [], "budget": {"calls": ["original"]}}
+    responses = iter(
+        [
+            httpx2.Response(502),
+            httpx2.Response(200, json={"role": "engineer"}),
+            httpx2.Response(200, json={"status": "await_human"}),
+            httpx2.Response(200, json=before["wait"]),
+            httpx2.Response(200, json={"rounds": before["rounds"]}),
+            httpx2.Response(200, json={"calls": []}),
+        ]
     )
-    base = f"/api/v1/investigations/{run}"
-    wait = base + "/human-wait"
-    preparations = wait + "/preparations"
-    reassessments = f"{preparations}/{prep}/reassessments"
-    evaluations = base + "/candidate-evaluations"
-    nav = f"/api/v1/incidents/{incident}/collaboration-navigation"
-    event = {"id": event_id, "state_version": 2, "action": "supplement"}
-    writes = []
+    reads = []
 
     def respond(request):
-        path = request.url.path
-        if request.method == "POST":
-            writes.append(path)
-            if path == wait + "/supplements":
-                command = SupplementWaitCommand.model_validate_json(request.content)
-                assert command.expected_wait_version == 1 and str(command.handoff_id) == handoff
-                return httpx2.Response(201, json={"applied": True, "event": event})
-            if path == preparations:
-                command = PrepareCommand.model_validate_json(request.content)
-                assert command.expected_wait_version == 2 and command.source_sha256 == "a" * 64
-                return httpx2.Response(201, json={"job": {"id": prep}})
-            if path == reassessments:
-                command = ReassessCommand.model_validate_json(request.content)
-                assert command.expected_wait_version == 2 and command.preparation_sha256 == "b" * 64
-                return httpx2.Response(201, json={"job": {"id": review}})
-            if path == evaluations:
-                command = EvaluateCandidateCommand.model_validate_json(request.content)
-                assert command.expected_wait_version == 2 and str(command.source_id) == route
-                assert command.source_sha256 == "c" * 64
-                return httpx2.Response(201, json={"job": {"id": candidate}})
-        if path == wait:
-            saved = bool(writes) and persisted
-            return httpx2.Response(
-                200,
-                json={
-                    "handoff_id": handoff,
-                    "source_sha256": "a" * 64,
-                    "state_version": 2 if saved else 1,
-                    "status": "waiting",
-                    "events": [event] if saved else [],
-                },
-            )
-        if path == f"{preparations}/{prep}":
-            return httpx2.Response(
-                200,
-                json={
-                    "status": "succeeded",
-                    "availability": "ready",
-                    "wait_version": 2,
-                    "artifact_sha256": "b" * 64,
-                },
-            )
-        if path == f"{reassessments}/{review}":
-            return httpx2.Response(200, json={"status": "succeeded"})
-        if path == f"{reassessments}/{review}/route":
-            return httpx2.Response(
-                200,
-                json={
-                    "availability": "current",
-                    "record": {
-                        "id": route,
-                        "wait_version": 2,
-                        "decision": {"route": "candidate_evaluation"},
-                    },
-                },
-            )
-        if path == nav:
-            return httpx2.Response(
-                200, json={"review_job_id": review, "review_route_sha256": "c" * 64}
-            )
-        if path == f"{evaluations}/{candidate}":
-            return httpx2.Response(
-                200,
-                json={
-                    "status": "succeeded",
-                    "availability": "current",
-                    "wait_version": 2,
-                    "result": {"content": {"disposition": "planning_review"}},
-                },
-            )
-        raise AssertionError(f"意外请求 {request.method} {path}")
+        assert request.method == "GET"
+        reads.append(request.url.path)
+        return next(responses)
 
-    client = DemoClient(dict.fromkeys(ROLES, "test-only"), transport=httpx2.MockTransport(respond))
+    monkeypatch.setattr("scripts.local_demo.client.time.sleep", lambda _: None)
+    control = MagicMock()
+    client = DemoClient(dict(engineer="test-only"), transport=httpx2.MockTransport(respond))
     emit = MagicMock()
-    flow = Investigation(client, case, emit)
-    flow.base, flow.incident = base, f"/api/v1/incidents/{incident}"
+    flow = Investigation(client, str(UUID(int=1)), emit)
+    flow.base = "/run"
     try:
-        if not persisted:
-            with pytest.raises(DemoError, match="supplement_not_persisted"):
-                flow.continue_human()
-            assert writes == [wait + "/supplements"]
-            emit.assert_not_called()
-            return
-        assert flow.continue_human() == f"{evaluations}/{candidate}"
+        with pytest.raises(DemoError, match="persisted_handoff_changed"):
+            flow.recover_handoff(control, before)
     finally:
         client.close()
-    assert writes == [wait + "/supplements", preparations, reassessments, evaluations]
-    emit.assert_called_once_with(
-        "human_continued",
-        supplement_id=event_id,
-        wait_version=2,
-        preparation_id=prep,
-        review_job_id=review,
-        review_route_id=route,
-        candidate_id=candidate,
-    )
+    assert reads[:2] == ["/api/v1/operators/me"] * 2
+    control.restart_handoff_services.assert_called_once_with()
+    emit.assert_not_called()
 
 
 def test_prepare_refuses_expired_or_partial_configuration(demo_dir):
@@ -458,11 +403,24 @@ def test_failure_scenario_restores_sampling_when_preparation_result_is_unknown()
     assert flow.post.call_count == 1
 
 
-def test_compose_commands_are_bound_to_project_and_env_path(demo_dir):
-    args = ComposeControl(demo_dir).command("stop", "recovery-sampling-worker")
+def test_compose_commands_are_bound_to_project_and_env_path(demo_dir, monkeypatch):
+    control = ComposeControl(demo_dir)
+    run = MagicMock()
+    monkeypatch.setattr(control, "_run", run)
+    control.restart_handoff_services()
+    restart = run.call_args.args
+    assert restart == (
+        "restart",
+        "--no-deps",
+        "-t",
+        "15",
+        "control-api",
+        "investigation-worker-frozen",
+    )
+    args = control.command(*restart)
     assert args[args.index("-p") + 1] == PROJECT
     assert args[args.index("--env-file") + 1] == str(demo_dir / "demo.env")
-    assert args[-2:] == ["stop", "recovery-sampling-worker"]
+    assert args[-2:] == ["control-api", "investigation-worker-frozen"]
 
 
 def test_unknown_stop_result_still_attempts_sampling_restore():
