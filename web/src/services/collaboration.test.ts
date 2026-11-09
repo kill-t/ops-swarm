@@ -53,6 +53,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("已保存补充后提供当前版本的准备操作，并区分准备排队与材料就绪", async () => {
+  const signal = new AbortController().signal;
+  const waiting = { ...navigation, preparation_id: null, review_job_id: null };
+  serve({ ...routes, [nav]: waiting });
+  const supplemented = await loadCollaboration("incident", 7, signal);
+  expect(supplemented?.pending).toBe(false);
+  expect(supplemented?.commands).toContainEqual(expect.objectContaining({
+    label: "准备重评材料", path: wait + "/preparations",
+    body: { handoff_id: "handoff", source_sha256: "route-source", expected_wait_version: 2,
+      action: "prepare" },
+  }));
+
+  const preparing = { ...waiting, preparation_id: "prepare" };
+  serve({ ...routes, [nav]: preparing, [prep]: { status: "queued", availability: "pending" } });
+  const queued = await loadCollaboration("incident", 7, signal);
+  expect(queued?.pending).toBe(true);
+  expect(queued?.commands.map(({ label }) => label)).not.toContain("提交独立重评");
+
+  serve({ ...routes, [nav]: preparing });
+  const ready = await loadCollaboration("incident", 7, signal);
+  expect(ready?.pending).toBe(false);
+  expect(ready?.commands).toContainEqual(expect.objectContaining({
+    label: "提交独立重评", path: prep + "/reassessments",
+    body: { handoff_id: "handoff", source_sha256: "route-source", expected_wait_version: 2,
+      action: "reassess", preparation_sha256: "prepared" },
+  }));
+});
+
 it("刷新时从持久导航恢复人工重评与精确候选依据", async () => {
   serve({ ...routes, [nav]: navigation });
   const panel = await loadCollaboration("incident", 7, new AbortController().signal);
@@ -92,16 +120,38 @@ it("核验审批与派发分别绑定当前版本的不同权威依据", async (
     body: { action: "approve", expected_incident_version: 7, acknowledge_verification: true,
       request_id: "verification-request", request_content_sha256: "verification-request-hash" },
   }));
-  serve({
+  const approved = {
     ...responses,
     [approval + "/decision"]: { record: { ...record("final-approval"), outcome: "approved" } },
     [release]: { availability: "current", record: record("dispatch-request") },
-    [release + "/execution-job"]: { record: null, result: null },
-  });
+  };
+  const execution = release + "/execution-job";
+  serve({ ...approved, [execution]: { record: null, result: null } });
   const dispatch = await loadCollaboration("incident", 7, new AbortController().signal);
   expect(dispatch?.commands).toContainEqual(expect.objectContaining({
     label: "派发演练回滚", permission: "execute_action", path: release + "/execution-job", input: "confirm",
     body: { request_id: "dispatch-request", request_content_sha256: "dispatch-request-hash",
       expected_incident_version: 7 },
   }));
+
+  const signal = new AbortController().signal;
+  const sampled = {
+    ...approved,
+    [execution]: { record: { status: "completed" }, result: { outcome: "applied_current" } },
+    [execution + "/recovery-verification"]: { result: { outcome: "recovered" }, samples: [] },
+  };
+  serve(sampled);
+  const awaitingSettlement = await loadCollaboration("incident", 7, signal);
+  expect(awaitingSettlement?.pending).toBe(true);
+
+  const convergence = run + "/incident-convergence";
+  const settled = { ...sampled, [nav]: { ...navigation, status: "settled", candidate_id: "candidate" } };
+  serve({ ...settled, [convergence]: { record: null } });
+  const awaitingConvergence = await loadCollaboration("incident", 7, signal);
+  expect(awaitingConvergence?.pending).toBe(true);
+
+  serve({ ...settled, [convergence]: { record: { outcome: "recovered" } } });
+  const recovered = await loadCollaboration("incident", 8, signal);
+  expect(recovered?.pending).toBe(false);
+  expect(recovered?.facts).toContainEqual({ title: "事故收敛", value: "recovered" });
 });

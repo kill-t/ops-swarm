@@ -11,6 +11,9 @@ export interface ConditionAnswer {
   explanation: string;
 }
 
+const RECHECK_INTERVAL_MS = 2_000;
+const RECHECK_WINDOW_MS = 60_000;
+
 export function useCollaborationPanel(scope: () => { id: string; version: number; cursor: number }) {
   const panel = shallowRef<CollaborationPanel | null>(null);
   const loading = ref(false);
@@ -19,6 +22,9 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
   const notice = ref("");
   let reader: AbortController | undefined;
   let writer: AbortController | undefined;
+  let recheckTimer: ReturnType<typeof setTimeout> | undefined;
+  let recheckUntil = 0;
+  let refreshQueued = false;
   let pending: { fingerprint: string; body: Record<string, unknown> } | undefined;
   const commands = computed(() => {
     const principal = operatorIdentity.value;
@@ -27,7 +33,8 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
       : [];
   });
 
-  async function refresh(): Promise<void> {
+  async function readSnapshot(): Promise<void> {
+    clearTimeout(recheckTimer);
     reader?.abort();
     if (!operatorIdentity.value) return;
     const controller = new AbortController();
@@ -37,7 +44,17 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
     try {
       const incident = await getIncident(scope().id, controller.signal);
       const snapshot = await loadCollaboration(incident.id, incident.version, controller.signal);
-      if (!controller.signal.aborted) panel.value = snapshot;
+      if (controller.signal.aborted) return;
+      if (snapshot && panel.value?.runPath === snapshot.runPath) {
+        // 表单绑定具体命令。只有完整依据相同才保留该命令与输入。
+        const previous = new Map(panel.value.commands.map((item) => [JSON.stringify(item), item]));
+        panel.value = {
+          ...snapshot,
+          commands: snapshot.commands.map((item) => previous.get(JSON.stringify(item)) ?? item),
+        };
+      } else {
+        panel.value = snapshot;
+      }
     } catch (cause) {
       if (!controller.signal.aborted) {
         error.value = cause instanceof Error ? cause.message : "协作状态读取失败";
@@ -45,6 +62,12 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
     } finally {
       if (!controller.signal.aborted) loading.value = false;
     }
+  }
+
+  function refresh(): Promise<void> {
+    refreshQueued = false;
+    recheckUntil = performance.now() + RECHECK_WINDOW_MS;
+    return readSnapshot();
   }
 
   async function submit(
@@ -81,10 +104,12 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
       pending = undefined;
       notice.value = "命令已记录";
       const prepared = command.preparesRelease ? result?.request : undefined;
-      if (panel.value && prepared?.availability === "current" && prepared.record) {
+      if (panel.value && prepared?.availability === "current" && prepared.record
+          && prepared.record.incident_version >= scope().version) {
         // 派发窗口较短，直接使用本次准备返回的权威版本及摘要。
         panel.value = {
           ...panel.value,
+          pending: false,
           facts: [...panel.value.facts, { title: "回滚准备有效期", value: prepared.record.expires_at }],
           commands: [dispatchCommand(command.path, prepared.record)],
         };
@@ -98,7 +123,10 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
       }
       return false;
     } finally {
-      if (!controller.signal.aborted) sending.value = false;
+      if (!controller.signal.aborted) {
+        sending.value = false;
+        if (refreshQueued) void refresh();
+      }
     }
   }
 
@@ -112,9 +140,19 @@ export function useCollaborationPanel(scope: () => { id: string; version: number
     void refresh();
   }, { immediate: true });
   watch([() => scope().version, () => scope().cursor], () => {
-    if (!sending.value) void refresh();
+    if (sending.value) refreshQueued = true;
+    else void refresh();
+  });
+  watch([panel, loading, sending, error], () => {
+    clearTimeout(recheckTimer);
+    if (!panel.value?.pending || loading.value || sending.value || error.value) return;
+    if (performance.now() + RECHECK_INTERVAL_MS > recheckUntil) return;
+    recheckTimer = setTimeout(() => {
+      if (performance.now() <= recheckUntil) void readSnapshot();
+    }, RECHECK_INTERVAL_MS);
   });
   onScopeDispose(() => {
+    clearTimeout(recheckTimer);
     reader?.abort();
     writer?.abort();
   });

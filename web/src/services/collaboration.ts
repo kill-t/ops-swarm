@@ -20,6 +20,7 @@ export interface CollaborationPanel {
   commands: Command[];
   tasks: { id: string; round: number; role: string; goal: string; status: string }[];
   runPath: string;
+  pending: boolean;
 }
 
 interface Navigation {
@@ -88,7 +89,10 @@ export async function loadCollaboration(
 
   const { status, handoff } = navigation;
   const base = `/api/v1/investigations/${encodeURIComponent(navigation.run_id)}`;
-  const panel: CollaborationPanel = { facts: [], commands: [], tasks: [], runPath: base };
+  const panel: CollaborationPanel = {
+    facts: [], commands: [], tasks: [], runPath: base,
+    pending: status === "queued" || status === "running",
+  };
   const fact = (title: string, value: string | null | undefined) => {
     if (value) panel.facts.push({ title, value });
   };
@@ -157,6 +161,7 @@ export async function loadCollaboration(
       const prepared = await get<Job & { artifact_sha256: string; availability_reason: string }>(
         preparationPath,
       );
+      panel.pending ||= prepared.availability === "pending";
       fact("重评材料", prepared.availability_reason || prepared.last_error_code || prepared.status);
       if (prepared.availability === "ready" && !navigation.review_job_id) {
         command("提交独立重评", "manage_incident", preparationPath + "/reassessments",
@@ -167,12 +172,14 @@ export async function loadCollaboration(
         const review = await get<Job & { result: { content: { proposal: { rationale: string } } } | null }>(
           reviewPath,
         );
+        panel.pending ||= review.availability === "pending";
         fact("人工重评", review.result?.content.proposal.rationale || review.last_error_code || review.status);
         if (review.status === "succeeded") {
           const route = await get<RecordView<{
             id: string; wait_version: number;
             decision: { route: string; blocking_reason_codes: string[] };
           }>>(reviewPath + "/route");
+          panel.pending ||= route.availability === "pending";
           fact("重评去向", route.record?.decision.route);
           fact("重评阻断", route.record?.decision.blocking_reason_codes.join("、"));
           if (route.record?.decision.route === "candidate_evaluation" && route.availability === "current") {
@@ -193,12 +200,13 @@ export async function loadCollaboration(
   }
   if (navigation.candidate_id) {
     await loadDisposition(get, candidates + "/" + navigation.candidate_id, incidentVersion,
-      writable, fact, command, panel.commands);
+      writable, fact, command, panel);
   }
   if (status === "settled") {
     const convergence = await get<{ record: (BoundRecord & { outcome: string; after_version: number }) | null }>(
       base + "/incident-convergence",
     );
+    panel.pending ||= !convergence.record;
     fact("事故收敛", convergence.record?.outcome);
     if (convergence.record?.outcome === "observed_failure") {
       const path = base + "/reinvestigation-admission";
@@ -213,6 +221,7 @@ export async function loadCollaboration(
         const route = await get<RecordView<{ route: string; blocking_reason_codes: string[] }>>(
           base + "/reinvestigation-routing",
         );
+        panel.pending ||= route.availability === "pending";
         fact("失败回流交接", route.record?.route === "await_human" ? "等待工程师接管" : route.availability);
         fact("交接原因", route.record?.blocking_reason_codes.join("、"));
         if (!route.record) {
@@ -242,7 +251,7 @@ async function loadDisposition(
   fact: (title: string, value: string | null | undefined) => void,
   command: (label: string, permission: string, path: string, body: Command["body"],
     input?: Command["input"], catalog?: ConditionItem[]) => void,
-  commands: Command[],
+  panel: CollaborationPanel,
 ): Promise<void> {
   const job = await get<Job & {
     wait_version: number | null;
@@ -250,6 +259,7 @@ async function loadDisposition(
       disposition: string; step: { action_type: string } | null; proposal: { rationale: string };
     } } | null;
   }>(path);
+  panel.pending ||= job.availability === "pending";
   fact("候选评估", job.result?.content.proposal.rationale || job.last_error_code || job.status);
   if (!job.result || job.result.content.disposition !== "planning_review") return;
   const editable = writable && job.availability === "current";
@@ -336,7 +346,7 @@ async function loadDisposition(
   const releasePath = versionPath + "/release-execution-request";
   const release = await get<RecordView<BoundRecord & { expires_at: string }>>(releasePath);
   if (!release.record) {
-    if (editable && conditionDecision.availability === "current") commands.push({
+    if (editable && conditionDecision.availability === "current") panel.commands.push({
       label: "准备演练回滚", permission: "execute_action", path: releasePath, input: "confirm",
       preparesRelease: true,
       body: {
@@ -354,14 +364,18 @@ async function loadDisposition(
   fact("受控执行", execution.result?.outcome ?? execution.record?.status ?? release.availability);
   if (!execution.record) {
     if (editable && release.availability === "current" && release.record.incident_version === incidentVersion) {
-      commands.push(dispatchCommand(releasePath, release.record));
+      panel.commands.push(dispatchCommand(releasePath, release.record));
     }
   } else if (execution.result) {
     const recovery = await get<{
       result: { outcome: string } | null;
       samples: { observation: { http_status: number } | null }[];
     }>(executionPath + "/recovery-verification");
+    // 采样完成后仍需等父运行收尾，之后才可读取事故收敛决定。
+    panel.pending ||= !recovery.result || writable;
     fact("客观恢复", recovery.result?.outcome ?? "待采样");
     fact("业务样本", recovery.samples.map((sample) => sample.observation?.http_status ?? "采样失败").join("、"));
+  } else {
+    panel.pending ||= execution.record.status === "queued" || execution.record.status === "running";
   }
 }
