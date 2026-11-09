@@ -6,17 +6,27 @@ from datetime import UTC, datetime, timedelta
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import httpx2
 import pytest
 from dotenv import dotenv_values
+from pydantic import TypeAdapter
 
+from opsswarm.change_records.models import ChangeSpec
+from opsswarm.control_plane.app import create_app
+from opsswarm.control_plane.schemas import AlertRequest, StartInvestigationRequest
 from opsswarm.identity.settings import OperatorAuthSettings
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
+from opsswarm.investigation.candidate.contracts import EvaluateCandidateCommand
 from opsswarm.investigation.coordination.contracts import CoordinationProposal
+from opsswarm.investigation.human_prepare.contracts import PrepareCommand
+from opsswarm.investigation.human_review.contracts import ReassessCommand
+from opsswarm.investigation.human_wait.contracts import SupplementWaitCommand
 from opsswarm.investigation.models import SpecialistReport
 from opsswarm.investigation.review.contracts import HypothesisReviewProposal
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
+from opsswarm.observability import TracingRuntime
 from scripts.local_demo.__main__ import execute
 from scripts.local_demo.client import DemoClient, DemoError
 from scripts.local_demo.config import (
@@ -31,6 +41,7 @@ from scripts.local_demo.config import (
 from scripts.local_demo.disposition import execute_and_converge
 from scripts.local_demo.environment import ComposeControl, preflight
 from scripts.local_demo.fixture import completion
+from scripts.local_demo.investigation import Investigation
 from scripts.local_demo.model_server import app
 
 
@@ -57,11 +68,226 @@ def test_prepare_creates_independent_valid_roles_and_reuses_config(demo_dir):
     assert {item.role.value for item in auth.credentials} == set(ROLES)
     assert len(set(config["tokens"].values())) == len(ROLES)
     for item in auth.credentials:
-        assert (
-            item.secret_sha256 == hashlib.sha256(config["tokens"][item.role].encode()).hexdigest()
-        )
-        assert config["tokens"][item.role] not in env.read_text(encoding="utf-8")
+        credential_id, secret = config["tokens"][item.role].split(".", 1)
+        assert credential_id == item.credential_id
+        assert item.secret_sha256 == hashlib.sha256(secret.encode()).hexdigest()
+        assert secret not in env.read_text(encoding="utf-8")
     assert ModelBudgetPolicy.model_validate(model_budget()).profile.model_name == MODEL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True], ids=["new-config", "legacy-config"])
+async def test_generated_tokens_are_accepted_by_actual_control_api(demo_dir, legacy):
+    env = prepare(demo_dir)
+    original_env = env.read_bytes()
+    path = demo_dir / "config.json"
+    if legacy:
+        old = json.loads(path.read_text(encoding="utf-8"))
+        old["tokens"] = {role: token.split(".", 1)[1] for role, token in old["tokens"].items()}
+        path.write_text(json.dumps(old), encoding="utf-8")
+    original_config = path.read_bytes()
+    config = read_config(demo_dir)
+    auth = OperatorAuthSettings(
+        mode="bearer",
+        credentials=json.loads(dotenv_values(env)["OPSSWARM_OPERATOR_AUTH_CREDENTIALS"]),
+    )
+    api = create_app(operator_auth_settings=auth, tracing_runtime=TracingRuntime())
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=api), base_url="http://testserver"
+    ) as client:
+        endpoint = "/api/v1/operators/me"
+        assert (await client.get(endpoint)).status_code == 401
+        for role, token in config["tokens"].items():
+            response = await client.get(endpoint, headers={"Authorization": f"Bearer {token}"})
+            assert response.status_code == 200
+            assert response.json()["role"] == role
+    assert prepare(demo_dir) == env
+    assert path.read_bytes() == original_config and env.read_bytes() == original_env
+
+
+def test_start_sends_current_api_contract_and_reads_persisted_handoff(monkeypatch):
+    case_id, incident, run, handoff = (str(UUID(int=i)) for i in range(1, 5))
+    base = f"/api/v1/investigations/{run}"
+    start_path = f"/api/v1/incidents/{incident}/actions/start-investigation"
+    occurred_at = "2026-11-09T00:00:00+00:00"
+    starts = []
+
+    def respond(request):
+        path, method = request.url.path, request.method
+        if not path.startswith("/api/"):
+            assert "authorization" not in request.headers
+        if path == "/__admin/configuration/database-pool":
+            return httpx2.Response(200, json={"value": 50})
+        if path == "/__admin/simulated-release":
+            return httpx2.Response(200, json={"version": "stable", "revision": 1})
+        if path == "/orders/local-demo":
+            return httpx2.Response(500)
+        if path == "/__admin/changes" and method == "POST":
+            TypeAdapter(ChangeSpec).validate_json(request.content)
+            return httpx2.Response(201, json={"record": {"occurred_at": occurred_at}})
+        if path == "/api/v1/alerts" and method == "POST":
+            alert = AlertRequest.model_validate_json(request.content)
+            assert alert.external_event_id == case_id
+            assert alert.occurred_at.isoformat() == occurred_at
+            return httpx2.Response(201, json={"incident": {"id": incident}})
+        if path == start_path and method == "POST":
+            starts.append(StartInvestigationRequest.model_validate_json(request.content))
+            return httpx2.Response(200, json={"investigation": {"id": run}})
+        if path == base:
+            return httpx2.Response(200, json={"status": "await_human"})
+        if path == base + "/human-wait":
+            return httpx2.Response(
+                200,
+                json={
+                    "handoff_id": handoff,
+                    "state_version": 1,
+                    "status": "waiting",
+                },
+            )
+        if path == base + "/collaboration":
+            return httpx2.Response(
+                200,
+                json={
+                    "rounds": [
+                        {
+                            "round_number": 1,
+                            "status": "completed",
+                            "tasks": [
+                                {"assignment": {"role": role}, "status": "succeeded"}
+                                for role in ("log", "metric", "change")
+                            ],
+                        }
+                    ]
+                },
+            )
+        if path == base + "/call-budget":
+            return httpx2.Response(200, json={"reserved_model_calls": 9, "deadline": occurred_at})
+        raise AssertionError(f"意外请求 {method} {path}")
+
+    monkeypatch.setattr("scripts.local_demo.investigation.time.sleep", lambda _: None)
+    client = DemoClient(dict.fromkeys(ROLES, "test-only"), transport=httpx2.MockTransport(respond))
+    emit = MagicMock()
+    try:
+        Investigation(client, case_id, emit).start()
+    finally:
+        client.close()
+    assert len(starts) == 1
+    assert starts[0].workflow_version == "v3" and starts[0].data_source_mode == "live"
+    assert emit.call_args.kwargs["handoff_id"] == handoff
+    assert emit.call_args.kwargs["completed_rounds"] == [1]
+
+
+@pytest.mark.parametrize("persisted", [True, False], ids=["read-back", "missing-event"])
+def test_human_continuation_uses_persisted_wait_and_submitted_job_ids(persisted):
+    case, incident, run, handoff, event_id, prep, review, route, candidate = (
+        str(UUID(int=i)) for i in range(1, 10)
+    )
+    base = f"/api/v1/investigations/{run}"
+    wait = base + "/human-wait"
+    preparations = wait + "/preparations"
+    reassessments = f"{preparations}/{prep}/reassessments"
+    evaluations = base + "/candidate-evaluations"
+    nav = f"/api/v1/incidents/{incident}/collaboration-navigation"
+    event = {"id": event_id, "state_version": 2, "action": "supplement"}
+    writes = []
+
+    def respond(request):
+        path = request.url.path
+        if request.method == "POST":
+            writes.append(path)
+            if path == wait + "/supplements":
+                command = SupplementWaitCommand.model_validate_json(request.content)
+                assert command.expected_wait_version == 1 and str(command.handoff_id) == handoff
+                return httpx2.Response(201, json={"applied": True, "event": event})
+            if path == preparations:
+                command = PrepareCommand.model_validate_json(request.content)
+                assert command.expected_wait_version == 2 and command.source_sha256 == "a" * 64
+                return httpx2.Response(201, json={"job": {"id": prep}})
+            if path == reassessments:
+                command = ReassessCommand.model_validate_json(request.content)
+                assert command.expected_wait_version == 2 and command.preparation_sha256 == "b" * 64
+                return httpx2.Response(201, json={"job": {"id": review}})
+            if path == evaluations:
+                command = EvaluateCandidateCommand.model_validate_json(request.content)
+                assert command.expected_wait_version == 2 and str(command.source_id) == route
+                assert command.source_sha256 == "c" * 64
+                return httpx2.Response(201, json={"job": {"id": candidate}})
+        if path == wait:
+            saved = bool(writes) and persisted
+            return httpx2.Response(
+                200,
+                json={
+                    "handoff_id": handoff,
+                    "source_sha256": "a" * 64,
+                    "state_version": 2 if saved else 1,
+                    "status": "waiting",
+                    "events": [event] if saved else [],
+                },
+            )
+        if path == f"{preparations}/{prep}":
+            return httpx2.Response(
+                200,
+                json={
+                    "status": "succeeded",
+                    "availability": "ready",
+                    "wait_version": 2,
+                    "artifact_sha256": "b" * 64,
+                },
+            )
+        if path == f"{reassessments}/{review}":
+            return httpx2.Response(200, json={"status": "succeeded"})
+        if path == f"{reassessments}/{review}/route":
+            return httpx2.Response(
+                200,
+                json={
+                    "availability": "current",
+                    "record": {
+                        "id": route,
+                        "wait_version": 2,
+                        "decision": {"route": "candidate_evaluation"},
+                    },
+                },
+            )
+        if path == nav:
+            return httpx2.Response(
+                200, json={"review_job_id": review, "review_route_sha256": "c" * 64}
+            )
+        if path == f"{evaluations}/{candidate}":
+            return httpx2.Response(
+                200,
+                json={
+                    "status": "succeeded",
+                    "availability": "current",
+                    "wait_version": 2,
+                    "result": {"content": {"disposition": "planning_review"}},
+                },
+            )
+        raise AssertionError(f"意外请求 {request.method} {path}")
+
+    client = DemoClient(dict.fromkeys(ROLES, "test-only"), transport=httpx2.MockTransport(respond))
+    emit = MagicMock()
+    flow = Investigation(client, case, emit)
+    flow.base, flow.incident = base, f"/api/v1/incidents/{incident}"
+    try:
+        if not persisted:
+            with pytest.raises(DemoError, match="supplement_not_persisted"):
+                flow.continue_human()
+            assert writes == [wait + "/supplements"]
+            emit.assert_not_called()
+            return
+        assert flow.continue_human() == f"{evaluations}/{candidate}"
+    finally:
+        client.close()
+    assert writes == [wait + "/supplements", preparations, reassessments, evaluations]
+    emit.assert_called_once_with(
+        "human_continued",
+        supplement_id=event_id,
+        wait_version=2,
+        preparation_id=prep,
+        review_job_id=review,
+        review_route_id=route,
+        candidate_id=candidate,
+    )
 
 
 def test_prepare_refuses_expired_or_partial_configuration(demo_dir):

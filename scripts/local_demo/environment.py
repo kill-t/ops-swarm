@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.local_demo.client import DemoClient, DemoError, require
-from scripts.local_demo.config import CHANGE, ORDER, PROJECT, ROOT, directory
+from scripts.local_demo.config import CHANGE, ORDER, PROJECT, ROLES, ROOT, directory
 
 CLOCK_PROBE = """
 import json,time
@@ -88,7 +88,7 @@ def preflight(client: DemoClient, control: ComposeControl) -> dict:
     if clock["negative_steps"] != 0 or clock["steps_over_100ms"] != 0:
         raise DemoError("preflight", "unstable_container_clock", details={"clock": clock})
     client.call("/api/v1/operators/me", role=None, status=401)
-    for role in ("engineer", "approver", "executor"):
+    for role in ROLES:
         require(
             client.call("/api/v1/operators/me", role=role)["role"] == role,
             "preflight",

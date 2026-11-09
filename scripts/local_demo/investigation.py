@@ -6,6 +6,8 @@ from uuid import UUID, uuid5
 from scripts.local_demo.client import DemoClient, require
 from scripts.local_demo.config import CHANGE, ORDER, model_budget
 
+REASON = "本地脚本模型工程链演示"
+
 
 class Investigation:
     def __init__(self, client: DemoClient, case_id: str, emit) -> None:
@@ -17,7 +19,7 @@ class Investigation:
         return self.client.call(
             path,
             {
-                "reason": "本地脚本模型工程链演示",
+                "reason": REASON,
                 "idempotency_key": key,
                 **body,
             },
@@ -105,10 +107,12 @@ class Investigation:
         )["incident"]["id"]
         self.incident = f"/api/v1/incidents/{incident}"
         self.emit("incident", incident_id=incident)
-        run = self.post(
+        # 开始调查以事故版本控制并发，接口只接收其声明的命令字段。
+        run = c.call(
             self.incident + "/actions/start-investigation",
             dict(
                 expected_version=1,
+                reason=REASON,
                 mode="multi_agent",
                 data_source_mode="live",
                 workflow_version="v3",
@@ -129,11 +133,26 @@ class Investigation:
             lambda value: value["status"] not in {"queued", "running"},
         )
         require(state["status"] == "await_human", "investigation", "did_not_handoff")
+        wait = c.call(self.base + "/human-wait")
+        require(wait["status"] == "waiting", "investigation", "handoff_not_waiting")
+        rounds = c.call(self.base + "/collaboration")["rounds"]
+        completed = [item for item in rounds if item["status"] == "completed"]
+        roles = {
+            task["assignment"]["role"]
+            for item in completed
+            for task in item["tasks"]
+            if task["status"] == "succeeded"
+        }
+        require({"log", "metric", "change"} <= roles, "investigation", "professional_tasks_missing")
         budget = c.call(self.base + "/call-budget")
         self.emit(
             "handoff",
             run_id=run,
             status=state["status"],
+            handoff_id=wait["handoff_id"],
+            wait_version=wait["state_version"],
+            completed_rounds=[item["round_number"] for item in completed],
+            completed_roles=sorted(roles),
             model_calls=budget["reserved_model_calls"],
             deadline=budget["deadline"],
         )
@@ -143,19 +162,19 @@ class Investigation:
         c = self.client
         wait_path = self.base + "/human-wait"
 
-        def basis():
-            wait = c.call(wait_path)
+        def basis(wait):
             return dict(
                 handoff_id=wait["handoff_id"],
                 source_sha256=wait["source_sha256"],
                 expected_wait_version=wait["state_version"],
             )
 
-        self.post(
+        before = c.call(wait_path)
+        saved = self.post(
             wait_path + "/supplements",
             dict(
                 action="supplement",
-                **basis(),
+                **basis(before),
                 items=[
                     dict(
                         kind="statement", text="脚本演示工程师已核对本地发布状态与订单 HTTP 失败。"
@@ -163,31 +182,56 @@ class Investigation:
                 ],
             ),
         )
-        self.post(wait_path + "/preparations", dict(action="prepare", **basis()))
-        nav = self.nav()
-        prepare_path = wait_path + "/preparations/" + nav["preparation_id"]
-        prepared = self.wait_job("human_preparation", prepare_path)
-        require(prepared["availability"] == "ready", "human_preparation", "source_not_ready")
-        self.post(
-            prepare_path + "/reassessments",
-            dict(action="reassess", **basis(), preparation_sha256=prepared["artifact_sha256"]),
+        wait = c.call(wait_path)
+        require(
+            saved["applied"]
+            and wait["status"] == "waiting"
+            and wait["handoff_id"] == before["handoff_id"]
+            and wait["source_sha256"] == before["source_sha256"]
+            and wait["state_version"] == before["state_version"] + 1
+            and bool(wait["events"])
+            and wait["events"][-1] == saved["event"],
+            "human_supplement",
+            "supplement_not_persisted",
         )
-        nav = self.nav()
-        review_path = prepare_path + "/reassessments/" + nav["review_job_id"]
+        bound = basis(wait)
+        preparation = self.post(wait_path + "/preparations", dict(action="prepare", **bound))
+        prepare_path = wait_path + "/preparations/" + preparation["job"]["id"]
+        prepared = self.wait_job("human_preparation", prepare_path)
+        require(
+            prepared["availability"] == "ready"
+            and prepared["wait_version"] == wait["state_version"],
+            "human_preparation",
+            "source_not_ready",
+        )
+        reassessment = self.post(
+            prepare_path + "/reassessments",
+            dict(action="reassess", **bound, preparation_sha256=prepared["artifact_sha256"]),
+        )
+        review_id = reassessment["job"]["id"]
+        review_path = prepare_path + "/reassessments/" + review_id
         self.wait_job("human_review", review_path)
-        route = c.poll(
+        routed = c.poll(
             "human_route",
             lambda: c.call(review_path + "/route"),
             lambda value: value["record"] is not None,
-        )["record"]
+        )
+        route = routed["record"]
         require(
-            route["decision"]["route"] == "candidate_evaluation",
+            routed["availability"] == "current"
+            and route["decision"]["route"] == "candidate_evaluation"
+            and route["wait_version"] == wait["state_version"],
             "human_route",
             "unsupported_direction",
         )
         nav = self.nav()
+        require(
+            nav["review_job_id"] == review_id and bool(nav["review_route_sha256"]),
+            "human_route",
+            "review_basis_changed",
+        )
         candidates = self.base + "/candidate-evaluations"
-        self.post(
+        evaluation = self.post(
             candidates,
             dict(
                 action="evaluate_candidate",
@@ -197,15 +241,23 @@ class Investigation:
                 expected_wait_version=route["wait_version"],
             ),
         )
-        candidate_path = candidates + "/" + self.nav()["candidate_id"]
+        candidate_id = evaluation["job"]["id"]
+        candidate_path = candidates + "/" + candidate_id
         candidate = self.wait_job("candidate", candidate_path)
         require(
-            candidate["result"]["content"]["disposition"] == "planning_review",
+            candidate["availability"] == "current"
+            and candidate["wait_version"] == wait["state_version"]
+            and candidate["result"]["content"]["disposition"] == "planning_review",
             "candidate",
             "not_plannable",
         )
         self.emit(
             "human_continued",
-            candidate_id=candidate["id"] if "id" in candidate else self.nav()["candidate_id"],
+            supplement_id=saved["event"]["id"],
+            wait_version=wait["state_version"],
+            preparation_id=preparation["job"]["id"],
+            review_job_id=review_id,
+            review_route_id=route["id"],
+            candidate_id=candidate_id,
         )
         return candidate_path

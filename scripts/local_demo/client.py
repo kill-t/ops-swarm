@@ -46,7 +46,9 @@ class DemoClient:
         ):
             raise DemoError("request", "outside_local_demo")
         verb = method or ("GET" if body is None else "POST")
-        headers = {"Authorization": f"Bearer {self.tokens[role]}"} if role else {}
+        headers = (
+            {"Authorization": f"Bearer {self.tokens[role]}"} if origin == ORIGIN and role else {}
+        )
         try:
             response = self.http.request(verb, origin + path, json=body, headers=headers)
         except httpx2.HTTPError as error:

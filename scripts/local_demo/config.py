@@ -6,6 +6,8 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from opsswarm.identity.authentication import TOKEN_PATTERN
+
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_ROOT = ROOT / ".pytest_cache" / "local-demo"
 PROJECT = "opsswarm-local-demo"
@@ -29,10 +31,20 @@ def read_config(path: Path) -> dict:
     if not (path / "demo.env").is_file():
         raise ValueError("演示环境文件缺失，请使用新的演示子目录")
     data = json.loads((path / "config.json").read_text(encoding="utf-8"))
-    if data["version"] != PROFILE or set(data["tokens"]) != set(ROLES):
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    if not isinstance(tokens, dict) or data.get("version") != PROFILE or set(tokens) != set(ROLES):
         raise ValueError("演示配置版本或角色不完整")
     if datetime.fromisoformat(data["expires_at"]) <= datetime.now(UTC):
         raise ValueError("演示身份已过期，请在新的演示子目录重新准备并启动")
+    for role, token in tokens.items():
+        prefix = f"demo-{role}."
+        if not isinstance(token, str):
+            raise ValueError("演示令牌格式无效")
+        # 旧配置保存的是秘密部分，原凭据 ID 与摘要仍可直接复用。
+        token = token if "." in token else prefix + token
+        if not token.startswith(prefix) or TOKEN_PATTERN.fullmatch(token) is None:
+            raise ValueError("演示令牌格式无效")
+        tokens[role] = token
     return data
 
 
@@ -45,13 +57,13 @@ def prepare(path: Path) -> Path:
         raise ValueError("发现未完成的演示配置，请使用新的演示子目录")
     path.mkdir(parents=True, exist_ok=True)
     expires = (datetime.now(UTC) + timedelta(hours=8)).isoformat()
-    tokens = {role: secrets.token_urlsafe(32) for role in ROLES}
+    tokens = {role: f"demo-{role}.{secrets.token_urlsafe(32)}" for role in ROLES}
     credentials = [
         dict(
             credential_id=f"demo-{role}",
             subject_id=f"demo-{role}",
             role=role,
-            secret_sha256=hashlib.sha256(tokens[role].encode()).hexdigest(),
+            secret_sha256=hashlib.sha256(tokens[role].split(".", 1)[1].encode()).hexdigest(),
             expires_at=expires,
         )
         for role in ROLES
