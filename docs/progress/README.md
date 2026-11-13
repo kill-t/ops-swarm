@@ -10,7 +10,7 @@
 | --- | --- |
 | 已有运行交付 | 第 63 步 MVP 发布已验收，见 [发布记录](63-mvp-compose-release.md)；历史测试结果不是本轮重新执行的结果 |
 | 最新文档决策 | 2026-11-05 [本地版本收口与核心优先](local-release-scope-decision.md)已完成文档验收；新增运行行为仍待实现，不占实现编号 |
-| 最新实现切片 | [正式恢复脚本](local-demo-recovery-proof.md)在隔离 PostgreSQL 验证单次 CAS、只读接手、三次业务采样、事故收敛与槽位释放。[冻结演示与续接](local-demo-frozen-handoff.md)通过 API 实例替换验证，两者仍待正式 Compose 补验。[141 完整 API 欠项](141-reinvestigation-approval-decision.md)单列 |
+| 最新实现切片 | [正式失败回流](local-demo-reflow-evidence.md)通过 HTTP 契约测试验证准入审计、实际新证据及独立复查的脚本断言。[正常恢复](local-demo-recovery-proof.md)和[冻结续接](local-demo-frozen-handoff.md)已有隔离 PostgreSQL 结果，三个场景仍待正式 Compose 补验 |
 | 当前架构来源 | 当前范围与终点以[本地多 Agent 交付设计](../architecture/local-multi-agent-release-scope.md)为准；[64长期路线](../architecture/64-full-multi-agent-roadmap.md)/[65系统设计](../architecture/65-agent-system-design.md)保留技术和安全规则 |
 | 当前必需缺口 | [本地启动冒烟](local-compose-smoke.md)通过。[人工续接、正常恢复与只读对账](local-compose-continuation.md)通过指定整栈场景。[现场失败回流](reflow-input-projection.md)通过 Compose 代表场景，进程内 API 夹具的回滚欠项单列 |
 | 整改首批 | [旧入口依赖与四阶段输入基线](reflow-remediation-baseline.md)已核对，协调实测，后三阶段为回放估算 |

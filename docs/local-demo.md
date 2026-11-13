@@ -41,7 +41,7 @@ uv sync --locked
 | --- | --- |
 | `handoff` | 冻结 v15 先调查日志与指标，独立审查追加变更补查，第二轮完成后持久等待人工。重启演示项目的控制 API 和冻结调查 Worker，核对原等待、轮次及账本，再完成可信补充、准备、重评与候选评估 |
 | `recovery` | 从新事故完成调查、人工补充/准备/实际重评、候选和计划；拒绝工程师审批，由审批者通过两阶段审批、执行者提交；重复命令复用同一任务；唯一 CAS 回滚、同一尝试三个 HTTP 200、事故 resolved、槽位释放且运行 settled |
-| `reflow` | 从新事故完成相同续接；回滚后注入连接池故障，获得三个 HTTP 500 和未恢复收敛；登记验证后新窗口变更，消费一次回流，保留原期限和旧调用账本，持久进入人工接管，第二次准入被拒绝 |
+| `reflow` | 回滚后注入连接池故障，获得三个 HTTP 500 和未恢复收敛。新登记的连接池变更被新窗口的专业调查和独立复查引用，随后持久进入人工接管。审计确认一次准入、同键重放和第二次准入被拒绝。原预算与账本保留，回滚修订不变 |
 
 `reflow` 暂停的只是本演示项目的恢复采样 Worker，用于保证故障先于采样；退出该段时尝试恢复 Worker。它不伪造业务样本、不改数据库或审批，也不替换运行时实现。模型响应中的证据身份取自实际输入；固定 Token 用量和演示价格只用于工程预算校验。
 
@@ -69,7 +69,7 @@ uv sync --locked
 | --- | --- |
 | `handoff` | `/human-wait` 中的补充事件，以及 `/candidate-evaluations/{candidate_id}` 中的候选与人工重评来源 |
 | `recovery` | `/incident-convergence` 的内容哈希与槽位释放，以及原候选下 `/execution-conditions/versions/{version}/release-execution-request/execution-job` 的操作 ID。其 `/recovery-verification` 子路径可核对采样尝试和三次 200。协作台的事故状态应为 `resolved` |
-| `reflow` | `/reinvestigation-routing` 的人工接管、`/incident-convergence` 的 `observed_failure` 和 `/call-budget` 中的截止时间与调用账本 |
+| `reflow` | 用 `/reinvestigation-admission/commands` 核对准入 ID。用 `/reinvestigation-execution` 和 `/reinvestigation-review` 核对报告中的证据 ID 和独立复查。用 `/reinvestigation-routing`、`/incident-convergence` 和 `/call-budget` 核对人工接管、`observed_failure` 与原截止时间和账本 |
 
 重启核对使用原案例的只读查询。`Run` 会创建新事故，适合另起一次演示。
 

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx2
 import pytest
@@ -18,9 +18,11 @@ from opsswarm.control_plane.app import create_app
 from opsswarm.control_plane.schemas import AlertRequest, StartInvestigationRequest
 from opsswarm.identity.settings import OperatorAuthSettings
 from opsswarm.investigation.budget.model_contracts import ModelBudgetPolicy
+from opsswarm.investigation.context.hashing import content_hash
 from opsswarm.investigation.coordination.contracts import CoordinationProposal
 from opsswarm.investigation.human_wait.contracts import SupplementWaitCommand
 from opsswarm.investigation.models import SpecialistReport
+from opsswarm.investigation.reinvestigation_review.contracts import ReflowReviewResult
 from opsswarm.investigation.review.contracts import HypothesisReviewProposal
 from opsswarm.investigation.synthesis.contracts import OpenHypothesisProposal
 from opsswarm.observability import TracingRuntime
@@ -40,6 +42,7 @@ from scripts.local_demo.environment import ComposeControl, preflight
 from scripts.local_demo.fixture import completion
 from scripts.local_demo.investigation import Investigation
 from scripts.local_demo.model_server import app
+from scripts.local_demo.reflow import reinvestigate
 
 
 @pytest.fixture
@@ -501,6 +504,144 @@ def test_failure_scenario_restores_sampling_when_preparation_result_is_unknown()
         execute_and_converge(flow, "/conditions/1", control, failure=True)
     assert [call.args[0] for call in control.sampling.call_args_list] == [False, True]
     assert flow.post.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("mismatch", "error_code"),
+    [
+        (None, None),
+        ("admission", "admission_audit_mismatch"),
+        ("evidence", "new_change_not_in_professional_report"),
+        ("review", "new_change_not_in_routed_review"),
+        ("revision", "release_changed_during_reflow"),
+    ],
+)
+def test_reflow_verifies_durable_admission_evidence_and_single_release(
+    monkeypatch, mismatch, error_code
+):
+    case_id, task_id, change_id, admission_id = (str(uuid4()) for _ in range(4))
+    evidence_id = "change-" + change_id
+    window = {"window_start": "2026-11-13T13:00:02Z", "window_end": "2026-11-13T13:00:10Z"}
+    review = ReflowReviewResult(
+        investigation_run_id=UUID(case_id),
+        job_id=UUID(case_id),
+        source_call_id=uuid4(),
+        source_sha256="a" * 64,
+        proposal=HypothesisReviewProposal(
+            support_is_sufficient=True,
+            rationale="复核配置变更",
+            accepted_supporting_evidence_ids=(evidence_id,),
+            suggested_direction="evaluate_for_routing",
+        ),
+        synthesis_result_sha256="b" * 64,
+        created_at=datetime(2026, 11, 13, 13, 0, 11, tzinfo=UTC),
+    )
+    routed = dict(
+        route="await_human",
+        dispatch_status="not_dispatched",
+        blocking_reason_codes=["live_reflow_manual_takeover"],
+        observation_windows=[dict(task_id=task_id, effective_window=dict(window=window))],
+        review_result_sha256="c" * 64 if mismatch == "review" else content_hash(review),
+        created_at="2026-11-13T13:00:12Z",
+    )
+    task = dict(
+        task_id=task_id,
+        status="succeeded",
+        effective_window=dict(window=window),
+        evidence=dict(
+            data_source_mode="live", role="change", evidence=[dict(evidence_id=evidence_id)]
+        ),
+        result=dict(
+            report=dict(evidence_ids=["previous-change" if mismatch == "evidence" else evidence_id])
+        ),
+    )
+    audit = [
+        dict(outcome="applied", request_id=admission_id, error_code=None),
+        dict(outcome="replayed", request_id=admission_id, error_code=None),
+        dict(
+            outcome="error",
+            request_id=None,
+            error_code=(
+                "reinvestigation_basis_changed"
+                if mismatch == "admission"
+                else "reinvestigation_already_exists"
+            ),
+        ),
+    ]
+    calls = [dict(status="succeeded", id="original")]
+    budget = dict(deadline="2026-11-13T13:30:00Z", policy={}, model_budget={}, calls=calls)
+    incident = "/api/v1/incidents/incident"
+    base = f"/api/v1/investigations/{case_id}"
+    reads = {
+        base + "/reinvestigation-admission": dict(record=dict(id=admission_id)),
+        base + "/reinvestigation-admission/commands": dict(items=audit),
+        base + "/reinvestigation-routing": dict(record=routed),
+        base + "/reinvestigation-execution": dict(tasks=[task]),
+        base + "/reinvestigation-review": dict(
+            status="succeeded", result=review.model_dump(mode="json")
+        ),
+        incident: dict(status="investigating"),
+    }
+    admission_keys = []
+    pool_writes = []
+    release_reads = 0
+
+    def respond(request):
+        nonlocal release_reads
+        path = request.url.path
+        if path == "/__admin/simulated-release":
+            release_reads += 1
+            return httpx2.Response(
+                200,
+                json=dict(
+                    version="stable", revision=3 + (release_reads == 2 and mismatch == "revision")
+                ),
+            )
+        if path == "/__admin/configuration/database-pool":
+            assert request.method == "PUT"
+            pool_writes.append(json.loads(request.content)["value"])
+            return httpx2.Response(200)
+        if path == "/__admin/changes":
+            assert request.method == "POST"
+            return httpx2.Response(
+                201, json=dict(record=dict(record_id=change_id, occurred_at="2026-11-13T13:00:03Z"))
+            )
+        if request.method == "POST":
+            assert path == base + "/reinvestigation-admission"
+            admission_keys.append(json.loads(request.content)["idempotency_key"])
+            return httpx2.Response((201, 200, 409)[len(admission_keys) - 1])
+        if path == base + "/call-budget":
+            return httpx2.Response(
+                200,
+                json={
+                    **budget,
+                    "calls": calls
+                    + ([dict(status="succeeded", id="new")] if admission_keys else []),
+                },
+            )
+        return httpx2.Response(200, json=reads[path])
+
+    monkeypatch.setattr("scripts.local_demo.reflow.time.sleep", lambda _: None)
+    events = {}
+    client = DemoClient({"engineer": "fixture"}, transport=httpx2.MockTransport(respond))
+    flow = Investigation(client, case_id, lambda stage, **values: events.update({stage: values}))
+    flow.base, flow.incident = base, incident
+    convergence = dict(content_sha256="d" * 64, after_version=3)
+    try:
+        if error_code:
+            with pytest.raises(DemoError, match=error_code):
+                reinvestigate(flow, convergence)
+            assert pool_writes == [2]
+            assert "reinvestigation" not in events
+        else:
+            reinvestigate(flow, convergence)
+            assert pool_writes == [2, 50]
+            assert events["reinvestigation_admitted"]["change_record_id"] == change_id
+            assert events["reinvestigation"]["evidence_id"] == evidence_id
+            assert events["reinvestigation"]["review_result_sha256"] == content_hash(review)
+    finally:
+        client.close()
+    assert admission_keys[0] == admission_keys[1] != admission_keys[2]
 
 
 def test_compose_commands_are_bound_to_project_and_env_path(demo_dir, monkeypatch):

@@ -11,6 +11,7 @@
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)
 - `handoff` 使用冻结 v15 完成两轮补查并续接至候选。隔离 PostgreSQL 验证 API 与 Worker 实例替换后的账本对账和实际续接。Compose 容器重启和完整发布场景仍待稳定环境复验。[冻结演示记录](progress/local-demo-frozen-handoff.md)
 - 正式恢复脚本已在隔离 Linux、进程内 API 和真实 PostgreSQL 验证到事故收敛与槽位释放，包含原执行租约到期后的只读接手。上次容器预检仍捕获 UTC 倒退，正式 Compose 待稳定环境复验。[恢复验收](progress/local-demo-recovery-proof.md) [核验时间与环境记录](progress/local-demo-approval-time.md)
+- 正式失败回流脚本已用 HTTP 契约测试验证唯一准入审计、新窗口证据、独立复查和持久接管的核对逻辑。报告保留重启读回所需的对象身份。使用当前入口的整栈运行仍待验收。[失败回流验收断言](progress/local-demo-reflow-evidence.md)
 - 用户未跟踪目录 `output/`、`tmp/` 未读取、修改或提交；不访问原 RAG 仓库。已有 OpsSwarm 容器满足条件时优先复用，需要写入的验收使用隔离数据库。
 
 ## 能力与验收边界

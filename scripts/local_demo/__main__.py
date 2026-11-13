@@ -8,9 +8,10 @@ from uuid import uuid4
 
 from scripts.local_demo.client import DemoClient, DemoError
 from scripts.local_demo.config import PROFILE, directory, prepare, read_config
-from scripts.local_demo.disposition import approve_and_verify, execute_and_converge, reinvestigate
+from scripts.local_demo.disposition import approve_and_verify, execute_and_converge
 from scripts.local_demo.environment import ComposeControl, preflight
 from scripts.local_demo.investigation import Investigation
+from scripts.local_demo.reflow import reinvestigate
 
 
 class Report:

@@ -1,10 +1,10 @@
-"""可信审批、唯一处置、客观采样及一次失败回流的演示用例。"""
+"""可信审批、唯一处置与客观恢复验证的演示用例。"""
 
 import time
 from datetime import datetime
 
 from scripts.local_demo.client import require
-from scripts.local_demo.config import CHANGE, ORDER
+from scripts.local_demo.config import ORDER
 from scripts.local_demo.environment import ComposeControl
 from scripts.local_demo.investigation import Investigation
 
@@ -259,76 +259,3 @@ def execute_and_converge(
         slot_released=convergence["slot_released"],
     )
     return convergence
-
-
-def reinvestigate(flow: Investigation, convergence: dict) -> None:
-    c = flow.client
-    time.sleep(1.1)
-    c.call(
-        "/__admin/configuration/database-pool",
-        dict(value=2, expected_value=1),
-        method="PUT",
-        origin=ORDER,
-    )
-    c.call(
-        "/__admin/changes",
-        dict(
-            change_type="configuration",
-            external_change_id="pool-" + flow.case_id,
-            key="database_pool_size",
-            from_value=1,
-            to_value=2,
-        ),
-        origin=CHANGE,
-    )
-    # 新配置必须位于实际新截止以内，不能复用失败前的取证窗口。
-    time.sleep(1.1)
-    admission = flow.base + "/reinvestigation-admission"
-    body = dict(
-        action="request_reinvestigation",
-        convergence_sha256=convergence["content_sha256"],
-        expected_incident_version=convergence["after_version"],
-    )
-    before = c.call(flow.base + "/call-budget")
-    flow.post(admission, body, status=201)
-    flow.post(admission, body, status=200)
-    flow.post(admission, body, status=409, suffix="second-admission")
-    routed = c.poll(
-        "reinvestigation",
-        lambda: c.call(flow.base + "/reinvestigation-routing"),
-        lambda value: value["record"] is not None,
-    )["record"]
-    require(
-        routed["route"] == "await_human"
-        and routed["dispatch_status"] == "not_dispatched"
-        and "live_reflow_manual_takeover" in routed["blocking_reason_codes"],
-        "reinvestigation",
-        "not_persisted_manual_takeover",
-    )
-    after = c.call(flow.base + "/call-budget")
-    require(
-        before["deadline"] == after["deadline"]
-        and after["calls"][: len(before["calls"])] == before["calls"]
-        and len(after["calls"]) > len(before["calls"]),
-        "reinvestigation",
-        "original_budget_not_preserved",
-    )
-    require(
-        c.call(flow.incident)["status"] == "investigating",
-        "reinvestigation",
-        "incident_not_investigating",
-    )
-    flow.emit(
-        "reinvestigation",
-        route=routed["route"],
-        same_deadline=True,
-        calls_before=len(before["calls"]),
-        calls_after=len(after["calls"]),
-        second_admission_rejected=True,
-    )
-    c.call(
-        "/__admin/configuration/database-pool",
-        dict(value=50, expected_value=2),
-        method="PUT",
-        origin=ORDER,
-    )
