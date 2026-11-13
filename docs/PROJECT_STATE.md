@@ -1,11 +1,11 @@
 # OpsSwarm 项目交接
 
-更新于 2026-11-09。当前目标是整改并收口可演示、可恢复的本地多 Agent 版本。交付边界以[本地版本范围](architecture/local-multi-agent-release-scope.md)为准，历史验收记录保留原有含义。
+更新于 2026-11-13。当前目标是整改并收口可演示、可恢复的本地多 Agent 版本。交付边界以[本地版本范围](architecture/local-multi-agent-release-scope.md)为准，历史验收记录保留原有含义。
 
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- 用户已允许按需启动服务。`opsswarm-local-demo` 完成启动验证后因 UTC 倒退停止，配置、卷与报告保留。`opsswarm-local-release` 及 `release-fixture-model` 保持原停止记录。本批启动 Docker Desktop 运行隔离 PostgreSQL 测试，环境验收仍沿用已有时钟预检。
+- 用户已允许按需启动服务。Docker Desktop 已启动，`opsswarm-local-demo` 和 `opsswarm-local-release` 均已停止。最新 35 秒 Linux 探针捕获两次超过 100 毫秒的墙钟偏差。隔离演示数据库通过保留卷重启核对，卷内还没有事故或 checkpoint，完整案例读回待验收。[发布环境预检](progress/local-demo-release-precheck.md)
 - 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口、正式演示入口及[控制面错误转换整理](progress/control-plane-error-boundary.md)。装配历史见[整理记录](progress/legacy-assembly-and-project-entry-cleanup.md)。正式入口的配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)

@@ -59,6 +59,22 @@ uv sync --locked
 | `blocked_environment` | 业务案例开始前，依赖、时钟或身份检查阻断 |
 | `failed` | 案例开始后请求、Worker 或业务结果不满足要求，需要根据报告和持久记录定位 |
 
+## 保留卷重启验收
+
+三个场景通过后保留报告。使用同一个演示目录执行 `Stop`、`Start -SkipBuild` 和 `Check`，再在协作台打开原事故。使用 `-SkipBuild` 前确认本次启动所用代码与镜像一致。
+
+以工程师身份按报告中的调查 ID 通过控制 API 核对原记录。下表的路径均相对 `/api/v1/investigations/{run_id}`。
+
+| 场景 | 只读核对 |
+| --- | --- |
+| `handoff` | `/human-wait` 中的补充事件，以及 `/candidate-evaluations/{candidate_id}` 中的候选与人工重评来源 |
+| `recovery` | `/incident-convergence` 的内容哈希与槽位释放，以及原候选下 `/execution-conditions/versions/{version}/release-execution-request/execution-job` 的操作 ID。其 `/recovery-verification` 子路径可核对采样尝试和三次 200。协作台的事故状态应为 `resolved` |
+| `reflow` | `/reinvestigation-routing` 的人工接管、`/incident-convergence` 的 `observed_failure` 和 `/call-budget` 中的截止时间与调用账本 |
+
+重启核对使用原案例的只读查询。`Run` 会创建新事故，适合另起一次演示。
+
+## 停止服务
+
 ```powershell
 .\scripts\local-demo.ps1 -Action Status
 .\scripts\local-demo.ps1 -Action Stop
@@ -66,4 +82,4 @@ uv sync --locked
 
 `Stop` 保留容器、配置、报告和数据卷，也可在凭据过期后使用。不删除历史卷，不关闭 Docker Desktop。异常退出时先看报告，再通过只读 API、协作台和限定项目的 Compose 日志核对；不要直接重发旧命令。失败可能保留故障，下一次新案例会检查并恢复本演示的基线。
 
-当前实际验收结果见[正式入口记录](progress/local-demo-reproduction.md)和[隔离恢复验收](progress/local-demo-recovery-proof.md)。正式 Compose 的三条完整场景单独验收。
+当前实际验收结果见[正式入口记录](progress/local-demo-reproduction.md)、[隔离恢复验收](progress/local-demo-recovery-proof.md)和[发布环境预检](progress/local-demo-release-precheck.md)。
