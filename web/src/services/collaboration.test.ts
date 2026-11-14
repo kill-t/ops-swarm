@@ -134,6 +134,34 @@ it("核验审批与派发分别绑定当前版本的不同权威依据", async (
       expected_incident_version: 7 },
   }));
 
+  const expired = { ...approved, [release]: {
+    availability: "expired", record: record("dispatch-request"),
+  }, [execution]: { record: null, result: null } };
+  serve(expired);
+  const renew = await loadCollaboration("incident", 7, new AbortController().signal);
+  expect(renew?.commands).toContainEqual(expect.objectContaining({
+    label: "重新提交条件核验", path: conditions,
+    body: expect.objectContaining({ expected_condition_version: 2,
+      previous_content_sha256: "verification-hash", decision_id: "draft-decision" }),
+  }));
+  expect(renew?.commands.map(({ label }) => label)).not.toContain("派发演练回滚");
+  serve({ ...responses, [approval + "/decision"]: {
+    record: { ...record("rejected"), outcome: "rejected" }, availability: "current",
+  } });
+  const rejected = await loadCollaboration("incident", 7, new AbortController().signal);
+  expect(rejected?.commands.map(({ label }) => label)).toContain("重新提交条件核验");
+  serve({ ...expired, [conditions]: { condition_version: 8, latest: {
+    ...record("verification"), version: 2, content: { status: "ready_for_review", items: [] },
+  } } });
+  const capped = await loadCollaboration("incident", 7, new AbortController().signal);
+  expect(capped?.commands).toHaveLength(0);
+  expect(capped?.facts).toContainEqual(expect.objectContaining({ title: "续接阻断" }));
+  serve({ ...expired, [candidate + "/action-plan/approval-request/decision"]: {
+    record: { ...record("draft-decision"), outcome: "approved" }, availability: "expired",
+  } });
+  const stale = await loadCollaboration("incident", 7, new AbortController().signal);
+  expect(stale?.commands).toHaveLength(0);
+
   const signal = new AbortController().signal;
   const sampled = {
     ...approved,
@@ -143,6 +171,20 @@ it("核验审批与派发分别绑定当前版本的不同权威依据", async (
   serve(sampled);
   const awaitingSettlement = await loadCollaboration("incident", 7, signal);
   expect(awaitingSettlement?.pending).toBe(true);
+  expect(awaitingSettlement?.commands).toHaveLength(0);
+
+  serve({ ...sampled,
+    [conditions]: { availability: "expired", condition_version: 2, latest: {
+      ...record("verification"), version: 2, content: { status: "ready_for_review", items: [] },
+    } },
+    [approval + "/decision"]: { availability: "expired", record: {
+      ...record("final-approval"), outcome: "approved",
+    } },
+    [release]: { availability: "expired", record: record("dispatch-request") },
+  });
+  const executedExpired = await loadCollaboration("incident", 7, signal);
+  expect(executedExpired?.commands).toHaveLength(0);
+  expect(executedExpired?.facts).toContainEqual({ title: "客观恢复", value: "recovered" });
 
   const convergence = run + "/incident-convergence";
   const settled = { ...sampled, [nav]: { ...navigation, status: "settled", candidate_id: "candidate" } };

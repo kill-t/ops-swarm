@@ -303,24 +303,44 @@ async function loadDisposition(
   const conditionPath = path + "/execution-conditions";
   const conditions = await get<{
     catalog: ConditionItem[]; condition_version: number; latest: ConditionRecord | null;
+    availability: string;
   }>(conditionPath);
   const latest = conditions.latest;
   fact("条件核验", latest?.content.status ?? "待核验");
   for (const item of latest?.content.items ?? []) {
     fact(item.condition.text, `${item.status} · ${item.explanation}`);
   }
-  if (editable && decision.availability === "current" && (!latest || latest.content.status === "blocked")) {
-    command("提交逐条条件核验", "verify_action", conditionPath, {
-      ...expected, decision_id: decision.record.id,
-      decision_content_sha256: decision.record.content_sha256,
+  const renewConditions = (reason: string): void => {
+    fact("核验续接", reason);
+    if (!editable || decision.availability !== "current") {
+      fact("续接阻断", "原草案批准或候选依据已失效，请由工程师接管；不能复用旧批准。");
+      return;
+    }
+    if (conditions.condition_version >= 8) {
+      fact("续接阻断", "已达到八个核验版本上限，请由工程师接管。");
+      return;
+    }
+    command(latest ? "重新提交条件核验" : "提交逐条条件核验", "verify_action", conditionPath, {
+      ...expected, decision_id: decision.record!.id,
+      decision_content_sha256: decision.record!.content_sha256,
       expected_condition_version: conditions.condition_version, previous_content_sha256: latest?.content_sha256 ?? null,
     }, "conditions", conditions.catalog);
+  };
+  if (!latest || latest.content.status === "blocked") {
+    renewConditions("请核对当前条件；新核验版本必须重新审批。");
+  }
+  if (latest?.content.status === "plan_revision_required") {
+    fact("续接阻断", "当前核验要求修改计划，请由工程师接管，不能沿用原方案执行。");
   }
   if (!latest || latest.content.status !== "ready_for_review") return;
   const versionPath = conditionPath + "/versions/" + latest.version;
   const conditionApprovalPath = versionPath + "/approval-request";
   const conditionRequest = await get<RecordView<BoundRecord>>(conditionApprovalPath);
   if (!conditionRequest.record) {
+    if (conditions.availability === "expired" || conditions.availability === "stale") {
+      renewConditions("原核验已失效，需要重新核验并审批。");
+      return;
+    }
     if (editable && decision.availability === "current") command("申请核验审批", "request_approval", conditionApprovalPath, {
       ...expected, verification_id: latest.id, verification_content_sha256: latest.content_sha256,
     });
@@ -331,6 +351,10 @@ async function loadDisposition(
   );
   fact("核验审批", conditionDecision.record?.outcome ?? conditionRequest.availability);
   if (!conditionDecision.record) {
+    if (conditionRequest.availability !== "current" || conditions.availability === "expired" || conditions.availability === "stale") {
+      renewConditions("核验审批请求已不可用，需要新核验版本。");
+      return;
+    }
     if (editable && conditionRequest.availability === "current") {
       for (const action of ["approve", "reject"]) command(
         action === "approve" ? "批准核验" : "拒绝核验", "decide_approval", conditionApprovalPath + "/decision", {
@@ -342,10 +366,17 @@ async function loadDisposition(
     }
     return;
   }
-  if (conditionDecision.record.outcome !== "approved") return;
+  if (conditionDecision.record.outcome !== "approved") {
+    renewConditions("核验未获批准；重新核验后必须申请新的审批。");
+    return;
+  }
   const releasePath = versionPath + "/release-execution-request";
   const release = await get<RecordView<BoundRecord & { expires_at: string }>>(releasePath);
   if (!release.record) {
+    if (conditionDecision.availability !== "current") {
+      renewConditions("核验批准已失效，需要重新核验并审批。");
+      return;
+    }
     if (editable && conditionDecision.availability === "current") panel.commands.push({
       label: "准备演练回滚", permission: "execute_action", path: releasePath, input: "confirm",
       preparesRelease: true,
@@ -363,6 +394,10 @@ async function loadDisposition(
   }>(executionPath);
   fact("受控执行", execution.result?.outcome ?? execution.record?.status ?? release.availability);
   if (!execution.record) {
+    if (release.availability !== "current") {
+      renewConditions("回滚准备已失效，需要重新核验并审批；旧准备不能派发。");
+      return;
+    }
     if (editable && release.availability === "current" && release.record.incident_version === incidentVersion) {
       panel.commands.push(dispatchCommand(releasePath, release.record));
     }
