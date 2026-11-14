@@ -1,6 +1,7 @@
 """只控制本演示项目的依赖，观测环境而不修补系统时钟。"""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -59,6 +60,11 @@ class ComposeControl:
                 encoding="utf-8",
                 check=True,
                 timeout=timeout,
+                env={
+                    **os.environ,
+                    "OPSSWARM_RUNTIME_IMAGE": "ops-swarm-runtime:local-release",
+                    "OPSSWARM_WEB_IMAGE": "ops-swarm-web:local-release",
+                },
             )
             return result.stdout
         except (subprocess.SubprocessError, OSError) as error:
@@ -69,6 +75,11 @@ class ComposeControl:
             self._run("up", "-d", "--no-deps", "--no-build", "recovery-sampling-worker")
         else:
             self._run("stop", "-t", "15", "recovery-sampling-worker")
+
+    def provenance(self) -> dict:
+        from scripts.local_demo.provenance import collect
+
+        return collect(self)
 
     def require_frozen_worker(self) -> None:
         running = self._run("ps", "--status", "running", "--services").split()
@@ -91,9 +102,14 @@ class ComposeControl:
 
 
 def preflight(client: DemoClient, control: ComposeControl) -> dict:
+    provenance = control.provenance()
     clock = control.clock()
     if clock["negative_steps"] != 0 or clock["steps_over_100ms"] != 0:
-        raise DemoError("preflight", "unstable_container_clock", details={"clock": clock})
+        raise DemoError(
+            "preflight",
+            "unstable_container_clock",
+            details={"clock": clock, "provenance": provenance},
+        )
     client.call("/api/v1/operators/me", role=None, status=401)
     for role in ROLES:
         require(
@@ -103,4 +119,9 @@ def preflight(client: DemoClient, control: ComposeControl) -> dict:
         )
     for origin in (ORDER, CHANGE):
         client.call("/health", origin=origin)
-    return dict(clock=clock, authenticated_roles=True, anonymous_rejected=True)
+    return dict(
+        clock=clock,
+        authenticated_roles=True,
+        anonymous_rejected=True,
+        provenance=provenance,
+    )

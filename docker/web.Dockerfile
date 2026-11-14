@@ -10,6 +10,9 @@ RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29.8-alpine
 
+ARG OPSSWARM_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$OPSSWARM_BUILD_REVISION
+
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 

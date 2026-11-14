@@ -2,6 +2,9 @@ FROM ghcr.io/astral-sh/uv:0.11.25 AS uv
 
 FROM python:3.12-slim
 
+ARG OPSSWARM_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision=$OPSSWARM_BUILD_REVISION
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \

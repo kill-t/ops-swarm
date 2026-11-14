@@ -1,11 +1,12 @@
 # OpsSwarm 项目交接
 
-更新于 2026-11-13。当前目标是整改并收口可演示、可恢复的本地多 Agent 版本。交付边界以[本地版本范围](architecture/local-multi-agent-release-scope.md)为准，历史验收记录保留原有含义。
+更新于 2026-11-14。当前目标是整改并收口可演示、可恢复的本地多 Agent 版本。交付边界以[本地版本范围](architecture/local-multi-agent-release-scope.md)为准，历史验收记录保留原有含义。
 
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- 用户已允许按需启动服务。Docker Desktop 已启动，`opsswarm-local-demo` 和 `opsswarm-local-release` 均已停止。最新 35 秒 Linux 探针捕获两次超过 100 毫秒的墙钟偏差。隔离演示数据库通过保留卷重启核对，卷内还没有事故或 checkpoint，完整案例读回待验收。[发布环境预检](progress/local-demo-release-precheck.md)
+- Docker Desktop 已启动。最新空载 35 秒 Linux 探针捕获两次 UTC 倒退及两次超过 100 毫秒的墙钟偏差。完整案例读回待验收。[发布预检](progress/remediation-release-provenance.md)
+- 已修复可信材料读取和用量审计，隔离 PostgreSQL 验证 `0029` 代表数据升级。协作台支持重新核验并重新审批。正式报告绑定提交、运行镜像及迁移版本。[基础整改](progress/remediation-foundation.md) [协作台和预算](progress/remediation-collaboration.md) [发布证据](progress/remediation-release-provenance.md)
 - 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口、正式演示入口及[控制面错误转换整理](progress/control-plane-error-boundary.md)。装配历史见[整理记录](progress/legacy-assembly-and-project-entry-cleanup.md)。正式入口的配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
 - 正式演示入口的令牌格式、启动调查字段及人工续接来源已对齐真实接口。四类角色的 ASGI 自查与命令契约通过离线验证，报告已纳入持久交接和续接的对象身份。[演示命令契约记录](progress/local-demo-command-contract.md)
@@ -25,7 +26,7 @@
 | 正常发布完整行为 | 正式脚本的单次 CAS、中断后只读接手、三次业务采样、事故收敛和槽位释放已通过隔离 PostgreSQL 集成验收。正式 Compose 的完整场景待补验。见[恢复验收](progress/local-demo-recovery-proof.md)、[来源遍历](progress/local-release-source-traversal.md)、[状态快照](progress/local-release-status-snapshot.md)、[采样等待](progress/local-recovery-sample-wait.md) |
 | 环境与其他欠项 | WSL 重置及授权停服务对照未消除 UTC 倒退，服务已恢复原状；见[校时核查](progress/local-wsl-clock-source.md)。141 单元与迁移通过、完整 API 未验收，不能把其提前拒绝全部归因于时钟；见[原记录](progress/141-reinvestigation-approval-decision.md) |
 
-以上组件或指定场景成功均不代表当前完整版本已发布，不将脚本模型结果写成真实模型推理效果。已有业务卷曾停在 `0029_follow_up_governance_idx`，不能用新隔离库验收代替已有业务数据迁移。
+当前完整版本待发布验收。脚本模型结果只覆盖工程链。`0029_follow_up_governance_idx` 的隔离用例验证了构造的事故、告警和时间线，原业务卷未迁移。
 
 ## 当前代码与兼容边界
 

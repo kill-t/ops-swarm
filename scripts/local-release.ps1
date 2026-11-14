@@ -41,7 +41,11 @@ try {
     switch ($Action) {
         "Start" {
             if (-not $SkipBuild) {
-                docker @compose build control-migrate web
+                $revision = git -C $root rev-parse HEAD
+                if ($LASTEXITCODE -ne 0) { throw "无法读取构建提交" }
+                $trackedChanges = git -C $root status --porcelain --untracked-files=no
+                if ($LASTEXITCODE -ne 0 -or $trackedChanges) { throw "发布构建要求受版本控制文件已提交" }
+                docker @compose build --build-arg "OPSSWARM_BUILD_REVISION=$revision" control-migrate web
                 if ($LASTEXITCODE -ne 0) { throw "无法构建本地发布镜像" }
             }
             docker @compose up -d --no-build --wait --wait-timeout 240 @services

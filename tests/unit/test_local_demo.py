@@ -422,13 +422,18 @@ def test_clock_block_stops_before_api_and_report_never_contains_credentials(demo
     prepare(demo_dir)
     client = MagicMock()
     client.call.side_effect = AssertionError("时钟失败前不能访问业务 API")
-    control = SimpleNamespace(clock=lambda: dict(negative_steps=1, steps_over_100ms=1))
+    identity = {"commit": "a" * 40, "schema_head": "test-head"}
+    control = SimpleNamespace(
+        clock=lambda: dict(negative_steps=1, steps_over_100ms=1),
+        provenance=lambda: identity,
+    )
     with pytest.raises(DemoError, match="unstable_container_clock"):
         preflight(client, control)
     code, report = execute(demo_dir, scenario="recovery", client=client, control=control)
     data = json.loads(report.read_text(encoding="utf-8"))
     assert code == 2 and data["status"] == "blocked_environment"
     assert data["error"]["clock"]["negative_steps"] == 1
+    assert data["error"]["provenance"] == identity
     client.call.assert_not_called()
     assert not any(
         token in report.read_text(encoding="utf-8")
@@ -662,6 +667,22 @@ def test_compose_commands_are_bound_to_project_and_env_path(demo_dir, monkeypatc
     assert args[args.index("-p") + 1] == PROJECT
     assert args[args.index("--env-file") + 1] == str(demo_dir / "demo.env")
     assert args[-2:] == ["control-api", "investigation-worker-frozen"]
+
+
+def test_sampling_restore_uses_release_image(demo_dir, monkeypatch):
+    run = MagicMock(return_value=SimpleNamespace(stdout=""))
+    monkeypatch.setattr("scripts.local_demo.environment.subprocess.run", run)
+    ComposeControl(demo_dir).sampling(True)
+    assert run.call_args.args[0][-5:] == [
+        "up",
+        "-d",
+        "--no-deps",
+        "--no-build",
+        "recovery-sampling-worker",
+    ]
+    assert (
+        run.call_args.kwargs["env"]["OPSSWARM_RUNTIME_IMAGE"] == "ops-swarm-runtime:local-release"
+    )
 
 
 def test_unknown_stop_result_still_attempts_sampling_restore():
