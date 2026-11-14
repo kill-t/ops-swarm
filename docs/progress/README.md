@@ -17,6 +17,7 @@
 | 当前代码整改 | [控制面错误边界](control-plane-error-boundary.md)完成职责分离、重复封装清理和 HTTP 契约回归；[历史装配去重与首页收口](legacy-assembly-and-project-entry-cleanup.md)保持原验收，旧图恢复契约保留，当前主线继续使用[独立装配入口](current-dynamic-factory-boundary.md) |
 | 正式复现入口 | [本地演示整理](local-demo-reproduction.md)已通过配置、脚本协议、启动与阻断路径验证；三条完整场景已编排但尚未整栈验收。新隔离卷启动成功后，35 秒预检捕获 UTC 倒退，案例未开始，演示栈已停止并保留报告 |
 | 后续完整交付 | [发布环境预检](local-demo-release-precheck.md)确认当前 UTC 连续性仍不满足，演示数据库保留卷重启核对通过。使用[正式入口](../local-demo.md)在稳定环境补验三个场景与重启后的原案例读回。[时钟问题](local-wsl-clock-source.md)及 141 原欠项单列 |
+| 恢复复测诊断 | [回执时钟诊断](local-demo-dispatch-clock.md)确认首个失败发生在登记回执校验，最小探针复现 PostgreSQL 时间领先导致拒绝。稳定环境待复验 |
 | 独立评测试点 | [第四批协作对照](rcaeval-re2-batch-04.md)通过预设门槛；[产品 Harness 中断恢复](harness-recovery-measurements.md)完成指定中断窗口和阶段采样 |
 
 状态约定：**已决定**表示方向确定但能力未实现；**开发中**表示代码或接口正在建设、尚未验收；**已验收**须有对应实现、独立提交和可复现验证记录。文档切片验收只代表文档完成，不将其中的目标架构标成已实现。旧记录保存当时事实与结论，后续以当前架构来源和新切片说明调整。

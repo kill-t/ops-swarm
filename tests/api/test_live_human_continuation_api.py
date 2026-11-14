@@ -307,8 +307,27 @@ async def test_demo_recovery_keeps_single_cas_after_worker_interruption(
 
     async def execute_with_interruption(path, headers):
         interrupted = InterruptedDispatchClient(settings, transport=transport, clock=c.clock)
-        with pytest.raises(InterruptedAfterCAS):
-            await execution.worker(c, interrupted, worker_id="demo-interrupted-worker").run_once()
+        calls_before = len(transport.calls)
+        started_at = c.clock()
+        try:
+            ran = await execution.worker(
+                c, interrupted, worker_id="demo-interrupted-worker"
+            ).run_once()
+        except InterruptedAfterCAS:
+            pass
+        else:
+            response = await c.client.get(path, headers=headers)
+            view = response.json() if response.status_code == 200 else {}
+            job, result = view.get("record") or {}, view.get("result") or {}
+            pytest.fail(
+                f"未到 CAS 后中断点：worker={ran}，读取={response.status_code}，"
+                f"状态={job.get('status')}，阶段={job.get('phase')}，"
+                f"尝试={[(a['status'], a.get('error_code')) for a in view.get('attempts', [])]}，"
+                f"结果={result.get('reason_code')}，"
+                f"远端方法={[method for method, _ in transport.calls[calls_before:]]}，"
+                f"处理起止={started_at.isoformat()}/{c.clock().isoformat()}，"
+                f"发布准备={dict(events).get('release_prepared')}"
+            )
         response = await c.client.get(path, headers=headers)
         assert response.status_code == 200, response.text
         original = response.json()
