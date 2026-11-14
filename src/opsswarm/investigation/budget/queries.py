@@ -56,6 +56,8 @@ class CallBudgetQueries:
                 )
             )
             return operation in (
+                "human_review",
+                "evaluate_candidate",
                 "coordinate_reinvestigation",
                 "synthesize_reinvestigation",
                 "evaluate_reinvestigation_candidate",

@@ -2,7 +2,7 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -101,15 +101,34 @@ class ModelUsageTracker(BaseCallbackHandler):
         output_tokens = 0
         usage_response_count = 0
         for generations in response.generations:
-            for generation in generations:
-                if not isinstance(generation, ChatGeneration):
-                    continue
-                message = generation.message
-                if not isinstance(message, AIMessage) or message.usage_metadata is None:
-                    continue
+            # 一个请求的候选输出不能重复计算供应商的请求级用量。
+            if not generations or not isinstance(generations[0], ChatGeneration):
+                continue
+            message = generations[0].message
+            if not isinstance(message, AIMessage):
+                continue
+            raw = message.response_metadata.get("token_usage")
+            if raw is None and len(response.generations) == 1 and response.llm_output:
+                raw = response.llm_output.get("token_usage")
+            if not isinstance(raw, dict):
+                continue
+            supplied_input = raw.get("prompt_tokens")
+            supplied_output = raw.get("completion_tokens")
+            supplied_total = raw.get("total_tokens")
+            input_valid = type(supplied_input) is int and supplied_input >= 0
+            output_valid = type(supplied_output) is int and supplied_output >= 0
+            # 已知量可以累计；缺失字段不能用 SDK 补出的零声明完整或估算总费用。
+            if input_valid:
+                input_tokens += cast(int, supplied_input)
+            if output_valid:
+                output_tokens += cast(int, supplied_output)
+            if (
+                input_valid
+                and output_valid
+                and type(supplied_total) is int
+                and supplied_total == cast(int, supplied_input) + cast(int, supplied_output)
+            ):
                 usage_response_count += 1
-                input_tokens += int(message.usage_metadata.get("input_tokens", 0))
-                output_tokens += int(message.usage_metadata.get("output_tokens", 0))
         with self._lock:
             attempt_generation = self._run_generations.pop(run_id, None)
             if not self._active or attempt_generation != self._generation:

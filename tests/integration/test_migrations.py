@@ -4,6 +4,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg.types.json import Jsonb
 from sqlalchemy.engine import make_url
 
@@ -45,7 +46,7 @@ def test_alembic_migration_matches_sqlalchemy_metadata(migrated_database_url: st
     )
     with psycopg.connect(native_url) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0099_live_reflow_handoff",
+            ScriptDirectory.from_config(alembic_config).get_current_head(),
         )
 
 
