@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 仓库固定为 `D:\PyCharm\job-project\ops-swarm`，使用仓库 `.venv/Scripts/`。迁移 head 为 `0100_reflow_input_projection`，继续前核对 Git。
-- Docker Desktop 已启动。最新空载 35 秒 Linux 探针捕获两次 UTC 倒退及两次超过 100 毫秒的墙钟偏差。完整案例读回待验收。[发布预检](progress/remediation-release-provenance.md)
+- Docker Desktop 已启动，正式演示栈已启动并完成预检后停止。构建 `9a83d4b` 的正式报告保存了运行镜像及迁移身份，35 秒探针捕获两次 UTC 倒退及三次超过 100 毫秒的偏差，三个场景均未开始。[发布预检](progress/remediation-release-provenance.md)
 - 已修复可信材料读取和用量审计，隔离 PostgreSQL 验证 `0029` 代表数据升级。协作台支持重新核验并重新审批。正式报告绑定提交、运行镜像及迁移版本。[基础整改](progress/remediation-foundation.md) [协作台和预算](progress/remediation-collaboration.md) [发布证据](progress/remediation-release-provenance.md)
 - 当前整改已完成现行图与历史装配分离、历史工厂去重、首页收口、正式演示入口及[控制面错误转换整理](progress/control-plane-error-boundary.md)。装配历史见[整理记录](progress/legacy-assembly-and-project-entry-cleanup.md)。正式入口的配置、启动与阻断路径通过；三个完整场景仍待稳定环境验收。按完整问题推进，避免将内部操作拆成多轮交付。
 - 协作台提交期间的状态更新和后台步骤补读已通过组件回归。历史浏览器超时案例及完整现场操作仍待复验。[协作台刷新记录](progress/collaboration-panel-refresh.md)
